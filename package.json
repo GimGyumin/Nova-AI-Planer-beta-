@@ -2,7 +2,7 @@
   "name": "nova-1.0",
   "private": true,
   "version": "1.0.0",
-  "homepage": "https://GimGyumin.github.io/Nova-1.0",
+  "homepage": "https://GimGyumin.github.io/Nova-AI-Planer",
   "type": "module",
   "scripts": {
     "dev": "vite",
