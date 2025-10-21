@@ -281,6 +281,9 @@ const translations = {
     settings_generate_link: '공유 링크 생성',
     settings_copy_link: '복사',
     link_copied_toast: '링크가 클립보드에 복사되었습니다.',
+    short_url_created: '📎 단축 URL이 생성되었습니다!',
+    share_link_created: '🔗 공유 링크가 생성되었습니다!',
+    short_url_failed: '⚠️ 단축 URL 생성에 실패하여 기본 링크를 사용합니다.',
     no_data_to_share: '공유할 목표가 없습니다. 먼저 목표를 추가해주세요.',
 
     // 사용방법
@@ -482,6 +485,9 @@ const translations = {
     settings_generate_link: 'Generate Share Link',
     settings_copy_link: 'Copy',
     link_copied_toast: 'Link copied to clipboard.',
+    short_url_created: '📎 Short URL created successfully!',
+    share_link_created: '🔗 Share link generated!',
+    short_url_failed: '⚠️ Short URL creation failed, using default link.',
     no_data_to_share: 'No goals to share. Please add goals first.',
 
     // Usage Guide
@@ -660,42 +666,95 @@ const compressDataForUrl = (data: any): string => {
 // --- 단축 URL 생성 함수 (CORS 문제 해결) ---
 const createShortUrl = async (longUrl: string): Promise<string> => {
     // URL이 너무 길지 않으면 그대로 사용
-    if (longUrl.length < 2000) {
+    if (longUrl.length < 1500) {
         return longUrl;
     }
     
-    try {
-        // JSONP 방식으로 TinyURL 시도 (CORS 문제 회피)
-        return new Promise((resolve) => {
-            const callbackName = `tinyurl_${Date.now()}`;
-            const script = document.createElement('script');
-            
-            // 타임아웃 설정
-            const timeout = setTimeout(() => {
-                document.head.removeChild(script);
-                delete (window as any)[callbackName];
-                resolve(longUrl); // 실패 시 원본 URL 반환
-            }, 5000);
-            
-            (window as any)[callbackName] = (result: any) => {
-                clearTimeout(timeout);
-                document.head.removeChild(script);
-                delete (window as any)[callbackName];
-                
-                if (result && typeof result === 'string' && !result.includes('Error')) {
-                    resolve(result);
-                } else {
-                    resolve(longUrl);
+    const shortUrlServices = [
+        // 1. is.gd API 사용
+        {
+            name: 'is.gd',
+            createUrl: async (url: string) => {
+                const response = await fetch(`https://is.gd/create.php?format=simple&url=${encodeURIComponent(url)}`);
+                if (!response.ok) throw new Error('is.gd API failed');
+                const shortUrl = await response.text();
+                if (shortUrl.includes('Error') || !shortUrl.startsWith('http')) {
+                    throw new Error('Invalid response from is.gd');
                 }
-            };
-            
-            script.src = `https://tinyurl.com/api-create.php?url=${encodeURIComponent(longUrl)}&callback=${callbackName}`;
-            document.head.appendChild(script);
-        });
-    } catch (error) {
-        console.warn('Short URL creation failed:', error);
-        return longUrl;
+                return shortUrl.trim();
+            }
+        },
+        // 2. TinyURL JSONP fallback
+        {
+            name: 'tinyurl',
+            createUrl: async (url: string) => {
+                return new Promise((resolve, reject) => {
+                    const callbackName = `tinyurl_${Date.now()}`;
+                    const script = document.createElement('script');
+                    
+                    const timeout = setTimeout(() => {
+                        cleanup();
+                        reject(new Error('TinyURL timeout'));
+                    }, 5000);
+                    
+                    const cleanup = () => {
+                        clearTimeout(timeout);
+                        if (script.parentNode) {
+                            document.head.removeChild(script);
+                        }
+                        delete (window as any)[callbackName];
+                    };
+                    
+                    (window as any)[callbackName] = (result: any) => {
+                        cleanup();
+                        if (result && typeof result === 'string' && !result.includes('Error') && result.startsWith('http')) {
+                            resolve(result.trim());
+                        } else {
+                            reject(new Error('Invalid TinyURL response'));
+                        }
+                    };
+                    
+                    script.onerror = () => {
+                        cleanup();
+                        reject(new Error('TinyURL script load failed'));
+                    };
+                    
+                    script.src = `https://tinyurl.com/api-create.php?url=${encodeURIComponent(url)}&callback=${callbackName}`;
+                    document.head.appendChild(script);
+                });
+            }
+        },
+        // 3. v.gd API 사용
+        {
+            name: 'v.gd',
+            createUrl: async (url: string) => {
+                const response = await fetch(`https://v.gd/create.php?format=simple&url=${encodeURIComponent(url)}`);
+                if (!response.ok) throw new Error('v.gd API failed');
+                const shortUrl = await response.text();
+                if (shortUrl.includes('Error') || !shortUrl.startsWith('http')) {
+                    throw new Error('Invalid response from v.gd');
+                }
+                return shortUrl.trim();
+            }
+        }
+    ];
+    
+    // 각 서비스를 순차적으로 시도
+    for (const service of shortUrlServices) {
+        try {
+            console.log(`Trying ${service.name} for URL shortening...`);
+            const shortUrl = await service.createUrl(longUrl);
+            console.log(`✅ ${service.name} success:`, shortUrl);
+            return shortUrl as string;
+        } catch (error) {
+            console.warn(`❌ ${service.name} failed:`, error);
+            continue;
+        }
     }
+    
+    // 모든 서비스 실패 시 원본 URL 반환
+    console.warn('All URL shortening services failed, using original URL');
+    return longUrl;
 };
 
 // --- 배경화면 옵션 ---
@@ -1635,6 +1694,7 @@ const SettingsModal: React.FC<{
     const [isClosing, handleClose] = useModalAnimation(onClose);
     const [activeTab, setActiveTab] = useState('appearance');
     const [shareableLink, setShareableLink] = useState('');
+    const [isGeneratingLink, setIsGeneratingLink] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
     
     const tabs = [
@@ -1660,6 +1720,8 @@ const SettingsModal: React.FC<{
             return;
         }
         
+        setIsGeneratingLink(true);
+        
         try {
             // 데이터 압축 및 인코딩
             const encodedData = compressDataForUrl(todos);
@@ -1668,12 +1730,22 @@ const SettingsModal: React.FC<{
             // 단축 URL 생성 시도 (길이가 긴 경우만)
             const finalUrl = await createShortUrl(longUrl);
             setShareableLink(finalUrl);
+            
+            // 단축 URL이 생성되었는지 확인하고 토스트 메시지 표시
+            if (finalUrl !== longUrl && finalUrl.length < longUrl.length) {
+                setToastMessage(t('short_url_created'));
+            } else {
+                setToastMessage(t('share_link_created'));
+            }
         } catch (e) {
             console.error("Failed to create share link", e);
             // 실패 시 기본 URL 사용
             const encodedData = compressDataForUrl(todos);
             const url = `${window.location.origin}${window.location.pathname}?data=${encodeURIComponent(encodedData)}`;
             setShareableLink(url);
+            setToastMessage(t('short_url_failed'));
+        } finally {
+            setIsGeneratingLink(false);
         }
     };
 
@@ -1793,12 +1865,22 @@ const SettingsModal: React.FC<{
                         <div className="settings-section-header">{t('settings_share_link_header')}</div>
                         <div className="settings-section-body">
                             {!shareableLink && (
-                                <button className="settings-item action-item" onClick={handleCreateShareLink}>
-                                    <span className="action-text">{t('settings_generate_link')}</span>
+                                <button 
+                                    className="settings-item action-item" 
+                                    onClick={handleCreateShareLink}
+                                    disabled={isGeneratingLink}
+                                >
+                                    <span className="action-text">
+                                        {isGeneratingLink ? '🔗 단축 URL 생성 중...' : t('settings_generate_link')}
+                                    </span>
                                 </button>
                             )}
                             {shareableLink && (
                                 <div className="share-link-container">
+                                    <div style={{ marginBottom: '8px', fontSize: '12px', opacity: 0.7 }}>
+                                        {shareableLink.length < 100 ? '📎 단축 URL' : '🔗 일반 링크'} 
+                                        ({shareableLink.length}자)
+                                    </div>
                                     <input type="text" readOnly value={shareableLink} onClick={(e) => (e.target as HTMLInputElement).select()} />
                                     <button onClick={handleCopyLink}>{t('settings_copy_link')}</button>
                                 </div>
