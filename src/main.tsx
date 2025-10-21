@@ -233,6 +233,10 @@ const translations = {
     delete_all_data_button: '모든 데이터 삭제',
     settings_done_button: '완료',
     settings_section_data: '데이터 관리',
+    settings_section_account: '계정',
+    settings_sync_data: '동기화',
+    settings_load_data: '불러오기',
+    settings_logout: '로그아웃',
     settings_export_data: '내보내기',
     settings_import_data: '가져오기',
     import_confirm_title: '데이터 가져오기',
@@ -449,6 +453,13 @@ const translations = {
     settings_section_general: 'General',
     settings_section_info: 'Information',
     settings_section_help: 'How to Use',
+    settings_theme_mode: 'Theme Mode',
+    theme_mode_light: 'Light Mode',
+    theme_mode_light_desc: 'Use bright theme',
+    theme_mode_dark: 'Dark Mode',
+    theme_mode_dark_desc: 'Use dark theme',
+    theme_mode_system: 'Follow System Settings',
+    theme_mode_system_desc: 'Automatically adjust to device settings',
     settings_dark_mode: 'Dark Mode',
     settings_language: 'Language',
     settings_api_key: 'AI Assistant',
@@ -458,6 +469,8 @@ const translations = {
     language_name: 'English (US)',
     language_modal_title: 'Language',
     settings_section_background: 'Appearance',
+    settings_share_link_header: 'Share via Link',
+    settings_generate_link: 'Generate Share Link',
     settings_bg_default: 'Light',
     settings_bg_default_dark: 'Dark',
     settings_bg_pink: 'Pink',
@@ -468,6 +481,14 @@ const translations = {
     settings_bg_forest_green: 'Forest',
     settings_bg_purple: 'Purple',
     settings_bg_royal_purple: 'Royal Purple',
+    settings_section_account: 'Account',
+    settings_sync_data: 'Sync Data',
+    settings_load_data: 'Load Data',
+    settings_logout: 'Sign Out',
+    settings_delete_account: 'Delete All Data',
+    delete_account_header: 'Delete Data',
+    delete_account_header_desc: 'This action is irreversible and will permanently delete all your goals and data.',
+    data_deleting: 'Deleting...',
     settings_version: 'Version',
     settings_developer: 'Developer',
     developer_name: 'GimGyuMin',
@@ -480,86 +501,6 @@ const translations = {
     settings_background_header_desc: "Change the app's background style to express your personality.",
     data_importing: 'Importing...',
     data_exporting: 'Exporting...',
-    data_deleting: 'Deleting...',
-    url_import_title: 'Load from URL',
-    url_import_message: 'Overwrite current goals with data from the URL?',
-    url_import_confirm: 'Load',
-    url_import_success: 'Successfully loaded data from URL!',
-    url_import_error: 'Invalid data in URL.',
-    settings_share_link_header: 'Share via Link',
-    settings_generate_link: 'Generate Share Link',
-    settings_copy_link: 'Copy',
-    link_copied_toast: 'Link copied to clipboard.',
-    short_url_created: '📎 Short URL created successfully!',
-    share_link_created: '🔗 Share link generated!',
-    short_url_failed: '⚠️ Short URL creation failed, using default link.',
-    no_data_to_share: 'No goals to share. Please add goals first.',
-
-    // Usage Guide
-    usage_guide_tab: 'How to Use',
-    usage_guide_title: 'User Guide',
-    usage_basic_title: 'Add a Goal',
-    usage_basic_desc: '1. Tap "Add and Edit Goals" button on the home screen.\n2. Fill in your goal, outcome, obstacle, and plan in order.\n3. Select deadline and repeat days.\n4. Tap "Save" to add your goal.',
-    usage_ai_title: 'Use AI Features',
-    usage_ai_desc: '• Use "AI Suggestion" button when writing goals for improvements.\n• Tap "AI Sort" button to organize goals by importance.\n• Get AI analysis for more effective goal setting.\n\n※ API key setup is required to use AI features.',
-    usage_ai_setup_title: 'Set Up AI Features',
-    usage_ai_setup_desc: '1. Go to Settings > General and find the API Key field.\n2. Enter your Google Gemini API key.\n3. For API key generation, refer to the Google documentation:\n   https://ai.google.dev/gemini-api/docs/api-key\n4. AI features will be activated after entering the key.',
-    usage_share_title: 'Share Your Goals',
-    usage_share_desc: '1. Go to Settings > Sharing and tap "Create Goal Link".\n2. Review the automatically generated short link.\n3. Tap "Copy Link" to copy to clipboard.\n4. Share the link via messenger or email.',
-    usage_theme_title: 'Change Theme',
-    usage_theme_desc: '1. Go to Settings > Appearance and use the dark mode toggle.\n2. Select your preferred background theme.\n3. Choose from Default, Pink, Blue, Green, or Purple themes.\n4. Changes are applied immediately.',
-    usage_calendar_title: 'Use Calendar View',
-    usage_calendar_desc: '1. Tap the calendar icon in the bottom tabs.\n2. Choose between 3-day, weekly, or monthly view.\n3. Tap on any date to see goals for that day.\n4. Use left/right arrows to navigate dates.',
-    usage_offline_title: 'Use Offline Mode',
-    usage_offline_desc: '1. Go to Settings > General and turn on "Offline Mode".\n2. Add, edit, and delete goals without an API key.\n3. AI features are unavailable, but all basic functions work normally.\n4. Your data is safely stored in the browser.',
-    
-    // Goal Assistant
-    goal_assistant_title: 'Add Goal',
-    goal_assistant_mode_woop: 'WOOP',
-    goal_assistant_mode_automation: 'Automation',
-    automation_title: 'Goal Automation',
-    automation_base_name_label: 'Base Goal Name',
-    automation_base_name_placeholder: 'e.g., Study Vocabulary',
-    automation_total_units_label: 'Total Units',
-    automation_total_units_placeholder: 'e.g., 30',
-    automation_units_per_day_label: 'Units per Day',
-    automation_period_label: 'Period',
-    automation_start_date_label: 'Start Date',
-    automation_end_date_label: 'End Date',
-    automation_generate_button: 'Generate {count}',
-    automation_error_all_fields: 'Please fill out all fields correctly.',
-    automation_error_start_after_end: 'Start date must be before end date.',
-    automation_error_short_period: 'The period is too short (min. 1 day).',
-
-    next_button: 'Next',
-    back_button: 'Back',
-    wish_tip: 'Set a challenging yet realistic goal. Make it specific and measurable.',
-    wish_example: 'e.g., Lose 5kg in 3 months, Get an A+ this semester',
-    outcome_tip: 'Imagine the most positive outcome of achieving your goal. The more vivid, the better.',
-    outcome_example: 'e.g., Feeling healthier and more confident, Receiving a scholarship',
-    obstacle_tip: 'What is the main internal obstacle (e.g., habits, emotions) that could stop you?',
-    obstacle_example: 'e.g., Feeling too tired for the gym after work, Procrastinating on difficult tasks',
-    plan_tip: "Create a specific plan to overcome your obstacle in an 'if-then' format.",
-    plan_example: 'e.g., If I feel too tired for the gym after work, then I will change into my workout clothes and stretch for 10 minutes.',
-    recurrence_label: 'Recurrence',
-    recurrence_tip: 'Is this a goal you need to work on consistently? Set it as a recurring goal to track your streak.',
-    recurrence_example: 'e.g., Go to the gym every Mon, Wed, Fri',
-    recurrence_option_daily: 'Recurring Goal',
-    deadline_tip: 'Set a realistic deadline to stay motivated. Long-term goals without a deadline are also fine.',
-    deadline_option_no_deadline: 'No Deadline',
-    day_names_short_picker: ["M", "T", "W", "T", "F", "S", "S"],
-    settings_delete_account: 'Delete All Data',
-    delete_account_header: 'Delete Data',
-    delete_account_header_desc: 'This action is irreversible and will permanently delete all your goals and data.',
-    version_update_title: "What's New",
-    version_update_1_title: 'Firebase Cloud Sync',
-    version_update_1_desc: 'Sign in with Google to save and load your goals and settings to the cloud. Sync across multiple devices.',
-    version_update_2_title: 'Auto Settings Sync',
-    version_update_2_desc: 'All settings like language, theme, and background color are saved to the cloud and applied consistently across devices.',
-    version_update_3_title: 'Secure Logout',
-    version_update_3_desc: 'All data is saved to the cloud before logout, and local data is completely deleted with automatic redirect to home.',
-    version_update_4_title: 'Status Indicator UI',
-    version_update_4_desc: 'Button states change during login, logout, and sync operations to clearly show progress.',
   }
 };
 
@@ -2017,26 +1958,26 @@ const SettingsModal: React.FC<{
             case 'appearance':
                 return (
                     <>
-                        <div className="settings-section-header">테마 모드</div>
+                        <div className="settings-section-header">{t('settings_theme_mode')}</div>
                         <div className="settings-section-body">
                             <div className="settings-item nav-indicator" onClick={() => onThemeChange('light')}>
                                 <div>
-                                    <span>라이트 모드</span>
-                                    <div style={{ fontSize: '12px', opacity: 0.7, marginTop: '4px' }}>항상 밝은 테마 사용</div>
+                                    <span>{t('theme_mode_light')}</span>
+                                    <div style={{ fontSize: '12px', opacity: 0.7, marginTop: '4px' }}>{t('theme_mode_light_desc')}</div>
                                 </div>
                                 {themeMode === 'light' && icons.check}
                             </div>
                             <div className="settings-item nav-indicator" onClick={() => onThemeChange('dark')}>
                                 <div>
-                                    <span>다크 모드</span>
-                                    <div style={{ fontSize: '12px', opacity: 0.7, marginTop: '4px' }}>항상 어두운 테마 사용</div>
+                                    <span>{t('theme_mode_dark')}</span>
+                                    <div style={{ fontSize: '12px', opacity: 0.7, marginTop: '4px' }}>{t('theme_mode_dark_desc')}</div>
                                 </div>
                                 {themeMode === 'dark' && icons.check}
                             </div>
                             <div className="settings-item nav-indicator" onClick={() => onThemeChange('system')}>
                                 <div>
-                                    <span>시스템 설정 따라가기</span>
-                                    <div style={{ fontSize: '12px', opacity: 0.7, marginTop: '4px' }}>기기의 다크모드 설정에 맞춰 자동 변경</div>
+                                    <span>{t('theme_mode_system')}</span>
+                                    <div style={{ fontSize: '12px', opacity: 0.7, marginTop: '4px' }}>{t('theme_mode_system_desc')}</div>
                                 </div>
                                 {themeMode === 'system' && icons.check}
                             </div>
