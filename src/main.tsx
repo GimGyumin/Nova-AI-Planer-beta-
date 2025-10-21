@@ -3,6 +3,132 @@ import ReactDOM from 'react-dom/client';
 import { GoogleGenAI, Type } from "@google/genai";
 import './index.css';
 
+// --- PWA 유틸리티 함수 ---
+const isMobile = () => {
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+    (navigator.maxTouchPoints && navigator.maxTouchPoints > 2 && /MacIntel/.test(navigator.platform));
+};
+
+const isStandalone = () => {
+  return window.matchMedia('(display-mode: standalone)').matches || 
+    (window.navigator as any).standalone === true;
+};
+
+// --- 다크모드 감지 ---
+const getSystemTheme = () => {
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+};
+
+// --- PWA 설치 안내 컴포넌트 ---
+const PWAInstallPrompt: React.FC<{ onClose: () => void }> = ({ onClose }) => {
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [isIOS, setIsIOS] = useState(false);
+
+  useEffect(() => {
+    const isIOSDevice = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    setIsIOS(isIOSDevice);
+
+    const handleBeforeInstallPrompt = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    };
+  }, []);
+
+  const handleInstall = async () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === 'accepted') {
+        setDeferredPrompt(null);
+        onClose();
+      }
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-sm w-full">
+        <div className="text-center mb-4">
+          <div className="w-16 h-16 bg-indigo-600 rounded-lg mx-auto mb-4 flex items-center justify-center">
+            <span className="text-white text-2xl font-bold">N</span>
+          </div>
+          <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
+            앱으로 설치하기
+          </h2>
+          <p className="text-gray-600 dark:text-gray-300 text-sm">
+            Nova를 홈 화면에 추가하여 더 편리하게 사용하세요.
+          </p>
+        </div>
+
+        {isIOS ? (
+          <div className="mb-4">
+            <div className="bg-blue-50 dark:bg-blue-900 p-3 rounded-lg mb-3">
+              <p className="text-sm text-blue-800 dark:text-blue-200">
+                iOS에서 설치하는 방법:
+              </p>
+            </div>
+            <ol className="text-sm text-gray-600 dark:text-gray-300 space-y-2">
+              <li className="flex items-center">
+                <span className="w-6 h-6 bg-indigo-600 text-white rounded-full flex items-center justify-center text-xs mr-2">1</span>
+                하단의 공유 버튼 (□↗) 탭
+              </li>
+              <li className="flex items-center">
+                <span className="w-6 h-6 bg-indigo-600 text-white rounded-full flex items-center justify-center text-xs mr-2">2</span>
+                "홈 화면에 추가" 선택
+              </li>
+              <li className="flex items-center">
+                <span className="w-6 h-6 bg-indigo-600 text-white rounded-full flex items-center justify-center text-xs mr-2">3</span>
+                "추가" 버튼 탭
+              </li>
+            </ol>
+          </div>
+        ) : (
+          <div className="mb-4">
+            {deferredPrompt ? (
+              <button
+                onClick={handleInstall}
+                className="w-full bg-indigo-600 text-white py-2 px-4 rounded-lg hover:bg-indigo-700 transition-colors"
+              >
+                지금 설치하기
+              </button>
+            ) : (
+              <div className="bg-gray-50 dark:bg-gray-700 p-3 rounded-lg">
+                <p className="text-sm text-gray-600 dark:text-gray-300">
+                  브라우저 메뉴에서 "홈 화면에 추가" 또는 "앱 설치"를 선택하세요.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="flex space-x-2">
+          <button
+            onClick={onClose}
+            className="flex-1 bg-gray-200 dark:bg-gray-600 text-gray-800 dark:text-gray-200 py-2 px-4 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-500 transition-colors"
+          >
+            나중에
+          </button>
+          <button
+            onClick={() => {
+              localStorage.setItem('pwa-prompt-dismissed', 'true');
+              onClose();
+            }}
+            className="flex-1 bg-gray-200 dark:bg-gray-600 text-gray-800 dark:text-gray-200 py-2 px-4 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-500 transition-colors"
+          >
+            다시 보지 않기
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // --- 타입 정의 ---
 interface Goal {
   id: number;
@@ -587,7 +713,19 @@ const App: React.FC = () => {
     const [todos, setTodos] = useState<Goal[]>([]);
     const [filter, setFilter] = useState<string>('all');
     const [sortType, setSortType] = useState<string>('manual');
-    const [isDarkMode, setIsDarkMode] = useState<boolean>(true);
+    
+    // 다크모드 시스템 설정 따라가기
+    const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
+        const savedTheme = localStorage.getItem('nova-theme');
+        if (savedTheme === 'system' || !savedTheme) {
+            return getSystemTheme() === 'dark';
+        }
+        return savedTheme === 'dark';
+    });
+    const [themeMode, setThemeMode] = useState<'light' | 'dark' | 'system'>(() => {
+        return localStorage.getItem('nova-theme') as 'light' | 'dark' | 'system' || 'system';
+    });
+    
     const [backgroundTheme, setBackgroundTheme] = useState<string>('default');
     const [isGoalAssistantOpen, setIsGoalAssistantOpen] = useState<boolean>(false);
     const [editingTodo, setEditingTodo] = useState<Goal | null>(null);
@@ -602,6 +740,9 @@ const App: React.FC = () => {
     const [dataActionStatus, setDataActionStatus] = useState<'idle' | 'importing' | 'exporting' | 'deleting'>('idle');
     const [isVersionInfoOpen, setIsVersionInfoOpen] = useState<boolean>(false);
     const [isUsageGuideOpen, setIsUsageGuideOpen] = useState<boolean>(false);
+    
+    // PWA 관련 상태
+    const [showPWAPrompt, setShowPWAPrompt] = useState<boolean>(false);
     
     // API 키 및 오프라인 모드 상태 추가
     const [apiKey, setApiKey] = useState<string>(() => localStorage.getItem('nova-api-key') || '');
@@ -624,6 +765,11 @@ const App: React.FC = () => {
             return null;
         }
     }, [apiKey, isOfflineMode]);
+
+    // 테마 모드 변경 함수
+    const handleThemeChange = useCallback((mode: 'light' | 'dark' | 'system') => {
+        setThemeMode(mode);
+    }, []);
 
     const encouragementMessages = useMemo(() => [
         t('empty_encouragement_1'),
@@ -687,10 +833,69 @@ const App: React.FC = () => {
         }
     }, [t]);
 
+    
+    // 시스템 다크모드 감지 및 적용
+    useEffect(() => {
+        const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+        
+        const handleThemeChange = (e: MediaQueryListEvent) => {
+            if (themeMode === 'system') {
+                setIsDarkMode(e.matches);
+            }
+        };
+
+        // 테마 모드 변경 시 적용
+        if (themeMode === 'system') {
+            setIsDarkMode(mediaQuery.matches);
+        } else {
+            setIsDarkMode(themeMode === 'dark');
+        }
+
+        mediaQuery.addEventListener('change', handleThemeChange);
+        return () => mediaQuery.removeEventListener('change', handleThemeChange);
+    }, [themeMode]);
+
+    // PWA 설치 프롬프트 표시 로직
+    useEffect(() => {
+        const checkPWAPrompt = () => {
+            const isDismissed = localStorage.getItem('pwa-prompt-dismissed');
+            const isMobileDevice = isMobile();
+            const isInStandalone = isStandalone();
+            
+            if (isMobileDevice && !isInStandalone && !isDismissed) {
+                // 첫 방문 후 3초 뒤에 프롬프트 표시
+                const timer = setTimeout(() => {
+                    setShowPWAPrompt(true);
+                }, 3000);
+                
+                return () => clearTimeout(timer);
+            }
+        };
+
+        checkPWAPrompt();
+    }, []);
+
+    // Service Worker 등록
+    useEffect(() => {
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/Nova-AI-Planer/sw.js')
+                .then((registration) => {
+                    console.log('SW registered: ', registration);
+                })
+                .catch((registrationError) => {
+                    console.log('SW registration failed: ', registrationError);
+                });
+        }
+    }, []);
+
+    // 테마 설정 저장 및 다크모드 상태 저장 수정
+    useEffect(() => { 
+        localStorage.setItem('nova-theme', themeMode); 
+        localStorage.setItem('nova-dark-mode', JSON.stringify(isDarkMode)); 
+    }, [themeMode, isDarkMode]);
 
     useEffect(() => { localStorage.setItem('nova-lang', language); }, [language]);
     useEffect(() => { localStorage.setItem('nova-todos', JSON.stringify(todos)); }, [todos]);
-    useEffect(() => { localStorage.setItem('nova-dark-mode', JSON.stringify(isDarkMode)); }, [isDarkMode]);
     useEffect(() => { localStorage.setItem('nova-api-key', apiKey); }, [apiKey]);
     useEffect(() => { localStorage.setItem('nova-offline-mode', String(isOfflineMode)); }, [isOfflineMode]);
 
@@ -952,11 +1157,36 @@ const App: React.FC = () => {
             {isGoalAssistantOpen && <GoalAssistantModal onClose={() => setIsGoalAssistantOpen(false)} onAddTodo={handleAddTodo} onAddMultipleTodos={handleAddMultipleTodos} t={t} language={language} createAI={createAI} />}
             {editingTodo && <GoalAssistantModal onClose={() => setEditingTodo(null)} onEditTodo={handleEditTodo} existingTodo={editingTodo} t={t} language={language} createAI={createAI} />}
             {infoTodo && <GoalInfoModal todo={infoTodo} onClose={() => setInfoTodo(null)} t={t} createAI={createAI} />}
-            {isSettingsOpen && <SettingsModal onClose={() => setIsSettingsOpen(false)} isDarkMode={isDarkMode} onToggleDarkMode={() => setIsDarkMode(!isDarkMode)} backgroundTheme={backgroundTheme} onSetBackgroundTheme={setBackgroundTheme} onExportData={handleExportData} onImportData={handleImportData} setAlertConfig={setAlertConfig} onDeleteAllData={handleDeleteAllData} dataActionStatus={dataActionStatus} language={language} onSetLanguage={setLanguage} t={t} todos={todos} setToastMessage={setToastMessage} onOpenVersionInfo={() => setIsVersionInfoOpen(true)} onOpenUsageGuide={() => setIsUsageGuideOpen(true)} apiKey={apiKey} onSetApiKey={setApiKey} isOfflineMode={isOfflineMode} onToggleOfflineMode={() => setIsOfflineMode(!isOfflineMode)} />}
+            {isSettingsOpen && <SettingsModal 
+                onClose={() => setIsSettingsOpen(false)} 
+                isDarkMode={isDarkMode} 
+                onToggleDarkMode={() => setIsDarkMode(!isDarkMode)} 
+                themeMode={themeMode}
+                onThemeChange={handleThemeChange}
+                backgroundTheme={backgroundTheme} 
+                onSetBackgroundTheme={setBackgroundTheme} 
+                onExportData={handleExportData} 
+                onImportData={handleImportData} 
+                setAlertConfig={setAlertConfig} 
+                onDeleteAllData={handleDeleteAllData} 
+                dataActionStatus={dataActionStatus} 
+                language={language} 
+                onSetLanguage={setLanguage} 
+                t={t} 
+                todos={todos} 
+                setToastMessage={setToastMessage} 
+                onOpenVersionInfo={() => setIsVersionInfoOpen(true)} 
+                onOpenUsageGuide={() => setIsUsageGuideOpen(true)} 
+                apiKey={apiKey} 
+                onSetApiKey={setApiKey} 
+                isOfflineMode={isOfflineMode} 
+                onToggleOfflineMode={() => setIsOfflineMode(!isOfflineMode)} 
+            />}
             {isVersionInfoOpen && <VersionInfoModal onClose={() => setIsVersionInfoOpen(false)} t={t} />}
             {isUsageGuideOpen && <UsageGuideModal onClose={() => setIsUsageGuideOpen(false)} t={t} />}
             {alertConfig && <AlertModal title={alertConfig.title} message={alertConfig.message} onConfirm={() => { alertConfig.onConfirm?.(); setAlertConfig(null); }} onCancel={alertConfig.onCancel ? () => { alertConfig.onCancel?.(); setAlertConfig(null); } : undefined} confirmText={alertConfig.confirmText} cancelText={alertConfig.cancelText} isDestructive={alertConfig.isDestructive} t={t} />}
             {toastMessage && <div className="toast-notification">{toastMessage}</div>}
+            {showPWAPrompt && <PWAInstallPrompt onClose={() => setShowPWAPrompt(false)} />}
         </div>
     );
 };
@@ -1376,6 +1606,8 @@ const SettingsModal: React.FC<{
     onClose: () => void;
     isDarkMode: boolean;
     onToggleDarkMode: () => void;
+    themeMode: 'light' | 'dark' | 'system';
+    onThemeChange: (mode: 'light' | 'dark' | 'system') => void;
     backgroundTheme: string;
     onSetBackgroundTheme: (theme: string) => void;
     onExportData: () => void;
@@ -1395,7 +1627,7 @@ const SettingsModal: React.FC<{
     isOfflineMode: boolean;
     onToggleOfflineMode: () => void;
 }> = ({
-    onClose, isDarkMode, onToggleDarkMode, backgroundTheme, onSetBackgroundTheme,
+    onClose, isDarkMode, onToggleDarkMode, themeMode, onThemeChange, backgroundTheme, onSetBackgroundTheme,
     onExportData, onImportData, setAlertConfig, onDeleteAllData, dataActionStatus,
     language, onSetLanguage, t, todos, setToastMessage, onOpenVersionInfo, onOpenUsageGuide,
     apiKey, onSetApiKey, isOfflineMode, onToggleOfflineMode
@@ -1458,15 +1690,29 @@ const SettingsModal: React.FC<{
             case 'appearance':
                 return (
                     <>
-                        <div className="settings-section-header">{t('settings_dark_mode')}</div>
+                        <div className="settings-section-header">테마 모드</div>
                         <div className="settings-section-body">
-                            <label className="settings-item">
-                                <span>{t('settings_dark_mode')}</span>
-                                <div className="theme-toggle-switch">
-                                    <input type="checkbox" checked={isDarkMode} onChange={onToggleDarkMode} />
-                                    <span className="slider round"></span>
+                            <div className="settings-item nav-indicator" onClick={() => onThemeChange('light')}>
+                                <div>
+                                    <span>라이트 모드</span>
+                                    <div style={{ fontSize: '12px', opacity: 0.7, marginTop: '4px' }}>항상 밝은 테마 사용</div>
                                 </div>
-                            </label>
+                                {themeMode === 'light' && icons.check}
+                            </div>
+                            <div className="settings-item nav-indicator" onClick={() => onThemeChange('dark')}>
+                                <div>
+                                    <span>다크 모드</span>
+                                    <div style={{ fontSize: '12px', opacity: 0.7, marginTop: '4px' }}>항상 어두운 테마 사용</div>
+                                </div>
+                                {themeMode === 'dark' && icons.check}
+                            </div>
+                            <div className="settings-item nav-indicator" onClick={() => onThemeChange('system')}>
+                                <div>
+                                    <span>시스템 설정 따라가기</span>
+                                    <div style={{ fontSize: '12px', opacity: 0.7, marginTop: '4px' }}>기기의 다크모드 설정에 맞춰 자동 변경</div>
+                                </div>
+                                {themeMode === 'system' && icons.check}
+                            </div>
                         </div>
                         <div className="settings-section-header">{t('settings_background_header')}</div>
                         <div className="settings-section-body">
