@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import ReactDOM from 'react-dom/client';
+import { GoogleOAuthProvider, useGoogleLogin } from '@react-oauth/google';
 import { GoogleGenAI, Type } from "@google/genai";
+import { auth, googleProvider, db } from './firebase-config';
+import { signInWithPopup, signOut, onAuthStateChanged, User } from 'firebase/auth';
 import './index.css';
 
 // --- PWA 유틸리티 함수 ---
@@ -343,12 +346,14 @@ const translations = {
     delete_account_header: '데이터 삭제',
     delete_account_header_desc: '이 작업은 되돌릴 수 없으며, 모든 목표와 데이터가 영구적으로 삭제됩니다.',
     version_update_title: '새로운 기능',
-    version_update_1_title: 'AI 도우미 설정',
-    version_update_1_desc: 'Gemini API 키를 직접 설정하거나 오프라인 모드로 AI 없이도 앱을 사용할 수 있습니다.',
-    version_update_2_title: '목표 공유',
-    version_update_2_desc: '목표를 링크로 공유하고 단축 URL로 쉽게 전달하세요. 한국어도 완벽하게 지원합니다.',
-    version_update_3_title: '모던 스타일 UI',
-    version_update_3_desc: '세련된 모던 디자인 언어와 모바일 최적화로 더욱 직관적인 경험을 제공합니다.',
+    version_update_1_title: 'Firebase 클라우드 동기화',
+    version_update_1_desc: 'Google 로그인으로 목표와 설정값을 클라우드에 저장하고 불러올 수 있습니다. 여러 기기에서 동기화됩니다.',
+    version_update_2_title: '자동 설정 동기화',
+    version_update_2_desc: '언어, 테마, 배경 색상 등 모든 설정값이 클라우드에 저장되어 다른 기기에서도 동일하게 적용됩니다.',
+    version_update_3_title: '안전한 로그아웃',
+    version_update_3_desc: '로그아웃 시 모든 데이터가 클라우드에 저장되고, 로컬 데이터는 완전히 삭제되며 홈으로 이동합니다.',
+    version_update_4_title: '상태 표시 UI',
+    version_update_4_desc: '로그인, 로그아웃, 동기화 등의 작업 중 버튼 상태가 변화하여 진행 상황을 명확히 보여줍니다.',
   },
   en: {
     // Auth
@@ -547,12 +552,14 @@ const translations = {
     delete_account_header: 'Delete Data',
     delete_account_header_desc: 'This action is irreversible and will permanently delete all your goals and data.',
     version_update_title: "What's New",
-    version_update_1_title: 'AI Assistant Setup',
-    version_update_1_desc: 'Configure your Gemini API key directly or use offline mode to enjoy the app without AI features.',
-    version_update_2_title: 'Goal Sharing',
-    version_update_2_desc: 'Share your goals via links with short URL support. Perfect Unicode handling for all languages.',
-    version_update_3_title: 'Modern Style UI',
-    version_update_3_desc: 'Refined modern design language with mobile optimization for a more intuitive experience.',
+    version_update_1_title: 'Firebase Cloud Sync',
+    version_update_1_desc: 'Sign in with Google to save and load your goals and settings to the cloud. Sync across multiple devices.',
+    version_update_2_title: 'Auto Settings Sync',
+    version_update_2_desc: 'All settings like language, theme, and background color are saved to the cloud and applied consistently across devices.',
+    version_update_3_title: 'Secure Logout',
+    version_update_3_desc: 'All data is saved to the cloud before logout, and local data is completely deleted with automatic redirect to home.',
+    version_update_4_title: 'Status Indicator UI',
+    version_update_4_desc: 'Button states change during login, logout, and sync operations to clearly show progress.',
   }
 };
 
@@ -574,7 +581,7 @@ const icons = {
     ai: <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3L14.34 8.66L20 11L14.34 13.34L12 19L9.66 13.34L4 11L9.66 8.66L12 3Z"/><path d="M5 21L7 16"/><path d="M19 21L17 16"/></svg>,
     flame: <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"></path></svg>,
     data: <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"></path><path d="M22 12A10 10 0 0 0 12 2v10z"></path></svg>,
-    background: <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>,
+    background: <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>,
     account: <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>,
     infoCircle: <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>,
     help: <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>,
@@ -806,6 +813,231 @@ const App: React.FC = () => {
     // API 키 및 오프라인 모드 상태 추가
     const [apiKey, setApiKey] = useState<string>(() => localStorage.getItem('nova-api-key') || '');
     const [isOfflineMode, setIsOfflineMode] = useState<boolean>(() => localStorage.getItem('nova-offline-mode') === 'true');
+    const [googleUser, setGoogleUser] = useState<User | null>(null);
+    const [shareableLink, setShareableLink] = useState<string>('');
+    const [isGeneratingLink, setIsGeneratingLink] = useState<boolean>(false);
+    
+    // Firebase 관련 로딩 상태
+    const [isGoogleLoggingIn, setIsGoogleLoggingIn] = useState<boolean>(false);
+    const [isGoogleLoggingOut, setIsGoogleLoggingOut] = useState<boolean>(false);
+    const [isSyncingData, setIsSyncingData] = useState<boolean>(false);
+    const [isLoadingData, setIsLoadingData] = useState<boolean>(false);
+
+    // Firebase 로그인 상태 감시
+    useEffect(() => {
+        const unsubscribe = onAuthStateChanged(auth, (user) => {
+            setGoogleUser(user);
+            if (user) {
+                localStorage.setItem('nova-user-email', user.email || '');
+                localStorage.setItem('nova-user-name', user.displayName || '');
+            } else {
+                localStorage.removeItem('nova-user-email');
+                localStorage.removeItem('nova-user-name');
+            }
+        });
+        return () => unsubscribe();
+    }, []);
+
+    // Firebase Google 로그인 핸들러
+    const handleFirebaseGoogleLogin = useCallback(async () => {
+        setIsGoogleLoggingIn(true);
+        try {
+            const result = await signInWithPopup(auth, googleProvider);
+            setGoogleUser(result.user);
+            setToastMessage('✅ Google 로그인 성공!');
+            
+            // 로그인 성공 후 데이터 불러오기
+            setTimeout(async () => {
+                try {
+                    const { doc, getDoc } = await import('firebase/firestore');
+                    
+                    // 1. 목표 데이터 불러오기
+                    const todosRef = doc(db, 'users', result.user.uid, 'data', 'todos');
+                    const todosSnap = await getDoc(todosRef);
+                    
+                    if (todosSnap.exists()) {
+                        const todosData = todosSnap.data();
+                        setTodos(todosData.todos || []);
+                    }
+                    
+                    // 2. 설정값 불러오기 (language, theme, colorMode 등)
+                    const settingsRef = doc(db, 'users', result.user.uid, 'data', 'settings');
+                    const settingsSnap = await getDoc(settingsRef);
+                    
+                    if (settingsSnap.exists()) {
+                        const settingsData = settingsSnap.data();
+                        if (settingsData.language) setLanguage(settingsData.language);
+                        if (settingsData.themeMode) setThemeMode(settingsData.themeMode);
+                        if (settingsData.isDarkMode !== undefined) setIsDarkMode(settingsData.isDarkMode);
+                        if (settingsData.backgroundTheme) setBackgroundTheme(settingsData.backgroundTheme);
+                    }
+                    
+                    setToastMessage('✅ 로그인 완료! 데이터 로드됨');
+                } catch (error) {
+                    console.error('데이터 로드 실패:', error);
+                    setToastMessage('⚠️ 로그인은 성공했으나 데이터 로드 실패');
+                }
+                setIsGoogleLoggingIn(false);
+                setTimeout(() => setToastMessage(''), 3000);
+            }, 500);
+            
+            setTimeout(() => setToastMessage(''), 3000);
+        } catch (error: any) {
+            console.error('Google 로그인 오류:', error);
+            if (error.code !== 'auth/popup-closed-by-user') {
+                setToastMessage('❌ 로그인 실패: ' + error.message);
+                setTimeout(() => setToastMessage(''), 3000);
+            }
+            setIsGoogleLoggingIn(false);
+        }
+    }, []);
+
+    // Firebase 로그아웃 핸들러 (로그아웃 전에 데이터 저장)
+    const handleFirebaseLogout = useCallback(async () => {
+        setIsGoogleLoggingOut(true);
+        try {
+            // 1. 로그아웃 전에 현재 데이터 저장
+            if (googleUser) {
+                setToastMessage('⏳ 데이터 저장 중...');
+                
+                const sanitizedTodos = todos.filter(todo => todo != null);
+                const { doc, setDoc, serverTimestamp } = await import('firebase/firestore');
+                
+                // 목표 데이터 저장
+                const todosRef = doc(db, 'users', googleUser.uid, 'data', 'todos');
+                await setDoc(todosRef, {
+                    todos: sanitizedTodos,
+                    lastSyncTime: serverTimestamp(),
+                    totalGoals: sanitizedTodos.length,
+                    syncedAt: new Date().toISOString()
+                });
+                
+                // 설정값 저장 (colorMode, language, theme)
+                const settingsRef = doc(db, 'users', googleUser.uid, 'data', 'settings');
+                await setDoc(settingsRef, {
+                    language: language,
+                    themeMode: themeMode,
+                    isDarkMode: isDarkMode,
+                    backgroundTheme: backgroundTheme,
+                    updatedAt: serverTimestamp()
+                });
+            }
+            
+            // 2. 로그아웃 실행
+            await signOut(auth);
+            
+            // 3. 모든 로컬 데이터 삭제
+            setGoogleUser(null);
+            setTodos([]);
+            setLanguage('ko');
+            setBackgroundTheme('default');
+            setThemeMode('system');
+            setIsDarkMode(getSystemTheme() === 'dark');
+            
+            // 4. 홈으로 이동
+            setEditingTodo(null);
+            setIsSettingsOpen(false);
+            setIsGoalAssistantOpen(false);
+            
+            setToastMessage('✅ 로그아웃 완료');
+            setTimeout(() => setToastMessage(''), 3000);
+            setIsGoogleLoggingOut(false);
+        } catch (error: any) {
+            console.error('로그아웃 오류:', error);
+            setToastMessage('❌ 로그아웃 실패');
+            setTimeout(() => setToastMessage(''), 3000);
+            setIsGoogleLoggingOut(false);
+        }
+    }, [googleUser, todos, language, themeMode, isDarkMode, backgroundTheme]);
+
+    // Firebase에 목표 + 설정 데이터 동기화
+    const handleSyncDataToFirebase = useCallback(async () => {
+        if (!googleUser) {
+            setToastMessage('❌ 먼저 로그인해주세요');
+            setTimeout(() => setToastMessage(''), 3000);
+            return;
+        }
+
+        setIsSyncingData(true);
+        try {
+            const sanitizedTodos = todos.filter(todo => todo != null);
+            const { doc, setDoc, serverTimestamp } = await import('firebase/firestore');
+            
+            // 1. 목표 데이터 저장
+            const todosRef = doc(db, 'users', googleUser.uid, 'data', 'todos');
+            await setDoc(todosRef, {
+                todos: sanitizedTodos,
+                lastSyncTime: serverTimestamp(),
+                totalGoals: sanitizedTodos.length,
+                syncedAt: new Date().toISOString()
+            });
+            
+            // 2. 설정값도 저장 (language, theme, colorMode 등)
+            const settingsRef = doc(db, 'users', googleUser.uid, 'data', 'settings');
+            await setDoc(settingsRef, {
+                language: language,
+                themeMode: themeMode,
+                isDarkMode: isDarkMode,
+                backgroundTheme: backgroundTheme,
+                updatedAt: serverTimestamp()
+            });
+            
+            setToastMessage('✅ 데이터 동기화 완료! (목표: ' + sanitizedTodos.length + '개, 설정 저장)');
+            setTimeout(() => setToastMessage(''), 3000);
+            setIsSyncingData(false);
+        } catch (error: any) {
+            console.error('동기화 오류:', error);
+            setToastMessage('❌ 동기화 실패: ' + error.message);
+            setTimeout(() => setToastMessage(''), 3000);
+            setIsSyncingData(false);
+        }
+    }, [googleUser, todos, language, themeMode, isDarkMode, backgroundTheme]);
+
+    // Firebase에서 목표 + 설정 데이터 불러오기
+    const handleLoadDataFromFirebase = useCallback(async () => {
+        if (!googleUser) {
+            setToastMessage('❌ 먼저 로그인해주세요');
+            setTimeout(() => setToastMessage(''), 3000);
+            return;
+        }
+
+        setIsLoadingData(true);
+        try {
+            const { doc, getDoc } = await import('firebase/firestore');
+            
+            // 1. 목표 데이터 불러오기
+            const todosRef = doc(db, 'users', googleUser.uid, 'data', 'todos');
+            const todosSnap = await getDoc(todosRef);
+            
+            if (todosSnap.exists()) {
+                const todosData = todosSnap.data();
+                setTodos(todosData.todos || []);
+            }
+            
+            // 2. 설정값 불러오기 (language, theme, colorMode 등)
+            const settingsRef = doc(db, 'users', googleUser.uid, 'data', 'settings');
+            const settingsSnap = await getDoc(settingsRef);
+            
+            if (settingsSnap.exists()) {
+                const settingsData = settingsSnap.data();
+                if (settingsData.language) setLanguage(settingsData.language);
+                if (settingsData.themeMode) setThemeMode(settingsData.themeMode);
+                if (settingsData.isDarkMode !== undefined) setIsDarkMode(settingsData.isDarkMode);
+                if (settingsData.backgroundTheme) setBackgroundTheme(settingsData.backgroundTheme);
+            }
+            
+            const todosCount = todosSnap.exists() ? (todosSnap.data().todos?.length || 0) : 0;
+            setToastMessage('✅ 데이터 로드 완료! (목표: ' + todosCount + '개, 설정 로드됨)');
+            setTimeout(() => setToastMessage(''), 3000);
+            setIsLoadingData(false);
+        } catch (error: any) {
+            console.error('로드 오류:', error);
+            setToastMessage('❌ 로드 실패: ' + error.message);
+            setTimeout(() => setToastMessage(''), 3000);
+            setIsLoadingData(false);
+        }
+    }, [googleUser]);
+
 
     const t = useCallback((key: string): any => {
         return translations[language][key] || key;
@@ -1240,6 +1472,15 @@ const App: React.FC = () => {
                 onSetApiKey={setApiKey} 
                 isOfflineMode={isOfflineMode} 
                 onToggleOfflineMode={() => setIsOfflineMode(!isOfflineMode)} 
+                googleUser={googleUser}
+                onGoogleLogin={handleFirebaseGoogleLogin}
+                onGoogleLogout={handleFirebaseLogout}
+                onSyncDataToFirebase={handleSyncDataToFirebase}
+                onLoadDataFromFirebase={handleLoadDataFromFirebase}
+                isGoogleLoggingIn={isGoogleLoggingIn}
+                isGoogleLoggingOut={isGoogleLoggingOut}
+                isSyncingData={isSyncingData}
+                isLoadingData={isLoadingData}
             />}
             {isVersionInfoOpen && <VersionInfoModal onClose={() => setIsVersionInfoOpen(false)} t={t} />}
             {isUsageGuideOpen && <UsageGuideModal onClose={() => setIsUsageGuideOpen(false)} t={t} />}
@@ -1317,7 +1558,9 @@ const Header: React.FC<{ t: (key: string) => any; isSelectionMode: boolean; sele
                 {isSelectionMode ? (
                     <button onClick={onDeleteSelected} className="header-action-button destructive">{t('delete_selected_button_label').replace('{count}', String(selectedCount))}</button>
                 ) : (
-                    <button onClick={onAddGoal} className="header-icon-button" aria-label={t('add_new_goal_button_label')}>{icons.add}</button>
+                    <>
+                        <button onClick={onAddGoal} className="header-icon-button" aria-label={t('add_new_goal_button_label')}>{icons.add}</button>
+                    </>
                 )}
             </div>
         </header>
@@ -1685,11 +1928,23 @@ const SettingsModal: React.FC<{
     onSetApiKey: (key: string) => void;
     isOfflineMode: boolean;
     onToggleOfflineMode: () => void;
+    googleUser: User | null;
+    onGoogleLogin: () => void;
+    onGoogleLogout: () => void;
+    onSyncDataToFirebase: () => void;
+    onLoadDataFromFirebase: () => void;
+    isGoogleLoggingIn?: boolean;
+    isGoogleLoggingOut?: boolean;
+    isSyncingData?: boolean;
+    isLoadingData?: boolean;
 }> = ({
     onClose, isDarkMode, onToggleDarkMode, themeMode, onThemeChange, backgroundTheme, onSetBackgroundTheme,
     onExportData, onImportData, setAlertConfig, onDeleteAllData, dataActionStatus,
     language, onSetLanguage, t, todos, setToastMessage, onOpenVersionInfo, onOpenUsageGuide,
-    apiKey, onSetApiKey, isOfflineMode, onToggleOfflineMode
+    apiKey, onSetApiKey, isOfflineMode, onToggleOfflineMode,
+    googleUser, onGoogleLogin, onGoogleLogout, onSyncDataToFirebase, onLoadDataFromFirebase,
+    isGoogleLoggingIn = false, isGoogleLoggingOut = false, isSyncingData = false, isLoadingData = false
+
 }) => {
     const [isClosing, handleClose] = useModalAnimation(onClose);
     const [activeTab, setActiveTab] = useState('appearance');
@@ -1832,7 +2087,7 @@ const SettingsModal: React.FC<{
                             <div className="settings-item nav-indicator" onClick={onOpenVersionInfo}>
                                 <span>{t('settings_version')}</span>
                                 <div className="settings-item-value-with-icon">
-                                    <span>1.2</span>
+                                    <span>1.5</span>
                                     {icons.forward}
                                 </div>
                             </div>
@@ -1856,6 +2111,77 @@ const SettingsModal: React.FC<{
             case 'data':
                 return (
                     <>
+                        <div className="settings-section-header">계정</div>
+                        <div className="settings-section-body">
+                            {googleUser ? (
+                                <div>
+                                    <div className="settings-item">
+                                        <div>
+                                            <span>Google 계정</span>
+                                            <div style={{ fontSize: '12px', opacity: 0.7, marginTop: '4px' }}>
+                                                📧 {googleUser.email}
+                                            </div>
+                                            <div style={{ fontSize: '12px', opacity: 0.7, marginTop: '4px' }}>
+                                                👤 {googleUser.displayName}
+                                            </div>
+                                        </div>
+                                        <span style={{ color: 'var(--success-color, #4CAF50)' }}>✓</span>
+                                    </div>
+                                    <button className="settings-item action-item" onClick={onSyncDataToFirebase} disabled={isSyncingData}>
+                                        <span className="action-text">{isSyncingData ? '⏳ 저장중...' : '☁️ 클라우드에 저장'}</span>
+                                    </button>
+                                    <button className="settings-item action-item" onClick={onLoadDataFromFirebase} disabled={isLoadingData}>
+                                        <span className="action-text">{isLoadingData ? '⏳ 로드중...' : '☁️ 클라우드에서 불러오기'}</span>
+                                    </button>
+                                    <button className="settings-item action-item" onClick={onGoogleLogout} disabled={isGoogleLoggingOut} style={{opacity: isGoogleLoggingOut ? 0.6 : 1}}>
+                                        <span className="action-text">{isGoogleLoggingOut ? '⏳ 로그아웃 중...' : '🔓 로그아웃'}</span>
+                                    </button>
+                                </div>
+                            ) : (
+                                <div style={{ display: 'flex', justifyContent: 'center', padding: '12px 0' }}>
+                                    <button 
+                                        onClick={onGoogleLogin}
+                                        disabled={isGoogleLoggingIn}
+                                        style={{ 
+                                            backgroundColor: isGoogleLoggingIn ? '#E0E0E0' : 'white',
+                                            border: '1px solid #D3D3D3',
+                                            borderRadius: '24px',
+                                            padding: '8px 20px',
+                                            fontSize: '14px',
+                                            fontWeight: '500',
+                                            cursor: isGoogleLoggingIn ? 'not-allowed' : 'pointer',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '8px',
+                                            color: isGoogleLoggingIn ? '#999999' : '#1F2937',
+                                            transition: 'all 0.2s',
+                                            opacity: isGoogleLoggingIn ? 0.6 : 1
+                                        }}
+                                        onMouseEnter={(e) => {
+                                            if (!isGoogleLoggingIn) {
+                                                e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.12)';
+                                                e.currentTarget.style.backgroundColor = '#F8F9FA';
+                                            }
+                                        }}
+                                        onMouseLeave={(e) => {
+                                            if (!isGoogleLoggingIn) {
+                                                e.currentTarget.style.boxShadow = 'none';
+                                                e.currentTarget.style.backgroundColor = 'white';
+                                            }
+                                        }}
+                                    >
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                            <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                                            <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                                            <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+                                            <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+                                        </svg>
+                                        {isGoogleLoggingIn ? '로그인 중...' : 'Google로 로그인'}
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+
                         <div className="settings-section-header">{t('settings_data_header')}</div>
                         <div className="settings-section-body">
                             <button className="settings-item action-item" onClick={onExportData} disabled={dataActionStatus !== 'idle'}><span className="action-text">{dataActionStatus === 'exporting' ? t('data_exporting') : t('settings_export_data')}</span></button>
@@ -1934,12 +2260,13 @@ const SettingsModal: React.FC<{
 
 const VersionInfoModal: React.FC<{ onClose: () => void; t: (key: string) => any; }> = ({ onClose, t }) => {
     const [isClosing, handleClose] = useModalAnimation(onClose);
-    const buildNumber = "1.2 (25.10.20)";
+    const buildNumber = "1.5 (25.10.25)";
 
     const changelogItems = [
-        { icon: icons.ai, titleKey: 'version_update_1_title', descKey: 'version_update_1_desc' },
-        { icon: icons.globe, titleKey: 'version_update_2_title', descKey: 'version_update_2_desc' },
-        { icon: icons.background, titleKey: 'version_update_3_title', descKey: 'version_update_3_desc' },
+        { icon: icons.data, titleKey: 'version_update_1_title', descKey: 'version_update_1_desc' },
+        { icon: icons.settings, titleKey: 'version_update_2_title', descKey: 'version_update_2_desc' },
+        { icon: icons.account, titleKey: 'version_update_3_title', descKey: 'version_update_3_desc' },
+        { icon: icons.info, titleKey: 'version_update_4_title', descKey: 'version_update_4_desc' },
     ];
 
     return (

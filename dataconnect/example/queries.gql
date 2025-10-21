@@ -1,0 +1,29 @@
+mutation CreateTodo($userId: UUID!, $title: String!, $isCompleted: Boolean!, $createdAt: Timestamp!) @auth(level: USER) {
+  todo_insert(data: {userId: $userId, title: $title, isCompleted: $isCompleted, createdAt: $createdAt})
+}
+
+query ListTodosForUser($userId: UUID!) @auth(level: USER) {
+  todos(where: {userId: {eq: $userId}}) {
+    id
+    title
+    isCompleted
+    description
+    dueDate
+    category
+  }
+}
+
+mutation UpdateGoalTaskCompletion($id: UUID!, $isCompleted: Boolean!) @auth(level: USER) {
+  goalTask_update(key: {id: $id}, data: {isCompleted: $isCompleted})
+}
+
+query ListPublicScheduleEvents @auth(level: PUBLIC, insecureReason: "This operation is safe to expose to the public") {
+  scheduleEvents {
+    id
+    title
+    description
+    startTime
+    endTime
+    location
+  }
+}

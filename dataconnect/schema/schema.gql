@@ -1,0 +1,44 @@
+type User @table {
+  username: String!
+  email: String!
+  preferredLanguage: String
+  timezone: String
+}
+
+type Todo @table {
+  user: User!
+  title: String!
+  isCompleted: Boolean!
+  createdAt: Timestamp!
+  description: String
+  dueDate: Timestamp
+  category: String
+}
+
+type Goal @table {
+  user: User!
+  name: String!
+  status: String!
+  createdAt: Timestamp!
+  description: String
+  targetDate: Timestamp
+}
+
+type ScheduleEvent @table {
+  user: User!
+  title: String!
+  startTime: Timestamp!
+  endTime: Timestamp!
+  createdAt: Timestamp!
+  description: String
+  location: String
+  reminderTime: Timestamp
+}
+
+type GoalTask @table {
+  goal: Goal!
+  description: String!
+  isCompleted: Boolean!
+  dueDate: Timestamp
+  linkedTodo: Todo
+}
