@@ -8,8 +8,15 @@ import './index.css';
 
 // --- PWA 유틸리티 함수 ---
 const isMobile = () => {
-  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
-    (navigator.maxTouchPoints && navigator.maxTouchPoints > 2 && /MacIntel/.test(navigator.platform));
+  // 더 정확한 모바일 감지
+  const mobileRegex = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile|Tablet/i;
+  const isUserAgentMobile = mobileRegex.test(navigator.userAgent);
+  const isTouchDevice = navigator.maxTouchPoints && navigator.maxTouchPoints > 2;
+  const isSmallScreen = window.innerWidth <= 768;
+  
+  console.log('Mobile detection:', { isUserAgentMobile, isTouchDevice, isSmallScreen, userAgent: navigator.userAgent });
+  
+  return isUserAgentMobile || (isTouchDevice && isSmallScreen);
 };
 
 const isStandalone = () => {
@@ -135,6 +142,17 @@ const sendTestNotification = async (type: 'deadline' | 'suggestion' | 'achieveme
     console.error('Failed to send test notification:', error);
     alert('알림 전송 실패: ' + (error as any).message);
   }
+};
+
+// --- 미리알림 시간 체크 함수 ---
+const isReminderTimeValid = (startTime: string, endTime: string): boolean => {
+  const now = new Date();
+  const hours = String(now.getHours()).padStart(2, '0');
+  const minutes = String(now.getMinutes()).padStart(2, '0');
+  const currentTime = `${hours}:${minutes}`;
+  
+  // startTime <= currentTime < endTime 범위 확인
+  return currentTime >= startTime && currentTime < endTime;
 };
 
 // --- 구독 정보를 서버로 전송 ---
@@ -424,6 +442,9 @@ const translations = {
     notification_achievement_desc: '목표를 달성했을 때 축하해줍니다.',
     notification_reminder: '일반 미리알림',
     notification_reminder_desc: '설정한 시간에 미리알림을 받습니다.',
+    reminder_time_settings_title: '미리알림 시간 설정',
+    reminder_start_time: '시작 시간',
+    reminder_end_time: '종료 시간',
     language_name: '한국어 (대한민국)',
     language_modal_title: '언어',
     settings_section_background: '화면',
@@ -648,6 +669,9 @@ const translations = {
     notification_achievement_desc: 'Celebrate when you achieve a goal.',
     notification_reminder: 'General Reminder',
     notification_reminder_desc: 'Get reminded at scheduled times.',
+    reminder_time_settings_title: 'Reminder Time Settings',
+    reminder_start_time: 'Start Time',
+    reminder_end_time: 'End Time',
     language_name: 'English (US)',
     language_modal_title: 'Language',
     settings_section_background: 'Appearance',
@@ -954,10 +978,49 @@ const App: React.FC = () => {
             reminder: true       // 일반 미리알림
         };
     });
+
+    // 미리알림 시간 설정
+    const [reminderTimeSettings, setReminderTimeSettings] = useState<{
+        enabled: boolean;
+        startTime: string;    // "09:00" 형식
+        endTime: string;      // "18:00" 형식
+    }>(() => {
+        const saved = localStorage.getItem('nova-reminder-time-settings');
+        if (saved) {
+            return JSON.parse(saved);
+        }
+        return {
+            enabled: true,
+            startTime: '09:00',
+            endTime: '18:00'
+        };
+    });
+
+    // 미리알림 리스트 (사용자가 추가한 미리알림들)
+    interface Reminder {
+        id: string;
+        title: string;
+        time: string;  // "14:30" 형식
+        description?: string;
+        enabled: boolean;
+        createdAt: string;
+    }
+
+    const [reminders, setReminders] = useState<Reminder[]>(() => {
+        const saved = localStorage.getItem('nova-reminders');
+        if (saved) {
+            return JSON.parse(saved);
+        }
+        return [];
+    });
     
     // API 키 및 오프라인 모드 상태 추가
     const [apiKey, setApiKey] = useState<string>(() => localStorage.getItem('nova-api-key') || '');
     const [isOfflineMode, setIsOfflineMode] = useState<boolean>(() => localStorage.getItem('nova-offline-mode') === 'true');
+    const [isAutoSyncEnabled, setIsAutoSyncEnabled] = useState<boolean>(() => {
+        const saved = localStorage.getItem('nova-auto-sync-enabled');
+        return saved !== null ? saved === 'true' : true; // 기본값: true
+    });
     const [googleUser, setGoogleUser] = useState<User | null>(null);
     const [shareableLink, setShareableLink] = useState<string>('');
     const [isGeneratingLink, setIsGeneratingLink] = useState<boolean>(false);
@@ -1018,6 +1081,8 @@ const App: React.FC = () => {
                         if (settingsData.apiKey) setApiKey(settingsData.apiKey);
                         if (settingsData.isNotificationsEnabled !== undefined) setIsNotificationsEnabled(settingsData.isNotificationsEnabled);
                         if (settingsData.notificationSettings) setNotificationSettings(settingsData.notificationSettings);
+                        if (settingsData.reminderTimeSettings) setReminderTimeSettings(settingsData.reminderTimeSettings);
+                        if (settingsData.reminders) setReminders(settingsData.reminders);
                     }
                     
                     setToastMessage('✅ 로그인 완료! 데이터 로드됨');
@@ -1130,6 +1195,8 @@ const App: React.FC = () => {
                 apiKey: apiKey,
                 isNotificationsEnabled: isNotificationsEnabled,
                 notificationSettings: notificationSettings,
+                reminderTimeSettings: reminderTimeSettings,
+                reminders: reminders,
                 updatedAt: serverTimestamp()
             });
             
@@ -1178,6 +1245,8 @@ const App: React.FC = () => {
                 if (settingsData.apiKey) setApiKey(settingsData.apiKey);
                 if (settingsData.isNotificationsEnabled !== undefined) setIsNotificationsEnabled(settingsData.isNotificationsEnabled);
                 if (settingsData.notificationSettings) setNotificationSettings(settingsData.notificationSettings);
+                if (settingsData.reminderTimeSettings) setReminderTimeSettings(settingsData.reminderTimeSettings);
+                if (settingsData.reminders) setReminders(settingsData.reminders);
             }
             
             const todosCount = todosSnap.exists() ? (todosSnap.data().todos?.length || 0) : 0;
@@ -1306,8 +1375,11 @@ const App: React.FC = () => {
         const isMobileDevice = isMobile();
         const isInStandalone = isStandalone();
         
+        console.log('PWA Check:', { isMobileDevice, isInStandalone, isDismissed, userAgent: navigator.userAgent });
+        
         if (isMobileDevice && !isInStandalone && !isDismissed) {
-            // 모바일 기기에서 PWA가 설치되지 않았으면 즉시 표시
+            // 모바일 기기에서 PWA가 설치되지 않았으면 즉시 표시 (지연 제거)
+            console.log('Showing PWA prompt immediately');
             setShowPWAPrompt(true);
         }
     }, []);
@@ -1348,10 +1420,23 @@ const App: React.FC = () => {
 
     useEffect(() => { localStorage.setItem('nova-lang', language); }, [language]);
     useEffect(() => { localStorage.setItem('nova-todos', JSON.stringify(todos)); }, [todos]);
+    
+    // 자동동기화: todos 변경 시 Firebase에 자동 저장
+    useEffect(() => {
+        if (isAutoSyncEnabled && googleUser && todos.length > 0) {
+            const timer = setTimeout(() => {
+                handleSyncDataToFirebase();
+            }, 2000); // 2초 딜레이 (사용자가 입력을 마칠 때까지 대기)
+            return () => clearTimeout(timer);
+        }
+    }, [todos, isAutoSyncEnabled, googleUser]);
     useEffect(() => { localStorage.setItem('nova-api-key', apiKey); }, [apiKey]);
     useEffect(() => { localStorage.setItem('nova-offline-mode', String(isOfflineMode)); }, [isOfflineMode]);
+    useEffect(() => { localStorage.setItem('nova-auto-sync-enabled', String(isAutoSyncEnabled)); }, [isAutoSyncEnabled]);
     useEffect(() => { localStorage.setItem('nova-notifications-enabled', String(isNotificationsEnabled)); }, [isNotificationsEnabled]);
     useEffect(() => { localStorage.setItem('nova-notification-settings', JSON.stringify(notificationSettings)); }, [notificationSettings]);
+    useEffect(() => { localStorage.setItem('nova-reminder-time-settings', JSON.stringify(reminderTimeSettings)); }, [reminderTimeSettings]);
+    useEffect(() => { localStorage.setItem('nova-reminders', JSON.stringify(reminders)); }, [reminders]);
 
     useEffect(() => {
         const selectedTheme = backgroundOptions.find(opt => opt.id === backgroundTheme) || backgroundOptions[0];
@@ -1648,6 +1733,10 @@ const App: React.FC = () => {
                 setIsNotificationsEnabled={setIsNotificationsEnabled}
                 notificationSettings={notificationSettings}
                 setNotificationSettings={setNotificationSettings}
+                reminderTimeSettings={reminderTimeSettings}
+                setReminderTimeSettings={setReminderTimeSettings}
+                isAutoSyncEnabled={isAutoSyncEnabled}
+                setIsAutoSyncEnabled={setIsAutoSyncEnabled}
             />}
             {isVersionInfoOpen && <VersionInfoModal onClose={() => setIsVersionInfoOpen(false)} t={t} />}
             {isUsageGuideOpen && <UsageGuideModal onClose={() => setIsUsageGuideOpen(false)} t={t} />}
@@ -2108,6 +2197,10 @@ const SettingsModal: React.FC<{
     setIsNotificationsEnabled: (enabled: boolean) => void;
     notificationSettings: { deadline: boolean; suggestion: boolean; achievement: boolean; reminder: boolean };
     setNotificationSettings: (settings: { deadline: boolean; suggestion: boolean; achievement: boolean; reminder: boolean }) => void;
+    reminderTimeSettings: { enabled: boolean; startTime: string; endTime: string };
+    setReminderTimeSettings: (settings: { enabled: boolean; startTime: string; endTime: string }) => void;
+    isAutoSyncEnabled: boolean;
+    setIsAutoSyncEnabled: (enabled: boolean) => void;
 }> = ({
     onClose, isDarkMode, onToggleDarkMode, themeMode, onThemeChange, backgroundTheme, onSetBackgroundTheme,
     onExportData, onImportData, setAlertConfig, onDeleteAllData, dataActionStatus,
@@ -2115,7 +2208,8 @@ const SettingsModal: React.FC<{
     apiKey, onSetApiKey, isOfflineMode, onToggleOfflineMode,
     googleUser, onGoogleLogin, onGoogleLogout, onSyncDataToFirebase, onLoadDataFromFirebase,
     isGoogleLoggingIn = false, isGoogleLoggingOut = false, isSyncingData = false, isLoadingData = false,
-    isNotificationsEnabled, setIsNotificationsEnabled, notificationSettings, setNotificationSettings
+    isNotificationsEnabled, setIsNotificationsEnabled, notificationSettings, setNotificationSettings,
+    reminderTimeSettings, setReminderTimeSettings, isAutoSyncEnabled, setIsAutoSyncEnabled
 
 }) => {
     const [isClosing, handleClose] = useModalAnimation(onClose);
@@ -2331,6 +2425,34 @@ const SettingsModal: React.FC<{
                                             <span className="slider round"></span>
                                         </div>
                                     </label>
+                                    {notificationSettings.reminder && (
+                                        <div style={{ paddingLeft: '16px', marginTop: '12px', borderLeft: '3px solid var(--primary-color, #6366f1)' }}>
+                                            <div style={{ fontSize: '12px', fontWeight: '500', marginBottom: '8px' }}>⏰ {t('reminder_time_settings_title')}</div>
+                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '12px' }}>
+                                                <div>
+                                                    <label style={{ fontSize: '11px', opacity: 0.7, display: 'block', marginBottom: '4px' }}>{t('reminder_start_time')}</label>
+                                                    <input 
+                                                        type="time" 
+                                                        value={reminderTimeSettings.startTime}
+                                                        onChange={(e) => setReminderTimeSettings({ ...reminderTimeSettings, startTime: e.target.value })}
+                                                        style={{ width: '100%', padding: '6px', borderRadius: '6px', border: '1px solid rgba(0,0,0,0.1)', fontSize: '12px' }}
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label style={{ fontSize: '11px', opacity: 0.7, display: 'block', marginBottom: '4px' }}>{t('reminder_end_time')}</label>
+                                                    <input 
+                                                        type="time" 
+                                                        value={reminderTimeSettings.endTime}
+                                                        onChange={(e) => setReminderTimeSettings({ ...reminderTimeSettings, endTime: e.target.value })}
+                                                        style={{ width: '100%', padding: '6px', borderRadius: '6px', border: '1px solid rgba(0,0,0,0.1)', fontSize: '12px' }}
+                                                    />
+                                                </div>
+                                            </div>
+                                            <div style={{ fontSize: '11px', opacity: 0.6, padding: '8px', backgroundColor: 'rgba(0,0,0,0.03)', borderRadius: '6px' }}>
+                                                💡 {reminderTimeSettings.startTime} ~ {reminderTimeSettings.endTime}에만 알림을 받습니다.
+                                            </div>
+                                        </div>
+                                    )}
                                 </>
                             )}
                         </div>
@@ -2425,6 +2547,20 @@ const SettingsModal: React.FC<{
                                     <button className="settings-item action-item" onClick={onLoadDataFromFirebase} disabled={isLoadingData}>
                                         <span className="action-text">{isLoadingData ? '⏳ 로드중...' : '☁️ 클라우드에서 불러오기'}</span>
                                     </button>
+                                    <label className="settings-item">
+                                        <div>
+                                            <span>⚡ 자동 동기화</span>
+                                            <div style={{ fontSize: '12px', opacity: 0.7, marginTop: '4px' }}>목표 변경 시 자동으로 저장</div>
+                                        </div>
+                                        <div className="theme-toggle-switch">
+                                            <input 
+                                                type="checkbox" 
+                                                checked={isAutoSyncEnabled}
+                                                onChange={(e) => setIsAutoSyncEnabled(e.target.checked)}
+                                            />
+                                            <span className="slider round"></span>
+                                        </div>
+                                    </label>
                                     <button className="settings-item action-item" onClick={onGoogleLogout} disabled={isGoogleLoggingOut} style={{opacity: isGoogleLoggingOut ? 0.6 : 1}}>
                                         <span className="action-text">{isGoogleLoggingOut ? '⏳ 로그아웃 중...' : '🔓 로그아웃'}</span>
                                     </button>
