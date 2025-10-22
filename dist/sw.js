@@ -98,3 +98,21 @@ self.addEventListener('notificationclick', function(event) {
 self.addEventListener('notificationclose', function(event) {
   console.log('Notification closed:', event.notification.tag);
 });
+
+// 클라이언트에서 보낸 메시지 처리 (테스트 알림용)
+self.addEventListener('message', function(event) {
+  console.log('Service Worker received message:', event.data);
+  
+  if (event.data && event.data.type === 'SHOW_NOTIFICATION') {
+    const { title, options } = event.data;
+    console.log('Showing notification:', title, options);
+    
+    self.registration.showNotification(title, {
+      icon: '/Nova-AI-Planer/favicon.svg',
+      badge: '/Nova-AI-Planer/favicon.svg',
+      ...options
+    }).catch(err => {
+      console.error('Failed to show notification:', err);
+    });
+  }
+});

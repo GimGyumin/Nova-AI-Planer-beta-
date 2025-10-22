@@ -83,7 +83,7 @@ const urlBase64ToUint8Array = (base64String: string) => {
 };
 
 // --- 테스트 알림 전송 함수 (개발자 메뉴용) ---
-const sendTestNotification = (type: 'deadline' | 'suggestion' | 'achievement') => {
+const sendTestNotification = async (type: 'deadline' | 'suggestion' | 'achievement') => {
   const titles: Record<string, string> = {
     deadline: '⏰ 마감일 임박',
     suggestion: '💡 지금할일 제안',
@@ -96,33 +96,42 @@ const sendTestNotification = (type: 'deadline' | 'suggestion' | 'achievement') =
     achievement: '축하합니다! 목표를 완료하셨습니다. 🌟'
   };
 
-  const options: any = {
-    icon: '/Nova-AI-Planer/favicon.svg',
-    badge: '/Nova-AI-Planer/favicon.svg',
-    tag: `test-${type}`,
-    requireInteraction: false,
-    actions: [
-      { action: 'open', title: '열기' },
-      { action: 'close', title: '닫기' }
-    ]
-  };
-
-  if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-    // Service Worker를 통한 알림
-    navigator.serviceWorker.controller.postMessage({
-      type: 'SHOW_NOTIFICATION',
-      title: titles[type],
-      options: {
-        body: messages[type],
-        ...options
+  try {
+    // 먼저 Service Worker 컨트롤러가 있는지 확인
+    if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+      console.log('Sending notification via Service Worker');
+      navigator.serviceWorker.controller.postMessage({
+        type: 'SHOW_NOTIFICATION',
+        title: titles[type],
+        options: {
+          body: messages[type],
+          icon: '/Nova-AI-Planer/favicon.svg',
+          badge: '/Nova-AI-Planer/favicon.svg',
+          tag: `test-${type}-${Date.now()}`,
+          requireInteraction: false
+        }
+      });
+    } else if ('Notification' in window) {
+      // Notification API를 직접 사용 (PWA 아닌 경우 또는 Service Worker 없을 때)
+      console.log('Sending notification via Notification API');
+      if (Notification.permission === 'granted') {
+        new Notification(titles[type], {
+          body: messages[type],
+          icon: '/Nova-AI-Planer/favicon.svg',
+          badge: '/Nova-AI-Planer/favicon.svg',
+          tag: `test-${type}-${Date.now()}`
+        });
+      } else {
+        console.log('Notification permission not granted');
+        alert('알림 권한을 먼저 허용해주세요!');
       }
-    });
-  } else if ('Notification' in window && Notification.permission === 'granted') {
-    // 직접 알림 (PWA 아닌 경우)
-    new Notification(titles[type], {
-      body: messages[type],
-      ...options
-    });
+    } else {
+      console.log('Notifications not supported');
+      alert('이 브라우저는 알림을 지원하지 않습니다.');
+    }
+  } catch (error) {
+    console.error('Failed to send test notification:', error);
+    alert('알림 전송 실패: ' + (error as any).message);
   }
 };
 
