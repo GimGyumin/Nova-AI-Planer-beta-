@@ -22,6 +22,105 @@ const getSystemTheme = () => {
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 };
 
+// --- 알림 권한 요청 함수 ---
+const requestNotificationPermission = async () => {
+  if (!('Notification' in window)) {
+    console.log('This browser does not support notifications');
+    return false;
+  }
+
+  if (Notification.permission === 'granted') {
+    return true;
+  }
+
+  if (Notification.permission !== 'denied') {
+    const permission = await Notification.requestPermission();
+    return permission === 'granted';
+  }
+
+  return false;
+};
+
+// --- 푸시 알림 구독 함수 ---
+const subscribeToPushNotifications = async () => {
+  try {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      console.log('Push notifications not supported');
+      return false;
+    }
+
+    const registration = await navigator.serviceWorker.ready;
+    const subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(
+        'BOEd9nQKXBj8LJXNM6LJt6Nua5MJMhF8cCQvMNJ-2NWoWsM0cGgNqDG3kNm-QMYbdMDYAXaJ55MFP_fPHqH7SFA'
+      )
+    });
+
+    // 구독 정보를 서버로 전송
+    await sendSubscriptionToServer(subscription);
+    return true;
+  } catch (error) {
+    console.error('Failed to subscribe to push notifications:', error);
+    return false;
+  }
+};
+
+// --- Base64 문자열을 Uint8Array로 변환 ---
+const urlBase64ToUint8Array = (base64String: string) => {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding)
+    .replace(/\-/g, '+')
+    .replace(/_/g, '/');
+
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+};
+
+// --- 구독 정보를 서버로 전송 ---
+const sendSubscriptionToServer = async (subscription: PushSubscription) => {
+  try {
+    const response = await fetch('/api/subscribe', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        subscription: subscription.toJSON(),
+        endpoint: subscription.endpoint,
+      }),
+    });
+
+    if (!response.ok) {
+      console.error('Failed to send subscription to server');
+    }
+  } catch (error) {
+    console.error('Error sending subscription to server:', error);
+  }
+};
+
+// --- 로컬 알림 표시 함수 ---
+const showLocalNotification = (title: string, options?: NotificationOptions) => {
+  if ('Notification' in window && Notification.permission === 'granted') {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.ready.then((registration) => {
+        registration.showNotification(title, {
+          icon: '/Nova-AI-Planer/nova-192.svg',
+          badge: '/Nova-AI-Planer/nova-192.svg',
+          ...options,
+        });
+      });
+    }
+  }
+};
+
+// --- 다크모드 감지 ---
+
 // --- PWA 설치 안내 컴포넌트 ---
 const PWAInstallPrompt: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
@@ -259,6 +358,15 @@ const translations = {
     settings_api_key: 'Gemini AI 설정',
     settings_api_key_placeholder: 'Gemini API 키 입력',
     settings_offline_mode: '오프라인 사용',
+    settings_notifications: '알림',
+    settings_notifications_desc: 'PWA 알림 설정',
+    notification_settings_title: '어떤 알림을 받을까요?',
+    notification_deadline: '마감일 임박 알림',
+    notification_deadline_desc: '마감이 가까운 목표에 대해 알려줍니다.',
+    notification_suggestion: '지금할일 제안',
+    notification_suggestion_desc: '오늘 해야할 목표를 제안해줍니다.',
+    notification_achievement: '목표 달성 축하',
+    notification_achievement_desc: '목표를 달성했을 때 축하해줍니다.',
     language_name: '한국어 (대한민국)',
     language_modal_title: '언어',
     settings_section_background: '화면',
@@ -472,6 +580,15 @@ const translations = {
     settings_api_key_placeholder: 'Enter Gemini API key',
     settings_offline_mode: 'Offline Mode',
     settings_offline_mode_desc: 'Use basic features without AI',
+    settings_notifications: 'Notifications',
+    settings_notifications_desc: 'PWA notification settings',
+    notification_settings_title: 'What notifications would you like?',
+    notification_deadline: 'Deadline Alerts',
+    notification_deadline_desc: 'Get notified when deadlines are approaching.',
+    notification_suggestion: 'Today\'s Suggestions',
+    notification_suggestion_desc: 'Get suggestions on what to do today.',
+    notification_achievement: 'Achievement Celebration',
+    notification_achievement_desc: 'Celebrate when you achieve a goal.',
     language_name: 'English (US)',
     language_modal_title: 'Language',
     settings_section_background: 'Appearance',
@@ -756,6 +873,26 @@ const App: React.FC = () => {
     
     // PWA 관련 상태
     const [showPWAPrompt, setShowPWAPrompt] = useState<boolean>(false);
+    const [isNotificationsEnabled, setIsNotificationsEnabled] = useState<boolean>(() => {
+        return localStorage.getItem('nova-notifications-enabled') === 'true';
+    });
+    
+    // 알림 타입 설정
+    const [notificationSettings, setNotificationSettings] = useState<{
+        deadline: boolean;
+        suggestion: boolean;
+        achievement: boolean;
+    }>(() => {
+        const saved = localStorage.getItem('nova-notification-settings');
+        if (saved) {
+            return JSON.parse(saved);
+        }
+        return {
+            deadline: true,      // 마감일 임박 알림
+            suggestion: true,    // 지금할일 제안
+            achievement: true    // 목표 달성 축하
+        };
+    });
     
     // API 키 및 오프라인 모드 상태 추가
     const [apiKey, setApiKey] = useState<string>(() => localStorage.getItem('nova-api-key') || '');
@@ -807,7 +944,7 @@ const App: React.FC = () => {
                         setTodos(todosData.todos || []);
                     }
                     
-                    // 2. 설정값 불러오기 (language, theme, colorMode 등)
+                    // 2. 설정값 불러오기 (language, theme, colorMode, apiKey, notifications 등)
                     const settingsRef = doc(db, 'users', result.user.uid, 'data', 'settings');
                     const settingsSnap = await getDoc(settingsRef);
                     
@@ -817,6 +954,9 @@ const App: React.FC = () => {
                         if (settingsData.themeMode) setThemeMode(settingsData.themeMode);
                         if (settingsData.isDarkMode !== undefined) setIsDarkMode(settingsData.isDarkMode);
                         if (settingsData.backgroundTheme) setBackgroundTheme(settingsData.backgroundTheme);
+                        if (settingsData.apiKey) setApiKey(settingsData.apiKey);
+                        if (settingsData.isNotificationsEnabled !== undefined) setIsNotificationsEnabled(settingsData.isNotificationsEnabled);
+                        if (settingsData.notificationSettings) setNotificationSettings(settingsData.notificationSettings);
                     }
                     
                     setToastMessage('✅ 로그인 완료! 데이터 로드됨');
@@ -919,13 +1059,16 @@ const App: React.FC = () => {
                 syncedAt: new Date().toISOString()
             });
             
-            // 2. 설정값도 저장 (language, theme, colorMode 등)
+            // 2. 설정값도 저장 (language, theme, colorMode, apiKey, notifications 등)
             const settingsRef = doc(db, 'users', googleUser.uid, 'data', 'settings');
             await setDoc(settingsRef, {
                 language: language,
                 themeMode: themeMode,
                 isDarkMode: isDarkMode,
                 backgroundTheme: backgroundTheme,
+                apiKey: apiKey,
+                isNotificationsEnabled: isNotificationsEnabled,
+                notificationSettings: notificationSettings,
                 updatedAt: serverTimestamp()
             });
             
@@ -938,7 +1081,7 @@ const App: React.FC = () => {
             setTimeout(() => setToastMessage(''), 3000);
             setIsSyncingData(false);
         }
-    }, [googleUser, todos, language, themeMode, isDarkMode, backgroundTheme]);
+    }, [googleUser, todos, language, themeMode, isDarkMode, backgroundTheme, apiKey, isNotificationsEnabled, notificationSettings]);
 
     // Firebase에서 목표 + 설정 데이터 불러오기
     const handleLoadDataFromFirebase = useCallback(async () => {
@@ -961,7 +1104,7 @@ const App: React.FC = () => {
                 setTodos(todosData.todos || []);
             }
             
-            // 2. 설정값 불러오기 (language, theme, colorMode 등)
+            // 2. 설정값 불러오기 (language, theme, colorMode, apiKey, notifications 등)
             const settingsRef = doc(db, 'users', googleUser.uid, 'data', 'settings');
             const settingsSnap = await getDoc(settingsRef);
             
@@ -971,6 +1114,9 @@ const App: React.FC = () => {
                 if (settingsData.themeMode) setThemeMode(settingsData.themeMode);
                 if (settingsData.isDarkMode !== undefined) setIsDarkMode(settingsData.isDarkMode);
                 if (settingsData.backgroundTheme) setBackgroundTheme(settingsData.backgroundTheme);
+                if (settingsData.apiKey) setApiKey(settingsData.apiKey);
+                if (settingsData.isNotificationsEnabled !== undefined) setIsNotificationsEnabled(settingsData.isNotificationsEnabled);
+                if (settingsData.notificationSettings) setNotificationSettings(settingsData.notificationSettings);
             }
             
             const todosCount = todosSnap.exists() ? (todosSnap.data().todos?.length || 0) : 0;
@@ -1093,32 +1239,39 @@ const App: React.FC = () => {
         return () => mediaQuery.removeEventListener('change', handleThemeChange);
     }, [themeMode]);
 
-    // PWA 설치 프롬프트 표시 로직
+    // PWA 설치 프롬프트 표시 로직 (모바일에서 자동 표시)
     useEffect(() => {
-        const checkPWAPrompt = () => {
-            const isDismissed = localStorage.getItem('pwa-prompt-dismissed');
-            const isMobileDevice = isMobile();
-            const isInStandalone = isStandalone();
-            
-            if (isMobileDevice && !isInStandalone && !isDismissed) {
-                // 첫 방문 후 3초 뒤에 프롬프트 표시
-                const timer = setTimeout(() => {
-                    setShowPWAPrompt(true);
-                }, 3000);
-                
-                return () => clearTimeout(timer);
-            }
-        };
-
-        checkPWAPrompt();
+        const isDismissed = localStorage.getItem('pwa-prompt-dismissed');
+        const isMobileDevice = isMobile();
+        const isInStandalone = isStandalone();
+        
+        if (isMobileDevice && !isInStandalone && !isDismissed) {
+            // 모바일 기기에서 PWA가 설치되지 않았으면 즉시 표시
+            setShowPWAPrompt(true);
+        }
     }, []);
 
-    // Service Worker 등록
+    // Service Worker 등록 및 알림 권한 요청
     useEffect(() => {
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('/Nova-AI-Planer/sw.js')
                 .then((registration) => {
                     console.log('SW registered: ', registration);
+                    
+                    // 모바일 PWA에서 알림 권한 요청
+                    const isInStandalone = isStandalone();
+                    const isMobileDevice = isMobile();
+                    
+                    if (isInStandalone && isMobileDevice) {
+                        // PWA로 설치된 모바일 앱에서만 알림 권한 요청
+                        setTimeout(() => {
+                            requestNotificationPermission().then((granted) => {
+                                if (granted) {
+                                    subscribeToPushNotifications();
+                                }
+                            });
+                        }, 2000);
+                    }
                 })
                 .catch((registrationError) => {
                     console.log('SW registration failed: ', registrationError);
@@ -1136,6 +1289,8 @@ const App: React.FC = () => {
     useEffect(() => { localStorage.setItem('nova-todos', JSON.stringify(todos)); }, [todos]);
     useEffect(() => { localStorage.setItem('nova-api-key', apiKey); }, [apiKey]);
     useEffect(() => { localStorage.setItem('nova-offline-mode', String(isOfflineMode)); }, [isOfflineMode]);
+    useEffect(() => { localStorage.setItem('nova-notifications-enabled', String(isNotificationsEnabled)); }, [isNotificationsEnabled]);
+    useEffect(() => { localStorage.setItem('nova-notification-settings', JSON.stringify(notificationSettings)); }, [notificationSettings]);
 
     useEffect(() => {
         const selectedTheme = backgroundOptions.find(opt => opt.id === backgroundTheme) || backgroundOptions[0];
@@ -1428,6 +1583,10 @@ const App: React.FC = () => {
                 isGoogleLoggingOut={isGoogleLoggingOut}
                 isSyncingData={isSyncingData}
                 isLoadingData={isLoadingData}
+                isNotificationsEnabled={isNotificationsEnabled}
+                setIsNotificationsEnabled={setIsNotificationsEnabled}
+                notificationSettings={notificationSettings}
+                setNotificationSettings={setNotificationSettings}
             />}
             {isVersionInfoOpen && <VersionInfoModal onClose={() => setIsVersionInfoOpen(false)} t={t} />}
             {isUsageGuideOpen && <UsageGuideModal onClose={() => setIsUsageGuideOpen(false)} t={t} />}
@@ -1884,13 +2043,18 @@ const SettingsModal: React.FC<{
     isGoogleLoggingOut?: boolean;
     isSyncingData?: boolean;
     isLoadingData?: boolean;
+    isNotificationsEnabled: boolean;
+    setIsNotificationsEnabled: (enabled: boolean) => void;
+    notificationSettings: { deadline: boolean; suggestion: boolean; achievement: boolean };
+    setNotificationSettings: (settings: { deadline: boolean; suggestion: boolean; achievement: boolean }) => void;
 }> = ({
     onClose, isDarkMode, onToggleDarkMode, themeMode, onThemeChange, backgroundTheme, onSetBackgroundTheme,
     onExportData, onImportData, setAlertConfig, onDeleteAllData, dataActionStatus,
     language, onSetLanguage, t, todos, setToastMessage, onOpenVersionInfo, onOpenUsageGuide,
     apiKey, onSetApiKey, isOfflineMode, onToggleOfflineMode,
     googleUser, onGoogleLogin, onGoogleLogout, onSyncDataToFirebase, onLoadDataFromFirebase,
-    isGoogleLoggingIn = false, isGoogleLoggingOut = false, isSyncingData = false, isLoadingData = false
+    isGoogleLoggingIn = false, isGoogleLoggingOut = false, isSyncingData = false, isLoadingData = false,
+    isNotificationsEnabled, setIsNotificationsEnabled, notificationSettings, setNotificationSettings
 
 }) => {
     const [isClosing, handleClose] = useModalAnimation(onClose);
@@ -2023,6 +2187,77 @@ const SettingsModal: React.FC<{
                                     <span className="slider round"></span>
                                 </div>
                             </label>
+                        </div>
+                        <div className="settings-section-header">{t('settings_notifications')}</div>
+                        <div className="settings-section-body">
+                            <label className="settings-item">
+                                <div>
+                                    <span>{t('settings_notifications')}</span>
+                                    <div style={{ fontSize: '12px', opacity: 0.7, marginTop: '4px' }}>{t('settings_notifications_desc')}</div>
+                                </div>
+                                <div className="theme-toggle-switch">
+                                    <input 
+                                        type="checkbox" 
+                                        checked={isNotificationsEnabled} 
+                                        onChange={(e) => {
+                                            setIsNotificationsEnabled(e.target.checked);
+                                            if (e.target.checked && isStandalone() && isMobile()) {
+                                                requestNotificationPermission();
+                                            }
+                                        }} 
+                                    />
+                                    <span className="slider round"></span>
+                                </div>
+                            </label>
+                            {isNotificationsEnabled && (
+                                <>
+                                    <div style={{ padding: '12px 0', fontSize: '12px', opacity: 0.7 }}>
+                                        {t('notification_settings_title')}
+                                    </div>
+                                    <label className="settings-item">
+                                        <div>
+                                            <span>{t('notification_deadline')}</span>
+                                            <div style={{ fontSize: '12px', opacity: 0.7, marginTop: '4px' }}>{t('notification_deadline_desc')}</div>
+                                        </div>
+                                        <div className="theme-toggle-switch">
+                                            <input 
+                                                type="checkbox" 
+                                                checked={notificationSettings.deadline} 
+                                                onChange={(e) => setNotificationSettings({ ...notificationSettings, deadline: e.target.checked })} 
+                                            />
+                                            <span className="slider round"></span>
+                                        </div>
+                                    </label>
+                                    <label className="settings-item">
+                                        <div>
+                                            <span>{t('notification_suggestion')}</span>
+                                            <div style={{ fontSize: '12px', opacity: 0.7, marginTop: '4px' }}>{t('notification_suggestion_desc')}</div>
+                                        </div>
+                                        <div className="theme-toggle-switch">
+                                            <input 
+                                                type="checkbox" 
+                                                checked={notificationSettings.suggestion} 
+                                                onChange={(e) => setNotificationSettings({ ...notificationSettings, suggestion: e.target.checked })} 
+                                            />
+                                            <span className="slider round"></span>
+                                        </div>
+                                    </label>
+                                    <label className="settings-item">
+                                        <div>
+                                            <span>{t('notification_achievement')}</span>
+                                            <div style={{ fontSize: '12px', opacity: 0.7, marginTop: '4px' }}>{t('notification_achievement_desc')}</div>
+                                        </div>
+                                        <div className="theme-toggle-switch">
+                                            <input 
+                                                type="checkbox" 
+                                                checked={notificationSettings.achievement} 
+                                                onChange={(e) => setNotificationSettings({ ...notificationSettings, achievement: e.target.checked })} 
+                                            />
+                                            <span className="slider round"></span>
+                                        </div>
+                                    </label>
+                                </>
+                            )}
                         </div>
                         <div className="settings-section-header">{t('settings_language')}</div>
                         <div className="settings-section-body">
