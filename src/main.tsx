@@ -83,17 +83,19 @@ const urlBase64ToUint8Array = (base64String: string) => {
 };
 
 // --- 테스트 알림 전송 함수 (개발자 메뉴용) ---
-const sendTestNotification = async (type: 'deadline' | 'suggestion' | 'achievement') => {
+const sendTestNotification = async (type: 'deadline' | 'suggestion' | 'achievement' | 'reminder') => {
   const titles: Record<string, string> = {
     deadline: '⏰ 마감일 임박',
     suggestion: '💡 지금할일 제안',
-    achievement: '🎉 목표 달성 축하'
+    achievement: '🎉 목표 달성 축하',
+    reminder: '🔔 미리알림'
   };
 
   const messages: Record<string, string> = {
     deadline: '마감이 가까운 목표가 있습니다!',
     suggestion: '오늘 완료할 수 있는 목표를 추천합니다.',
-    achievement: '축하합니다! 목표를 완료하셨습니다. 🌟'
+    achievement: '축하합니다! 목표를 완료하셨습니다. 🌟',
+    reminder: '설정한 시간입니다. 목표를 확인해보세요!'
   };
 
   try {
@@ -420,6 +422,8 @@ const translations = {
     notification_suggestion_desc: '오늘 해야할 목표를 제안해줍니다.',
     notification_achievement: '목표 달성 축하',
     notification_achievement_desc: '목표를 달성했을 때 축하해줍니다.',
+    notification_reminder: '일반 미리알림',
+    notification_reminder_desc: '설정한 시간에 미리알림을 받습니다.',
     language_name: '한국어 (대한민국)',
     language_modal_title: '언어',
     settings_section_background: '화면',
@@ -642,6 +646,8 @@ const translations = {
     notification_suggestion_desc: 'Get suggestions on what to do today.',
     notification_achievement: 'Achievement Celebration',
     notification_achievement_desc: 'Celebrate when you achieve a goal.',
+    notification_reminder: 'General Reminder',
+    notification_reminder_desc: 'Get reminded at scheduled times.',
     language_name: 'English (US)',
     language_modal_title: 'Language',
     settings_section_background: 'Appearance',
@@ -935,6 +941,7 @@ const App: React.FC = () => {
         deadline: boolean;
         suggestion: boolean;
         achievement: boolean;
+        reminder: boolean;
     }>(() => {
         const saved = localStorage.getItem('nova-notification-settings');
         if (saved) {
@@ -943,7 +950,8 @@ const App: React.FC = () => {
         return {
             deadline: true,      // 마감일 임박 알림
             suggestion: true,    // 지금할일 제안
-            achievement: true    // 목표 달성 축하
+            achievement: true,   // 목표 달성 축하
+            reminder: true       // 일반 미리알림
         };
     });
     
@@ -2098,8 +2106,8 @@ const SettingsModal: React.FC<{
     isLoadingData?: boolean;
     isNotificationsEnabled: boolean;
     setIsNotificationsEnabled: (enabled: boolean) => void;
-    notificationSettings: { deadline: boolean; suggestion: boolean; achievement: boolean };
-    setNotificationSettings: (settings: { deadline: boolean; suggestion: boolean; achievement: boolean }) => void;
+    notificationSettings: { deadline: boolean; suggestion: boolean; achievement: boolean; reminder: boolean };
+    setNotificationSettings: (settings: { deadline: boolean; suggestion: boolean; achievement: boolean; reminder: boolean }) => void;
 }> = ({
     onClose, isDarkMode, onToggleDarkMode, themeMode, onThemeChange, backgroundTheme, onSetBackgroundTheme,
     onExportData, onImportData, setAlertConfig, onDeleteAllData, dataActionStatus,
@@ -2264,7 +2272,7 @@ const SettingsModal: React.FC<{
                             </label>
                             {isNotificationsEnabled && (
                                 <>
-                                    <div style={{ padding: '12px 0', fontSize: '12px', opacity: 0.7 }}>
+                                    <div style={{ fontSize: '13px', fontWeight: '500', padding: '16px 0 8px 0' }}>
                                         {t('notification_settings_title')}
                                     </div>
                                     <label className="settings-item">
@@ -2305,6 +2313,20 @@ const SettingsModal: React.FC<{
                                                 type="checkbox" 
                                                 checked={notificationSettings.achievement} 
                                                 onChange={(e) => setNotificationSettings({ ...notificationSettings, achievement: e.target.checked })} 
+                                            />
+                                            <span className="slider round"></span>
+                                        </div>
+                                    </label>
+                                    <label className="settings-item">
+                                        <div>
+                                            <span>{t('notification_reminder')}</span>
+                                            <div style={{ fontSize: '12px', opacity: 0.7, marginTop: '4px' }}>{t('notification_reminder_desc')}</div>
+                                        </div>
+                                        <div className="theme-toggle-switch">
+                                            <input 
+                                                type="checkbox" 
+                                                checked={notificationSettings.reminder} 
+                                                onChange={(e) => setNotificationSettings({ ...notificationSettings, reminder: e.target.checked })} 
                                             />
                                             <span className="slider round"></span>
                                         </div>
@@ -2366,6 +2388,14 @@ const SettingsModal: React.FC<{
                                 style={{ opacity: !isNotificationsEnabled ? 0.5 : 1, cursor: !isNotificationsEnabled ? 'not-allowed' : 'pointer' }}
                             >
                                 <span className="action-text">🧪 테스트: 달성 축하 알림</span>
+                            </button>
+                            <button 
+                                className="settings-item action-item" 
+                                onClick={() => sendTestNotification('reminder')}
+                                disabled={!isNotificationsEnabled}
+                                style={{ opacity: !isNotificationsEnabled ? 0.5 : 1, cursor: !isNotificationsEnabled ? 'not-allowed' : 'pointer' }}
+                            >
+                                <span className="action-text">🧪 테스트: 미리알림</span>
                             </button>
                         </div>
                     </>
