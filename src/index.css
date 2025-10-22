@@ -1530,6 +1530,18 @@ input:checked + .slider:before { -webkit-transform: translateX(20px); -ms-transf
     border-radius: 22px;
 }
 
+/* Reminder List Item - Minimal styling */
+.reminder-list-item {
+    padding: 12px;
+    background-color: var(--button-bg-color);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    transition: background-color 0.2s;
+}
+
+.reminder-list-item:hover {
+    background-color: rgba(0, 122, 255, 0.05);
+}
 
 /* Responsive Design */
 @media (max-width: 768px) {

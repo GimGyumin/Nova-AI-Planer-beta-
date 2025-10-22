@@ -6,6 +6,19 @@ import { auth, googleProvider, db } from './firebase-config';
 import { signInWithPopup, signOut, onAuthStateChanged, User } from 'firebase/auth';
 import './index.css';
 
+// --- 타입 정의 ---
+interface Reminder {
+    id: string;
+    title: string;
+    dueDate?: string;      // "2025-10-25" 형식
+    time: string;          // "14:30" 형식
+    isRecurring: boolean;  // 반복 여부
+    recurringType?: 'daily' | 'weekly' | 'monthly'; // 반복 유형
+    description?: string;
+    enabled: boolean;
+    createdAt: string;
+}
+
 // --- PWA 유틸리티 함수 ---
 const isMobile = () => {
   // 더 정확한 모바일 감지
@@ -997,15 +1010,6 @@ const App: React.FC = () => {
     });
 
     // 미리알림 리스트 (사용자가 추가한 미리알림들)
-    interface Reminder {
-        id: string;
-        title: string;
-        time: string;  // "14:30" 형식
-        description?: string;
-        enabled: boolean;
-        createdAt: string;
-    }
-
     const [reminders, setReminders] = useState<Reminder[]>(() => {
         const saved = localStorage.getItem('nova-reminders');
         if (saved) {
@@ -1103,6 +1107,32 @@ const App: React.FC = () => {
             }
             setIsGoogleLoggingIn(false);
         }
+    }, []);
+
+    // 미리알림 추가
+    const handleAddReminder = useCallback((reminder: Omit<Reminder, 'id' | 'createdAt'>) => {
+        const newReminder: Reminder = {
+            ...reminder,
+            id: Date.now().toString(),
+            createdAt: new Date().toISOString()
+        };
+        setReminders(prev => [...prev, newReminder]);
+        setToastMessage('✅ 미리알림이 추가되었습니다');
+        setTimeout(() => setToastMessage(''), 3000);
+    }, []);
+
+    // 미리알림 수정
+    const handleUpdateReminder = useCallback((id: string, reminder: Partial<Reminder>) => {
+        setReminders(prev => prev.map(r => r.id === id ? { ...r, ...reminder } : r));
+        setToastMessage('✅ 미리알림이 수정되었습니다');
+        setTimeout(() => setToastMessage(''), 3000);
+    }, []);
+
+    // 미리알림 삭제
+    const handleDeleteReminder = useCallback((id: string) => {
+        setReminders(prev => prev.filter(r => r.id !== id));
+        setToastMessage('✅ 미리알림이 삭제되었습니다');
+        setTimeout(() => setToastMessage(''), 3000);
     }, []);
 
     // Firebase 로그아웃 핸들러 (로그아웃 전에 데이터 저장)
@@ -1693,7 +1723,7 @@ const App: React.FC = () => {
                 </div>
             </div>
 
-            {isGoalAssistantOpen && <GoalAssistantModal onClose={() => setIsGoalAssistantOpen(false)} onAddTodo={handleAddTodo} onAddMultipleTodos={handleAddMultipleTodos} t={t} language={language} createAI={createAI} />}
+            {isGoalAssistantOpen && <GoalAssistantModal onClose={() => setIsGoalAssistantOpen(false)} onAddTodo={handleAddTodo} onAddMultipleTodos={handleAddMultipleTodos} t={t} language={language} createAI={createAI} onAddReminder={handleAddReminder} reminders={reminders} onDeleteReminder={handleDeleteReminder} />}
             {editingTodo && <GoalAssistantModal onClose={() => setEditingTodo(null)} onEditTodo={handleEditTodo} existingTodo={editingTodo} t={t} language={language} createAI={createAI} />}
             {infoTodo && <GoalInfoModal todo={infoTodo} onClose={() => setInfoTodo(null)} t={t} createAI={createAI} />}
             {isSettingsOpen && <SettingsModal 
@@ -2018,10 +2048,251 @@ const AutomationForm: React.FC<{ onGenerate: (goals: Omit<Goal, 'id' | 'complete
     );
 };
 
+const ReminderStepContent: React.FC<{ step: number; t: (key: string) => any; [key: string]: any }> = ({ step, t, ...props }) => {
+    const { title, setTitle, dueDate, setDueDate, time, setTime, isRecurring, setIsRecurring, recurringType, setRecurringType, description, setDescription, enabled, setEnabled, errors } = props;
+    
+    switch (step) {
+        case 1:
+            return (
+                <div>
+                    <h3>🔔 미리알림 제목</h3>
+                    <div className="step-guidance"><p className="tip">미리알림의 제목을 입력하세요</p></div>
+                    <textarea 
+                        value={title} 
+                        onChange={(e) => setTitle(e.target.value)} 
+                        placeholder="예: 회의 참석" 
+                        className={errors.title ? 'input-error' : ''}
+                        rows={3}
+                    />
+                    {errors.title && <p className="field-error-message">{icons.exclamation} 제목을 입력하세요</p>}
+                </div>
+            );
+        case 2:
+            return (
+                <div>
+                    <h3>📅 기한 & ⏰ 시간</h3>
+                    <div className="step-guidance"><p className="tip">기한 날짜와 시간을 설정하세요</p></div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+                        <div>
+                            <h4 style={{ fontSize: '0.9rem', fontWeight: 500, marginBottom: '8px' }}>기한</h4>
+                            <input 
+                                type="date" 
+                                value={dueDate} 
+                                onChange={(e) => setDueDate(e.target.value)} 
+                                style={{ width: '100%', padding: '12px', borderRadius: '8px', border: `1px solid var(--border-color)`, backgroundColor: 'var(--input-bg-color)', color: 'var(--text-color)', fontFamily: 'inherit', fontSize: '1rem' }}
+                            />
+                        </div>
+                        <div>
+                            <h4 style={{ fontSize: '0.9rem', fontWeight: 500, marginBottom: '8px' }}>시간</h4>
+                            <input 
+                                type="time" 
+                                value={time} 
+                                onChange={(e) => setTime(e.target.value)} 
+                                style={{ width: '100%', padding: '12px', borderRadius: '8px', border: `1px solid var(--border-color)`, backgroundColor: 'var(--input-bg-color)', color: 'var(--text-color)', fontFamily: 'inherit', fontSize: '1rem' }}
+                            />
+                        </div>
+                    </div>
+                </div>
+            );
+        case 3:
+            return (
+                <div>
+                    <h3>🔄 반복 설정</h3>
+                    <div className="step-guidance"><p className="tip">반복 여부와 반복 유형을 설정하세요</p></div>
+                    <label className="settings-item standalone-toggle" style={{ marginBottom: '20px' }}>
+                        <span style={{ fontWeight: 500 }}>반복 설정</span>
+                        <label className="theme-toggle-switch">
+                            <input 
+                                type="checkbox" 
+                                checked={isRecurring} 
+                                onChange={(e) => setIsRecurring(e.target.checked)} 
+                            />
+                            <span className="slider round"></span>
+                        </label>
+                    </label>
 
-const GoalAssistantModal: React.FC<{ onClose: () => void; onAddTodo?: (newTodoData: Omit<Goal, 'id' | 'completed' | 'lastCompletedDate' | 'streak'>) => void; onAddMultipleTodos?: (newTodosData: Omit<Goal, 'id' | 'completed' | 'lastCompletedDate' | 'streak'>[]) => void; onEditTodo?: (updatedTodo: Goal) => void; existingTodo?: Goal; t: (key: string) => any; language: string; createAI: () => GoogleGenAI | null; }> = ({ onClose, onAddTodo, onAddMultipleTodos, onEditTodo, existingTodo, t, language, createAI }) => {
+                    {isRecurring && (
+                        <div>
+                            <h4 style={{ fontSize: '0.9rem', fontWeight: 500, marginBottom: '12px' }}>반복 유형</h4>
+                            <select 
+                                value={recurringType} 
+                                onChange={(e) => setRecurringType(e.target.value as 'daily' | 'weekly' | 'monthly')}
+                                style={{ width: '100%', padding: '12px', borderRadius: '8px', border: `1px solid var(--border-color)`, backgroundColor: 'var(--input-bg-color)', color: 'var(--text-color)', fontFamily: 'inherit', fontSize: '1rem', cursor: 'pointer' }}
+                            >
+                                <option value="daily">매일</option>
+                                <option value="weekly">매주</option>
+                                <option value="monthly">매월</option>
+                            </select>
+                        </div>
+                    )}
+                </div>
+            );
+        case 4:
+            return (
+                <div>
+                    <h3>📝 설명 (선택사항)</h3>
+                    <div className="step-guidance"><p className="tip">추가 설명과 상세 정보를 입력하세요</p></div>
+                    <textarea 
+                        value={description} 
+                        onChange={(e) => setDescription(e.target.value)} 
+                        placeholder="추가 설명을 입력하세요..." 
+                        rows={3}
+                    />
+                </div>
+            );
+        case 5:
+            return (
+                <div>
+                    <h3>✅ 최종 설정</h3>
+                    <div className="step-guidance"><p className="tip">미리알림 활성화 여부를 설정하세요</p></div>
+                    <label className="settings-item standalone-toggle">
+                        <span style={{ fontWeight: 500 }}>활성화</span>
+                        <label className="theme-toggle-switch">
+                            <input 
+                                type="checkbox" 
+                                checked={enabled} 
+                                onChange={(e) => setEnabled(e.target.checked)} 
+                            />
+                            <span className="slider round"></span>
+                        </label>
+                    </label>
+                </div>
+            );
+        default:
+            return null;
+    }
+};
+
+interface ReminderFormProps {
+    onAddReminder?: (reminder: Omit<Reminder, 'id' | 'createdAt'>) => void;
+    t: (key: string) => any;
+    reminders?: Reminder[];
+    onDeleteReminder?: (id: string) => void;
+    onClose?: () => void;
+}
+
+const ReminderForm: React.FC<ReminderFormProps> = ({ onAddReminder, t, reminders = [], onDeleteReminder, onClose }) => {
+    const [step, setStep] = useState(1);
+    const [animationDir, setAnimationDir] = useState<'forward' | 'backward'>('forward');
+    const [title, setTitle] = useState('');
+    const [dueDate, setDueDate] = useState('');
+    const [time, setTime] = useState('09:00');
+    const [isRecurring, setIsRecurring] = useState(false);
+    const [recurringType, setRecurringType] = useState<'daily' | 'weekly' | 'monthly'>('daily');
+    const [description, setDescription] = useState('');
+    const [enabled, setEnabled] = useState(true);
+    const [errors, setErrors] = useState<{ [key: string]: boolean }>({});
+
+    const totalSteps = 5;
+
+    const validateStep = (currentStep: number) => {
+        const newErrors: { [key: string]: boolean } = {};
+        if (currentStep === 1 && !title.trim()) newErrors.title = true;
+        setErrors(newErrors);
+        return Object.keys(newErrors).length === 0;
+    };
+
+    const handleNext = () => {
+        if (!validateStep(step)) return;
+        if (step === totalSteps) {
+            handleSubmit();
+        } else {
+            setAnimationDir('forward');
+            setStep(step + 1);
+        }
+    };
+
+    const handleBack = () => {
+        setAnimationDir('backward');
+        setStep(step - 1);
+    };
+
+    const handleSubmit = () => {
+        if (onAddReminder) {
+            onAddReminder({
+                title: title.trim(),
+                dueDate: dueDate || undefined,
+                time,
+                isRecurring,
+                recurringType: isRecurring ? recurringType : undefined,
+                description: description.trim() || undefined,
+                enabled,
+            });
+        }
+        
+        setTitle('');
+        setDueDate('');
+        setTime('09:00');
+        setIsRecurring(false);
+        setRecurringType('daily');
+        setDescription('');
+        setEnabled(true);
+        setStep(1);
+        setErrors({});
+    };
+
+    return (
+        <>
+            <div className="progress-bar-container"><div className="progress-bar" style={{ width: `${(step / totalSteps) * 100}%` }}></div></div>
+            <div className={`goal-assistant-step-content-animator ${animationDir}`} key={step}>
+                <ReminderStepContent step={step} t={t} {...{ title, setTitle, dueDate, setDueDate, time, setTime, isRecurring, setIsRecurring, recurringType, setRecurringType, description, setDescription, enabled, setEnabled, errors }} />
+            </div>
+            <div className="goal-assistant-nav">
+                {step > 1 ? (
+                    <button onClick={handleBack} className="secondary">{t('back_button')}</button>
+                ) : (
+                    <div /> /* Placeholder for alignment */
+                )}
+                <button onClick={handleNext} className="primary">{step === totalSteps ? t('add_button') : t('next_button')}</button>
+            </div>
+
+            {reminders.length > 0 && (
+                <div style={{ marginTop: '28px', paddingTop: '24px', borderTop: `1px solid var(--border-color)`, marginLeft: '16px', marginRight: '16px' }}>
+                    <h3 style={{ textAlign: 'center', marginBottom: '16px', fontSize: '1rem', fontWeight: 600, color: 'var(--text-secondary-color)' }}>미리알림 목록</h3>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {reminders.map((reminder) => (
+                            <div key={reminder.id} className="reminder-list-item">
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
+                                    <div style={{ flex: 1 }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                                            <input 
+                                                type="checkbox" 
+                                                checked={reminder.enabled} 
+                                                disabled 
+                                                style={{ cursor: 'not-allowed', opacity: 0.6 }}
+                                            />
+                                            <span style={{ fontWeight: 500, textDecoration: reminder.enabled ? 'none' : 'line-through', opacity: reminder.enabled ? 1 : 0.5 }}>{reminder.title}</span>
+                                        </div>
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', fontSize: '0.8rem' }}>
+                                            {reminder.dueDate && <span style={{ backgroundColor: 'rgba(0, 122, 255, 0.1)', color: 'var(--primary-color)', padding: '2px 6px', borderRadius: '4px' }}>📅 {reminder.dueDate}</span>}
+                                            <span style={{ backgroundColor: 'rgba(0, 122, 255, 0.1)', color: 'var(--primary-color)', padding: '2px 6px', borderRadius: '4px' }}>⏰ {reminder.time}</span>
+                                            {reminder.isRecurring && <span style={{ backgroundColor: 'rgba(52, 199, 89, 0.1)', color: 'var(--success-color)', padding: '2px 6px', borderRadius: '4px' }}>🔄 {reminder.recurringType === 'daily' ? '매일' : reminder.recurringType === 'weekly' ? '매주' : '매월'}</span>}
+                                        </div>
+                                        {reminder.description && <div style={{ marginTop: '6px', fontSize: '0.85rem', color: 'var(--text-secondary-color)', paddingLeft: '24px' }}>{reminder.description}</div>}
+                                    </div>
+                                    {onDeleteReminder && (
+                                        <button 
+                                            onClick={() => onDeleteReminder(reminder.id)} 
+                                            style={{ background: 'none', border: 'none', color: 'var(--danger-color)', cursor: 'pointer', fontSize: '1.2rem', padding: '4px 8px', borderRadius: '6px', transition: 'background-color 0.2s' }}
+                                            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'rgba(255, 59, 48, 0.1)')}
+                                            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                                        >
+                                            ✕
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+        </>
+    );
+};
+
+const GoalAssistantModal: React.FC<{ onClose: () => void; onAddTodo?: (newTodoData: Omit<Goal, 'id' | 'completed' | 'lastCompletedDate' | 'streak'>) => void; onAddMultipleTodos?: (newTodosData: Omit<Goal, 'id' | 'completed' | 'lastCompletedDate' | 'streak'>[]) => void; onEditTodo?: (updatedTodo: Goal) => void; existingTodo?: Goal; t: (key: string) => any; language: string; createAI: () => GoogleGenAI | null; onAddReminder?: (reminder: Omit<Reminder, 'id' | 'createdAt'>) => void; reminders?: Reminder[]; onDeleteReminder?: (id: string) => void; }> = ({ onClose, onAddTodo, onAddMultipleTodos, onEditTodo, existingTodo, t, language, createAI, onAddReminder, reminders, onDeleteReminder }) => {
     const [isClosing, handleClose] = useModalAnimation(onClose);
-    const [mode, setMode] = useState<'woop' | 'automation'>('woop');
+    const [mode, setMode] = useState<'woop' | 'reminder' | 'automation'>('woop');
     const [step, setStep] = useState(1);
     const [animationDir, setAnimationDir] = useState<'forward' | 'backward'>('forward');
     const [wish, setWish] = useState(existingTodo?.wish || '');
@@ -2085,6 +2356,7 @@ const GoalAssistantModal: React.FC<{ onClose: () => void; onAddTodo?: (newTodoDa
                  <div className="modal-mode-switcher-container">
                     <div className="modal-mode-switcher">
                         <button onClick={() => setMode('woop')} className={mode === 'woop' ? 'active' : ''}>{t('goal_assistant_mode_woop')}</button>
+                        <button onClick={() => setMode('reminder')} className={mode === 'reminder' ? 'active' : ''}>🔔 미리알림</button>
                         <button onClick={() => setMode('automation')} className={mode === 'automation' ? 'active' : ''}>{t('goal_assistant_mode_automation')}</button>
                     </div>
                 </div>
@@ -2106,6 +2378,8 @@ const GoalAssistantModal: React.FC<{ onClose: () => void; onAddTodo?: (newTodoDa
                             <button onClick={handleNext} className="primary">{step === totalSteps ? (existingTodo ? t('save_button') : t('add_button')) : t('next_button')}</button>
                         </div>
                     </>
+                ) : mode === 'reminder' ? (
+                    <ReminderForm onAddReminder={onAddReminder} t={t} reminders={reminders} onDeleteReminder={onDeleteReminder} />
                 ) : (
                     onAddMultipleTodos && <AutomationForm onGenerate={onAddMultipleTodos} t={t} />
                 )}
