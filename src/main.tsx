@@ -82,6 +82,50 @@ const urlBase64ToUint8Array = (base64String: string) => {
   return outputArray;
 };
 
+// --- 테스트 알림 전송 함수 (개발자 메뉴용) ---
+const sendTestNotification = (type: 'deadline' | 'suggestion' | 'achievement') => {
+  const titles: Record<string, string> = {
+    deadline: '⏰ 마감일 임박',
+    suggestion: '💡 지금할일 제안',
+    achievement: '🎉 목표 달성 축하'
+  };
+
+  const messages: Record<string, string> = {
+    deadline: '마감이 가까운 목표가 있습니다!',
+    suggestion: '오늘 완료할 수 있는 목표를 추천합니다.',
+    achievement: '축하합니다! 목표를 완료하셨습니다. 🌟'
+  };
+
+  const options: any = {
+    icon: '/Nova-AI-Planer/favicon.svg',
+    badge: '/Nova-AI-Planer/favicon.svg',
+    tag: `test-${type}`,
+    requireInteraction: false,
+    actions: [
+      { action: 'open', title: '열기' },
+      { action: 'close', title: '닫기' }
+    ]
+  };
+
+  if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+    // Service Worker를 통한 알림
+    navigator.serviceWorker.controller.postMessage({
+      type: 'SHOW_NOTIFICATION',
+      title: titles[type],
+      options: {
+        body: messages[type],
+        ...options
+      }
+    });
+  } else if ('Notification' in window && Notification.permission === 'granted') {
+    // 직접 알림 (PWA 아닌 경우)
+    new Notification(titles[type], {
+      body: messages[type],
+      ...options
+    });
+  }
+};
+
 // --- 구독 정보를 서버로 전송 ---
 const sendSubscriptionToServer = async (subscription: PushSubscription) => {
   try {
@@ -2287,6 +2331,33 @@ const SettingsModal: React.FC<{
                                 <span>{t('settings_copyright')}</span>
                                 <span className="settings-item-value">{t('copyright_notice')}</span>
                             </div>
+                        </div>
+                        <div className="settings-section-header" style={{ marginTop: '20px' }}>🧪 Developer Menu</div>
+                        <div className="settings-section-body">
+                            <button 
+                                className="settings-item action-item" 
+                                onClick={() => sendTestNotification('deadline')}
+                                disabled={!isNotificationsEnabled}
+                                style={{ opacity: !isNotificationsEnabled ? 0.5 : 1, cursor: !isNotificationsEnabled ? 'not-allowed' : 'pointer' }}
+                            >
+                                <span className="action-text">🧪 테스트: 마감일 알림</span>
+                            </button>
+                            <button 
+                                className="settings-item action-item" 
+                                onClick={() => sendTestNotification('suggestion')}
+                                disabled={!isNotificationsEnabled}
+                                style={{ opacity: !isNotificationsEnabled ? 0.5 : 1, cursor: !isNotificationsEnabled ? 'not-allowed' : 'pointer' }}
+                            >
+                                <span className="action-text">🧪 테스트: 제안 알림</span>
+                            </button>
+                            <button 
+                                className="settings-item action-item" 
+                                onClick={() => sendTestNotification('achievement')}
+                                disabled={!isNotificationsEnabled}
+                                style={{ opacity: !isNotificationsEnabled ? 0.5 : 1, cursor: !isNotificationsEnabled ? 'not-allowed' : 'pointer' }}
+                            >
+                                <span className="action-text">🧪 테스트: 달성 축하 알림</span>
+                            </button>
                         </div>
                     </>
                 );
