@@ -10,8 +10,8 @@ import './index.css';
 interface Reminder {
     id: string;
     title: string;
-    dueDate?: string;      // "2025-10-25" 형식
-    time: string;          // "14:30" 형식
+    dueDate?: string;      // "2025-10-25" 형식, undefined면 날짜 없음
+    time?: string;         // "14:30" 형식, undefined면 시간 없음
     isRecurring: boolean;  // 반복 여부
     recurringType?: 'daily' | 'weekly' | 'monthly'; // 반복 유형
     description?: string;
@@ -2071,10 +2071,23 @@ const ReminderStepContent: React.FC<{ step: number; t: (key: string) => any; [ke
             return (
                 <div>
                     <h3>📅 기한 & ⏰ 시간</h3>
-                    <div className="step-guidance"><p className="tip">기한 날짜와 시간을 설정하세요</p></div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
-                        <div>
-                            <h4 style={{ fontSize: '0.9rem', fontWeight: 500, marginBottom: '8px' }}>기한</h4>
+                    <div className="step-guidance"><p className="tip">기한 날짜와 시간을 설정하세요 (선택사항)</p></div>
+                    
+                    <label className="settings-item standalone-toggle" style={{ marginBottom: '20px' }}>
+                        <span style={{ fontWeight: 500 }}>기한 설정</span>
+                        <label className="theme-toggle-switch">
+                            <input 
+                                type="checkbox" 
+                                checked={!!dueDate} 
+                                onChange={(e) => setDueDate(e.target.checked ? new Date().toISOString().split('T')[0] : '')} 
+                            />
+                            <span className="slider round"></span>
+                        </label>
+                    </label>
+
+                    {dueDate && (
+                        <div style={{ marginBottom: '20px' }}>
+                            <h4 style={{ fontSize: '0.9rem', fontWeight: 500, marginBottom: '8px' }}>기한 날짜</h4>
                             <input 
                                 type="date" 
                                 value={dueDate} 
@@ -2082,6 +2095,21 @@ const ReminderStepContent: React.FC<{ step: number; t: (key: string) => any; [ke
                                 style={{ width: '100%', padding: '12px', borderRadius: '8px', border: `1px solid var(--border-color)`, backgroundColor: 'var(--input-bg-color)', color: 'var(--text-color)', fontFamily: 'inherit', fontSize: '1rem' }}
                             />
                         </div>
+                    )}
+
+                    <label className="settings-item standalone-toggle" style={{ marginBottom: '20px' }}>
+                        <span style={{ fontWeight: 500 }}>시간 설정</span>
+                        <label className="theme-toggle-switch">
+                            <input 
+                                type="checkbox" 
+                                checked={!!time} 
+                                onChange={(e) => setTime(e.target.checked ? '09:00' : '')} 
+                            />
+                            <span className="slider round"></span>
+                        </label>
+                    </label>
+
+                    {time && (
                         <div>
                             <h4 style={{ fontSize: '0.9rem', fontWeight: 500, marginBottom: '8px' }}>시간</h4>
                             <input 
@@ -2091,7 +2119,7 @@ const ReminderStepContent: React.FC<{ step: number; t: (key: string) => any; [ke
                                 style={{ width: '100%', padding: '12px', borderRadius: '8px', border: `1px solid var(--border-color)`, backgroundColor: 'var(--input-bg-color)', color: 'var(--text-color)', fontFamily: 'inherit', fontSize: '1rem' }}
                             />
                         </div>
-                    </div>
+                    )}
                 </div>
             );
         case 3:
@@ -2176,7 +2204,7 @@ const ReminderForm: React.FC<ReminderFormProps> = ({ onAddReminder, t, reminders
     const [animationDir, setAnimationDir] = useState<'forward' | 'backward'>('forward');
     const [title, setTitle] = useState('');
     const [dueDate, setDueDate] = useState('');
-    const [time, setTime] = useState('09:00');
+    const [time, setTime] = useState('');
     const [isRecurring, setIsRecurring] = useState(false);
     const [recurringType, setRecurringType] = useState<'daily' | 'weekly' | 'monthly'>('daily');
     const [description, setDescription] = useState('');
@@ -2212,7 +2240,7 @@ const ReminderForm: React.FC<ReminderFormProps> = ({ onAddReminder, t, reminders
             onAddReminder({
                 title: title.trim(),
                 dueDate: dueDate || undefined,
-                time,
+                time: time || undefined,
                 isRecurring,
                 recurringType: isRecurring ? recurringType : undefined,
                 description: description.trim() || undefined,
@@ -2222,7 +2250,7 @@ const ReminderForm: React.FC<ReminderFormProps> = ({ onAddReminder, t, reminders
         
         setTitle('');
         setDueDate('');
-        setTime('09:00');
+        setTime('');
         setIsRecurring(false);
         setRecurringType('daily');
         setDescription('');
@@ -2265,7 +2293,7 @@ const ReminderForm: React.FC<ReminderFormProps> = ({ onAddReminder, t, reminders
                                         </div>
                                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', fontSize: '0.8rem' }}>
                                             {reminder.dueDate && <span style={{ backgroundColor: 'rgba(0, 122, 255, 0.1)', color: 'var(--primary-color)', padding: '2px 6px', borderRadius: '4px' }}>📅 {reminder.dueDate}</span>}
-                                            <span style={{ backgroundColor: 'rgba(0, 122, 255, 0.1)', color: 'var(--primary-color)', padding: '2px 6px', borderRadius: '4px' }}>⏰ {reminder.time}</span>
+                                            {reminder.time && <span style={{ backgroundColor: 'rgba(0, 122, 255, 0.1)', color: 'var(--primary-color)', padding: '2px 6px', borderRadius: '4px' }}>⏰ {reminder.time}</span>}
                                             {reminder.isRecurring && <span style={{ backgroundColor: 'rgba(52, 199, 89, 0.1)', color: 'var(--success-color)', padding: '2px 6px', borderRadius: '4px' }}>🔄 {reminder.recurringType === 'daily' ? '매일' : reminder.recurringType === 'weekly' ? '매주' : '매월'}</span>}
                                         </div>
                                         {reminder.description && <div style={{ marginTop: '6px', fontSize: '0.85rem', color: 'var(--text-secondary-color)', paddingLeft: '24px' }}>{reminder.description}</div>}
@@ -2962,20 +2990,28 @@ const SettingsModal: React.FC<{
 
 const VersionInfoModal: React.FC<{ onClose: () => void; t: (key: string) => any; }> = ({ onClose, t }) => {
     const [isClosing, handleClose] = useModalAnimation(onClose);
-    const buildNumber = "1.5 (25.10.25)";
+    const buildNumber = "2.0 (25.10.23)";
 
-    const changelogItems = [
-        { icon: icons.data, titleKey: 'version_update_1_title', descKey: 'version_update_1_desc' },
-        { icon: icons.settings, titleKey: 'version_update_2_title', descKey: 'version_update_2_desc' },
-        { icon: icons.account, titleKey: 'version_update_3_title', descKey: 'version_update_3_desc' },
-        { icon: icons.info, titleKey: 'version_update_4_title', descKey: 'version_update_4_desc' },
+            const changelogItems = [
+        { icon: '🔔', title: '미리알림 관리', desc: 'Step-by-step 미리알림 추가. 제목, 기한(선택), 시간(선택), 반복 설정, 설명, 활성화 여부' },
+        { icon: '📅', title: '유연한 날짜/시간 설정', desc: '기한 없음, 시간 없음 옵션으로 필요한 정보만 선택적 입력 가능' },
+        { icon: '🎯', title: 'WOOP 목표 설정', desc: '5단계 마법사 (Wish → Outcome → Obstacle → Plan → 기한/반복)로 구조화된 목표 계획' },
+        { icon: '🤖', title: 'AI 코치 피드백', desc: 'Gemini API 기반 각 단계별 실시간 AI 피드백으로 목표 개선' },
+        { icon: '🔐', title: 'Google 로그인', desc: 'Google OAuth 인증으로 보안 강화 및 계정 관리' },
+        { icon: '☁️', title: 'Firebase 클라우드 동기화', desc: '목표, 설정, 미리알림 등 모든 데이터 Firebase Firestore에 자동 저장' },
+        { icon: '🔄', title: '자동 동기화 제어', desc: '켜고 끄기 옵션으로 클라우드 자동 동기화 제어 가능' },
+        { icon: '🌙', title: '다크 모드 & 테마', desc: '시스템/라이트/다크 모드 자동 감지 및 8가지 배경 테마 지원' },
+        { icon: '📱', title: 'PWA & 오프라인', desc: '모바일 PWA 자동 설치 배너, 오프라인 모드, 푸시 알림 지원' },
+        { icon: '🗓️', title: '달력 보기', desc: '3일/주간/월간 달력 뷰로 목표 스케줄링 및 시각화' },
+        { icon: '📤', title: '데이터 내보내기/가져오기', desc: 'JSON 형식으로 모든 데이터 로컬 저장 및 복원' },
+        { icon: '🌍', title: '다국어 지원', desc: '한국어, 영어 등 다국어 인터페이스 지원' },
     ];
 
     return (
         <Modal onClose={handleClose} isClosing={isClosing} className="version-info-modal">
             {/* 버전 정보 섹션 */}
             <div className="version-info-header">
-                <h2>{t('version_update_title')}</h2>
+                <h2>✨ Nova AI Planner v2.0</h2>
                 <p>{t('build_number')}: {buildNumber}</p>
             </div>
             
@@ -2984,8 +3020,8 @@ const VersionInfoModal: React.FC<{ onClose: () => void; t: (key: string) => any;
                     <div className="changelog-item" key={index}>
                         <div className="changelog-icon" style={{'--icon-bg': 'var(--primary-color)'} as React.CSSProperties}>{item.icon}</div>
                         <div className="changelog-text">
-                            <h3>{t(item.titleKey)}</h3>
-                            <p>{t(item.descKey)}</p>
+                            <h3>{item.title}</h3>
+                            <p>{item.desc}</p>
                         </div>
                     </div>
                 ))}
