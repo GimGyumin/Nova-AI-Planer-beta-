@@ -4,7 +4,7 @@ import { GoogleOAuthProvider, useGoogleLogin } from '@react-oauth/google';
 import { GoogleGenAI, Type } from "@google/genai";
 import { auth, googleProvider, db } from './firebase-config';
 import { signInWithPopup, signOut, onAuthStateChanged, User } from 'firebase/auth';
-import { collection, doc, updateDoc, setDoc, onSnapshot, getDoc } from 'firebase/firestore';
+import { collection, doc, updateDoc, setDoc, onSnapshot, getDoc, deleteDoc } from 'firebase/firestore';
 import { httpsCallable, getFunctions } from 'firebase/functions';
 import './index.css';
 
@@ -1474,7 +1474,7 @@ const App: React.FC = () => {
                                 updatedAt: shareInfo.sharedAt
                             };
 
-                            // Firestore에서 최신 협업자 목록 조회 (권한 검증)
+                            // Firestore에서 최신 협업자 목록 조회 및 자동 추가
                             if (ownerUserId && googleUser) {
                                 try {
                                     const foldersRef = collection(db, 'users', ownerUserId, 'folders');
@@ -1482,29 +1482,35 @@ const App: React.FC = () => {
                                     const folderDoc = await getDoc(folderDocRef);
                                     
                                     if (folderDoc.exists()) {
-                                        const folderData = folderDoc.data();
-                                        const collaborators = folderData.collaborators || [];
+                                        let collaborators = folderDoc.data().collaborators || [];
                                         
                                         // 현재 사용자가 협업자 목록에 있는지 확인
                                         const isCollaborator = collaborators.some((c: any) => c.userId === googleUser.uid);
                                         
                                         if (!isCollaborator) {
-                                            setAlertConfig({
-                                                title: '접근 권한 없음',
-                                                message: '이 폴더에 접근할 권한이 없습니다. 폴더 소유자에게 협업자로 추가되어야 합니다.',
-                                                confirmText: '확인',
-                                                onConfirm: () => {
-                                                    window.history.replaceState({}, document.title, window.location.pathname);
-                                                }
-                                            });
-                                            return;
+                                            // 협업자 자동 추가 (링크로 접근한 사용자는 자동으로 추가됨)
+                                            const newCollaborator = {
+                                                userId: googleUser.uid,
+                                                email: googleUser.email || '',
+                                                role: 'editor',
+                                                addedAt: new Date().toISOString()
+                                            };
+                                            collaborators = [...collaborators, newCollaborator];
+                                            
+                                            // 소유자의 Firestore에 협업자 목록 저장
+                                            await setDoc(folderDocRef, {
+                                                collaborators: collaborators,
+                                                updatedAt: new Date().toISOString()
+                                            }, { merge: true });
+                                            
+                                            console.log('✅ 협업자 자동 추가:', newCollaborator);
                                         }
                                         
                                         // 협업자 목록 업데이트
                                         newFolder.collaborators = collaborators;
                                     }
                                 } catch (error) {
-                                    console.error('협업자 목록 조회 실패:', error);
+                                    console.error('협업자 목록 조회/추가 실패:', error);
                                 }
                             }
 
@@ -1603,6 +1609,8 @@ const App: React.FC = () => {
 
         // 2. 소유자의 목표 컬렉션 감시
         const todosRef = collection(db, 'users', ownerKey, 'todos');
+        console.log('📊 Syncing todos from owner:', { ownerKey, currentFolderId });
+        
         const todosUnsubscribe = onSnapshot(todosRef, (todosSnapshot) => {
             const ownerTodos: Goal[] = [];
             todosSnapshot.forEach((doc) => {
@@ -1611,6 +1619,8 @@ const App: React.FC = () => {
                     ownerTodos.push({ id: parseInt(doc.id), ...data } as Goal);
                 }
             });
+            
+            console.log('🎯 Owner todos received:', { count: ownerTodos.length, ownerTodos });
             
             // 소유자의 목표와 현재 사용자의 목표를 병합
             setTodos(prevTodos => {
@@ -1791,6 +1801,26 @@ const App: React.FC = () => {
             streak: 0,
             folderId: currentFolderId || undefined  // 현재 폴더에 추가
         };
+        
+        // Firestore에 저장 (공유 폴더인 경우 - 소유자의 Firestore에 저장)
+        if (currentFolderId && googleUser) {
+            const folder = folders.find(f => f.id === currentFolderId);
+            if (folder?.ownerId) {
+                (async () => {
+                    try {
+                        // 👉 중요: 소유자의 Firestore에 저장해야 모두가 볼 수 있음
+                        const ownerUid = folder.ownerId;
+                        const todosRef = collection(db, 'users', ownerUid, 'todos');
+                        const todoDocRef = doc(todosRef, newTodo.id.toString());
+                        await setDoc(todoDocRef, newTodo);
+                        console.log('✅ 목표 소유자 Firestore 저장:', { ownerUid, newTodo });
+                    } catch (error) {
+                        console.error('목표 Firestore 저장 실패:', error);
+                    }
+                })();
+            }
+        }
+        
         setTodos(prev => [newTodo, ...prev]);
         setIsGoalAssistantOpen(false);
     };
@@ -1804,16 +1834,76 @@ const App: React.FC = () => {
             streak: 0,
             folderId: currentFolderId || undefined  // 현재 폴더에 추가
         })).reverse(); // So the first goal appears at the top
+        
+        // Firestore에 저장 (공유 폴더인 경우 - 소유자의 Firestore에 저장)
+        if (currentFolderId && googleUser) {
+            const folder = folders.find(f => f.id === currentFolderId);
+            if (folder?.ownerId) {
+                (async () => {
+                    try {
+                        const ownerUid = folder.ownerId;
+                        for (const todo of newTodos) {
+                            const todosRef = collection(db, 'users', ownerUid, 'todos');
+                            const todoDocRef = doc(todosRef, todo.id.toString());
+                            await setDoc(todoDocRef, todo);
+                        }
+                        console.log('✅ 여러 목표 소유자 Firestore 저장:', { ownerUid, count: newTodos.length });
+                    } catch (error) {
+                        console.error('여러 목표 Firestore 저장 실패:', error);
+                    }
+                })();
+            }
+        }
+        
         setTodos(prev => [...newTodos, ...prev]);
         setIsGoalAssistantOpen(false);
     };
 
     const handleEditTodo = (updatedTodo: Goal) => {
+        // Firestore에 저장 (공유 폴더인 경우 - 소유자의 Firestore에 저장)
+        if (updatedTodo.folderId && googleUser) {
+            const folder = folders.find(f => f.id === updatedTodo.folderId);
+            if (folder?.ownerId) {
+                (async () => {
+                    try {
+                        // 👉 중요: 소유자의 Firestore에 저장
+                        const ownerUid = folder.ownerId;
+                        const todosRef = collection(db, 'users', ownerUid, 'todos');
+                        const todoDocRef = doc(todosRef, updatedTodo.id.toString());
+                        await setDoc(todoDocRef, updatedTodo);
+                        console.log('✅ 목표 업데이트 소유자 Firestore 저장:', { ownerUid, updatedTodo });
+                    } catch (error) {
+                        console.error('목표 업데이트 Firestore 저장 실패:', error);
+                    }
+                })();
+            }
+        }
+        
         setTodos(todos.map(todo => (todo.id === updatedTodo.id ? updatedTodo : todo)));
         setEditingTodo(null);
     };
 
     const handleDeleteTodo = (id: number) => {
+        // Firestore에서 삭제 (공유 폴더인 경우 - 소유자의 Firestore에서 삭제)
+        const todoToDelete = todos.find(t => t.id === id);
+        if (todoToDelete?.folderId && googleUser) {
+            const folder = folders.find(f => f.id === todoToDelete.folderId);
+            if (folder?.ownerId) {
+                (async () => {
+                    try {
+                        // 👉 중요: 소유자의 Firestore에서 삭제
+                        const ownerUid = folder.ownerId;
+                        const todosRef = collection(db, 'users', ownerUid, 'todos');
+                        const todoDocRef = doc(todosRef, id.toString());
+                        await deleteDoc(todoDocRef);
+                        console.log('✅ 목표 소유자 Firestore 삭제:', { ownerUid, id });
+                    } catch (error) {
+                        console.error('목표 Firestore 삭제 실패:', error);
+                    }
+                })();
+            }
+        }
+        
         setTodos(todos.filter(todo => todo.id !== id));
     };
 
