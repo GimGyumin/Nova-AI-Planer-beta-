@@ -1183,9 +1183,8 @@ li.selection-mode.selected .checkbox-container .checkmark:after {
 
 .settings-section-body {
   background-color: var(--settings-section-bg-color);
-  border-radius: 22px;
+  border-radius: 12px;
   overflow: hidden;
-  border: 1px solid var(--border-color);
 }
 .settings-item {
   display: flex;
@@ -1200,7 +1199,7 @@ li.selection-mode.selected .checkbox-container .checkmark:after {
     position: absolute;
     bottom: 0;
     left: 16px;
-    right: 0;
+    right: 16px;
     height: 0.5px;
     background-color: var(--border-color);
 }
@@ -1380,7 +1379,7 @@ input:checked + .slider:before { -webkit-transform: translateX(20px); -ms-transf
     box-shadow: 0 1px 4px rgba(0,0,0,0.1);
 }
 
-.goal-assistant-body { flex-grow: 1; padding: 0 24px 0; overflow-y: auto; position: relative; display: flex; flex-direction: column; }
+.goal-assistant-body { flex-grow: 1; padding: 0 24px 0; overflow-y: auto; position: relative; display: flex; flex-direction: column; min-height: 500px; }
 .progress-bar-container { height: 8px; background-color: var(--button-bg-color); border-radius: 4px; overflow: hidden; margin-bottom: 24px; flex-shrink: 0; }
 .progress-bar { height: 100%; background-color: var(--primary-color); border-radius: 4px; transition: width 0.4s cubic-bezier(0.2, 0.8, 0.2, 1); }
 .goal-assistant-step-content-animator { flex-grow: 1; }
@@ -1473,7 +1472,7 @@ input:checked + .slider:before { -webkit-transform: translateX(20px); -ms-transf
 
 
 /* Toast Notification */
-.toast-notification { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background-color: var(--alert-bg-color); color: var(--text-color); padding: 12px 24px; border-radius: 22px; box-shadow: var(--drop-shadow-popover); z-index: 2000; animation: toast-in 0.5s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.toast-notification { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background-color: var(--alert-bg-color); color: var(--text-color); padding: 16px 24px; border-radius: 999px; box-shadow: 0 8px 16px rgba(0, 0, 0, 0.15); z-index: 2000; animation: toast-in 0.5s cubic-bezier(0.2, 0.8, 0.2, 1); font-size: 0.95rem; font-weight: 500; max-width: 80%; text-align: center; }
 @keyframes toast-in { from { transform: translate(-50%, 100px); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
 
 /* Calendar View */

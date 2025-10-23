@@ -4,21 +4,11 @@ import { GoogleOAuthProvider, useGoogleLogin } from '@react-oauth/google';
 import { GoogleGenAI, Type } from "@google/genai";
 import { auth, googleProvider, db } from './firebase-config';
 import { signInWithPopup, signOut, onAuthStateChanged, User } from 'firebase/auth';
+import { collection, doc, updateDoc, setDoc, onSnapshot } from 'firebase/firestore';
+import { httpsCallable, getFunctions } from 'firebase/functions';
 import './index.css';
 
 // --- 타입 정의 ---
-interface Reminder {
-    id: string;
-    title: string;
-    dueDate?: string;      // "2025-10-25" 형식, undefined면 날짜 없음
-    time?: string;         // "14:30" 형식, undefined면 시간 없음
-    isRecurring: boolean;  // 반복 여부
-    recurringType?: 'daily' | 'weekly' | 'monthly'; // 반복 유형
-    description?: string;
-    enabled: boolean;
-    createdAt: string;
-    category?: 'school' | 'work' | 'personal' | 'other';  // 학교, 회사, 개인, 기타
-}
 
 // --- PWA 유틸리티 함수 ---
 const isMobile = () => {
@@ -104,60 +94,6 @@ const urlBase64ToUint8Array = (base64String: string) => {
 };
 
 // --- 테스트 알림 전송 함수 (개발자 메뉴용) ---
-const sendTestNotification = async (type: 'deadline' | 'suggestion' | 'achievement' | 'reminder') => {
-  const titles: Record<string, string> = {
-    deadline: '⏰ 마감일 임박',
-    suggestion: '💡 지금할일 제안',
-    achievement: '🎉 목표 달성 축하',
-    reminder: '🔔 미리알림'
-  };
-
-  const messages: Record<string, string> = {
-    deadline: '마감이 가까운 목표가 있습니다!',
-    suggestion: '오늘 완료할 수 있는 목표를 추천합니다.',
-    achievement: '축하합니다! 목표를 완료하셨습니다. 🌟',
-    reminder: '설정한 시간입니다. 목표를 확인해보세요!'
-  };
-
-  try {
-    // 먼저 Service Worker 컨트롤러가 있는지 확인
-    if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-      console.log('Sending notification via Service Worker');
-      navigator.serviceWorker.controller.postMessage({
-        type: 'SHOW_NOTIFICATION',
-        title: titles[type],
-        options: {
-          body: messages[type],
-          icon: '/Nova-AI-Planer/favicon.svg',
-          badge: '/Nova-AI-Planer/favicon.svg',
-          tag: `test-${type}-${Date.now()}`,
-          requireInteraction: false
-        }
-      });
-    } else if ('Notification' in window) {
-      // Notification API를 직접 사용 (PWA 아닌 경우 또는 Service Worker 없을 때)
-      console.log('Sending notification via Notification API');
-      if (Notification.permission === 'granted') {
-        new Notification(titles[type], {
-          body: messages[type],
-          icon: '/Nova-AI-Planer/favicon.svg',
-          badge: '/Nova-AI-Planer/favicon.svg',
-          tag: `test-${type}-${Date.now()}`
-        });
-      } else {
-        console.log('Notification permission not granted');
-        alert('알림 권한을 먼저 허용해주세요!');
-      }
-    } else {
-      console.log('Notifications not supported');
-      alert('이 브라우저는 알림을 지원하지 않습니다.');
-    }
-  } catch (error) {
-    console.error('Failed to send test notification:', error);
-    alert('알림 전송 실패: ' + (error as any).message);
-  }
-};
-
 // --- 미리알림 시간 체크 함수 ---
 const isReminderTimeValid = (startTime: string, endTime: string): boolean => {
   const now = new Date();
@@ -352,6 +288,7 @@ interface Goal {
   category?: string;  // 사용자 정의 카테고리
 }
 
+
 interface Collaborator {
   userId: string;
   email: string;
@@ -359,6 +296,14 @@ interface Collaborator {
   photoURL?: string;
   role: 'owner' | 'editor' | 'viewer';
   addedAt: string;
+}
+
+interface SharedLink {
+  id: string;
+  folderId: string;
+  password?: string;  // 암호 설정 시
+  expiresAt?: string;  // 만료 날짜
+  createdAt: string;
 }
 
 // --- 번역 객체 ---
@@ -1084,58 +1029,10 @@ const App: React.FC = () => {
     const [isUsageGuideOpen, setIsUsageGuideOpen] = useState<boolean>(false);
     const [aiSortReason, setAiSortReason] = useState<string>('');
     const [showAiSortReasonModal, setShowAiSortReasonModal] = useState<boolean>(false);
-    const [collaboratingGoal, setCollaboratingGoal] = useState<Goal | null>(null);
+    const [collaboratingFolder, setCollaboratingFolder] = useState<Folder | null | undefined>(undefined);
     
     // PWA 관련 상태
     const [showPWAPrompt, setShowPWAPrompt] = useState<boolean>(false);
-    const [isNotificationsEnabled, setIsNotificationsEnabled] = useState<boolean>(() => {
-        return localStorage.getItem('nova-notifications-enabled') === 'true';
-    });
-    
-    // 알림 타입 설정
-    const [notificationSettings, setNotificationSettings] = useState<{
-        deadline: boolean;
-        suggestion: boolean;
-        achievement: boolean;
-        reminder: boolean;
-    }>(() => {
-        const saved = localStorage.getItem('nova-notification-settings');
-        if (saved) {
-            return JSON.parse(saved);
-        }
-        return {
-            deadline: true,      // 마감일 임박 알림
-            suggestion: true,    // 지금할일 제안
-            achievement: true,   // 목표 달성 축하
-            reminder: true       // 일반 미리알림
-        };
-    });
-
-    // 미리알림 시간 설정
-    const [reminderTimeSettings, setReminderTimeSettings] = useState<{
-        enabled: boolean;
-        startTime: string;    // "09:00" 형식
-        endTime: string;      // "18:00" 형식
-    }>(() => {
-        const saved = localStorage.getItem('nova-reminder-time-settings');
-        if (saved) {
-            return JSON.parse(saved);
-        }
-        return {
-            enabled: true,
-            startTime: '09:00',
-            endTime: '18:00'
-        };
-    });
-
-    // 미리알림 리스트 (사용자가 추가한 미리알림들)
-    const [reminders, setReminders] = useState<Reminder[]>(() => {
-        const saved = localStorage.getItem('nova-reminders');
-        if (saved) {
-            return JSON.parse(saved);
-        }
-        return [];
-    });
     
     // API 키 및 오프라인 모드 상태 추가
     const [apiKey, setApiKey] = useState<string>(() => localStorage.getItem('nova-api-key') || '');
@@ -1202,10 +1099,6 @@ const App: React.FC = () => {
                         if (settingsData.isDarkMode !== undefined) setIsDarkMode(settingsData.isDarkMode);
                         if (settingsData.backgroundTheme) setBackgroundTheme(settingsData.backgroundTheme);
                         if (settingsData.apiKey) setApiKey(settingsData.apiKey);
-                        if (settingsData.isNotificationsEnabled !== undefined) setIsNotificationsEnabled(settingsData.isNotificationsEnabled);
-                        if (settingsData.notificationSettings) setNotificationSettings(settingsData.notificationSettings);
-                        if (settingsData.reminderTimeSettings) setReminderTimeSettings(settingsData.reminderTimeSettings);
-                        if (settingsData.reminders) setReminders(settingsData.reminders);
                     }
                     
                     setToastMessage('✅ 로그인 완료! 데이터 로드됨');
@@ -1221,37 +1114,15 @@ const App: React.FC = () => {
         } catch (error: any) {
             console.error('Google 로그인 오류:', error);
             if (error.code !== 'auth/popup-closed-by-user') {
-                setToastMessage('❌ 로그인 실패: ' + error.message);
-                setTimeout(() => setToastMessage(''), 3000);
+                setAlertConfig({
+                    title: '로그인 실패',
+                    message: error.message || '로그인 중 오류가 발생했습니다.',
+                    confirmText: '확인',
+                    onConfirm: () => setAlertConfig(null),
+                });
             }
             setIsGoogleLoggingIn(false);
         }
-    }, []);
-
-    // 미리알림 추가
-    const handleAddReminder = useCallback((reminder: Omit<Reminder, 'id' | 'createdAt'>) => {
-        const newReminder: Reminder = {
-            ...reminder,
-            id: Date.now().toString(),
-            createdAt: new Date().toISOString()
-        };
-        setReminders(prev => [...prev, newReminder]);
-        setToastMessage('✅ 미리알림이 추가되었습니다');
-        setTimeout(() => setToastMessage(''), 3000);
-    }, []);
-
-    // 미리알림 수정
-    const handleUpdateReminder = useCallback((id: string, reminder: Partial<Reminder>) => {
-        setReminders(prev => prev.map(r => r.id === id ? { ...r, ...reminder } : r));
-        setToastMessage('✅ 미리알림이 수정되었습니다');
-        setTimeout(() => setToastMessage(''), 3000);
-    }, []);
-
-    // 미리알림 삭제
-    const handleDeleteReminder = useCallback((id: string) => {
-        setReminders(prev => prev.filter(r => r.id !== id));
-        setToastMessage('✅ 미리알림이 삭제되었습니다');
-        setTimeout(() => setToastMessage(''), 3000);
     }, []);
 
     // 협업자 업데이트 핸들러
@@ -1262,6 +1133,24 @@ const App: React.FC = () => {
                 : todo
         ));
         setToastMessage('✅ 협업자가 업데이트되었습니다');
+        setTimeout(() => setToastMessage(''), 3000);
+    };
+
+    const handleUpdateFolderCollaborators = (folderId: string | null, collaborators: Collaborator[]) => {
+        if (folderId === null) return; // 루트 폴더는 협업 불가
+        const updatedFolders = folders.map(folder => 
+            folder.id === folderId 
+                ? { ...folder, collaborators } 
+                : folder
+        );
+        setFolders(updatedFolders);
+        
+        // collaboratingFolder도 업데이트해서 Modal이 최신 데이터 표시
+        if (collaboratingFolder && collaboratingFolder.id === folderId) {
+            setCollaboratingFolder({ ...collaboratingFolder, collaborators });
+        }
+        
+        setToastMessage('✅ 폴더 협업자가 업데이트되었습니다');
         setTimeout(() => setToastMessage(''), 3000);
     };
 
@@ -1317,8 +1206,12 @@ const App: React.FC = () => {
             setIsGoogleLoggingOut(false);
         } catch (error: any) {
             console.error('로그아웃 오류:', error);
-            setToastMessage('❌ 로그아웃 실패');
-            setTimeout(() => setToastMessage(''), 3000);
+            setAlertConfig({
+                title: '로그아웃 실패',
+                message: '로그아웃 중 오류가 발생했습니다.',
+                confirmText: '확인',
+                onConfirm: () => setAlertConfig(null),
+            });
             setIsGoogleLoggingOut(false);
         }
     }, [googleUser, todos, language, themeMode, isDarkMode, backgroundTheme]);
@@ -1326,8 +1219,12 @@ const App: React.FC = () => {
     // Firebase에 목표 + 설정 데이터 동기화
     const handleSyncDataToFirebase = useCallback(async () => {
         if (!googleUser) {
-            setToastMessage('❌ 먼저 로그인해주세요');
-            setTimeout(() => setToastMessage(''), 3000);
+            setAlertConfig({
+                title: '로그인 필요',
+                message: '먼저 로그인해주세요',
+                confirmText: '확인',
+                onConfirm: () => setAlertConfig(null),
+            });
             return;
         }
 
@@ -1353,14 +1250,8 @@ const App: React.FC = () => {
                 isDarkMode: isDarkMode,
                 backgroundTheme: backgroundTheme,
                 apiKey: apiKey,
-                isNotificationsEnabled: isNotificationsEnabled,
-                notificationSettings: notificationSettings,
                 updatedAt: serverTimestamp()
             };
-            
-            // undefined 필드 제거
-            if (reminderTimeSettings) settingsData.reminderTimeSettings = reminderTimeSettings;
-            if (reminders && reminders.length > 0) settingsData.reminders = reminders;
             
             await setDoc(settingsRef, settingsData);
             
@@ -1369,17 +1260,25 @@ const App: React.FC = () => {
             setIsSyncingData(false);
         } catch (error: any) {
             console.error('동기화 오류:', error);
-            setToastMessage('❌ 동기화 실패: ' + error.message);
-            setTimeout(() => setToastMessage(''), 3000);
+            setAlertConfig({
+                title: '동기화 실패',
+                message: error.message || '데이터 동기화 중 오류가 발생했습니다.',
+                confirmText: '확인',
+                onConfirm: () => setAlertConfig(null),
+            });
             setIsSyncingData(false);
         }
-    }, [googleUser, todos, language, themeMode, isDarkMode, backgroundTheme, apiKey, isNotificationsEnabled, notificationSettings]);
+    }, [googleUser, todos, language, themeMode, isDarkMode, backgroundTheme, apiKey]);
 
     // Firebase에서 목표 + 설정 데이터 불러오기
     const handleLoadDataFromFirebase = useCallback(async () => {
         if (!googleUser) {
-            setToastMessage('❌ 먼저 로그인해주세요');
-            setTimeout(() => setToastMessage(''), 3000);
+            setAlertConfig({
+                title: '로그인 필요',
+                message: '먼저 로그인해주세요',
+                confirmText: '확인',
+                onConfirm: () => setAlertConfig(null),
+            });
             return;
         }
 
@@ -1407,10 +1306,6 @@ const App: React.FC = () => {
                 if (settingsData.isDarkMode !== undefined) setIsDarkMode(settingsData.isDarkMode);
                 if (settingsData.backgroundTheme) setBackgroundTheme(settingsData.backgroundTheme);
                 if (settingsData.apiKey) setApiKey(settingsData.apiKey);
-                if (settingsData.isNotificationsEnabled !== undefined) setIsNotificationsEnabled(settingsData.isNotificationsEnabled);
-                if (settingsData.notificationSettings) setNotificationSettings(settingsData.notificationSettings);
-                if (settingsData.reminderTimeSettings) setReminderTimeSettings(settingsData.reminderTimeSettings);
-                if (settingsData.reminders) setReminders(settingsData.reminders);
             }
             
             const todosCount = todosSnap.exists() ? (todosSnap.data().todos?.length || 0) : 0;
@@ -1419,8 +1314,12 @@ const App: React.FC = () => {
             setIsLoadingData(false);
         } catch (error: any) {
             console.error('로드 오류:', error);
-            setToastMessage('❌ 로드 실패: ' + error.message);
-            setTimeout(() => setToastMessage(''), 3000);
+            setAlertConfig({
+                title: '로드 실패',
+                message: error.message || '데이터 로드 중 오류가 발생했습니다.',
+                confirmText: '확인',
+                onConfirm: () => setAlertConfig(null),
+            });
             setIsLoadingData(false);
         }
     }, [googleUser]);
@@ -1483,6 +1382,97 @@ const App: React.FC = () => {
     useEffect(() => {
         const urlParams = new URLSearchParams(window.location.search);
         const dataFromUrl = urlParams.get('data');
+        const folderShareData = urlParams.get('folder_share');
+        
+        // 폴더 공유 링크 처리
+        if (folderShareData) {
+            try {
+                const decodedJson = base64ToUtf8(folderShareData);
+                const shareInfo = JSON.parse(decodedJson);
+                
+                if (shareInfo.type === 'folder_share' && shareInfo.folderId) {
+                    // 암호가 설정되어 있는 경우 검증
+                    if (shareInfo.password) {
+                        const savedPassword = sessionStorage.getItem(`folder_${shareInfo.folderId}_password`);
+                        
+                        if (!savedPassword || savedPassword !== shareInfo.password) {
+                            // 암호 입력 받기
+                            setAlertConfig({
+                                title: '암호 입력',
+                                message: '이 폴더는 암호로 보호되어 있습니다. 암호를 입력하세요.',
+                                confirmText: '확인',
+                                cancelText: '취소',
+                                onConfirm: () => {
+                                    // 암호 입력 프롬프트 (커스텀)
+                                    const password = prompt('폴더 암호를 입력하세요:');
+                                    if (password === shareInfo.password) {
+                                        sessionStorage.setItem(`folder_${shareInfo.folderId}_password`, password);
+                                        // 재시도
+                                        window.location.reload();
+                                    } else if (password !== null) {
+                                        setAlertConfig({
+                                            title: '암호 오류',
+                                            message: '암호가 일치하지 않습니다.',
+                                            confirmText: '확인',
+                                            onConfirm: () => {
+                                                window.history.replaceState({}, document.title, window.location.pathname);
+                                            }
+                                        });
+                                    }
+                                },
+                                onCancel: () => {
+                                    window.history.replaceState({}, document.title, window.location.pathname);
+                                }
+                            });
+                            return;
+                        }
+                    }
+                    
+                    // 이미 폴더가 있는지 확인
+                    const folderExists = folders.some(f => f.id === shareInfo.folderId);
+                    
+                    if (!folderExists) {
+                        // 새 폴더 추가
+                        const newFolder: Folder = {
+                            id: shareInfo.folderId,
+                            name: shareInfo.folderName,
+                            color: shareInfo.folderColor || '#007AFF',
+                            ownerId: shareInfo.sharedBy,
+                            collaborators: [
+                                {
+                                    userId: `owner_${Date.now()}`,
+                                    email: shareInfo.sharedBy,
+                                    role: 'owner',
+                                    addedAt: shareInfo.sharedAt
+                                }
+                            ],
+                            createdAt: shareInfo.sharedAt,
+                            updatedAt: shareInfo.sharedAt
+                        };
+                        
+                        setFolders([...folders, newFolder]);
+                        setCurrentFolderId(newFolder.id);
+                        
+                        setAlertConfig({
+                            title: '공유 폴더 추가됨',
+                            message: `"${shareInfo.folderName}" 폴더가 추가되었습니다.`,
+                            confirmText: '확인',
+                            onConfirm: () => {
+                                window.history.replaceState({}, document.title, window.location.pathname);
+                            }
+                        });
+                    } else {
+                        window.history.replaceState({}, document.title, window.location.pathname);
+                    }
+                }
+            } catch (e) {
+                console.error("폴더 공유 데이터 파싱 실패:", e);
+                window.history.replaceState({}, document.title, window.location.pathname);
+            }
+            return; // folder_share가 있으면 data 파라미터는 무시
+        }
+        
+        // 기존 데이터 공유 링크 처리
         if (dataFromUrl) {
             try {
                 const decodedJson = base64ToUtf8(dataFromUrl);
@@ -1509,7 +1499,48 @@ const App: React.FC = () => {
                  window.history.replaceState({}, document.title, window.location.pathname);
             }
         }
-    }, [t]);
+    }, [t, folders]);
+
+    // 공유 폴더의 목표를 Firestore에서 실시간으로 동기화
+    useEffect(() => {
+        if (!currentFolderId || !googleUser) return;
+        
+        // 현재 폴더가 공유 폴더인지 확인
+        const folder = folders.find(f => f.id === currentFolderId);
+        if (!folder || !folder.collaborators || folder.collaborators.length === 0) return;
+        
+        // 공유 폴더의 소유자 이메일 찾기
+        const owner = folder.collaborators.find(c => c.role === 'owner');
+        if (!owner) return;
+        
+        // 소유자의 Firestore에서 이 폴더의 목표를 감시
+        // 주의: 보안 규칙에서 다른 사용자의 폴더를 읽을 수 있도록 설정해야 함
+        const folderRef = doc(db, 'users', owner.email.split('@')[0], 'folders', currentFolderId);
+        
+        const unsubscribe = onSnapshot(folderRef, (folderSnapshot) => {
+            if (folderSnapshot.exists()) {
+                const sharedFolderData = folderSnapshot.data();
+                
+                // 폴더의 협업자 목록 업데이트
+                if (sharedFolderData.collaborators) {
+                    setFolders(folders.map(f => 
+                        f.id === currentFolderId 
+                            ? { ...f, collaborators: sharedFolderData.collaborators }
+                            : f
+                    ));
+                }
+                
+                // 이 폴더의 목표 가져오기
+                const folderTodos = todos.filter(t => t.folderId === currentFolderId);
+                // 실시간 업데이트된 목표 동기화
+                // (목표는 별도의 컬렉션이므로 여기서는 폴더 정보만 동기화)
+            }
+        }, (error) => {
+            console.error('공유 폴더 실시간 동기화 실패:', error);
+        });
+        
+        return () => unsubscribe();
+    }, [currentFolderId, googleUser, folders, todos]);
 
     
     // 시스템 다크모드 감지 및 적용
@@ -1597,10 +1628,6 @@ const App: React.FC = () => {
     useEffect(() => { localStorage.setItem('nova-api-key', apiKey); }, [apiKey]);
     useEffect(() => { localStorage.setItem('nova-offline-mode', String(isOfflineMode)); }, [isOfflineMode]);
     useEffect(() => { localStorage.setItem('nova-auto-sync-enabled', String(isAutoSyncEnabled)); }, [isAutoSyncEnabled]);
-    useEffect(() => { localStorage.setItem('nova-notifications-enabled', String(isNotificationsEnabled)); }, [isNotificationsEnabled]);
-    useEffect(() => { localStorage.setItem('nova-notification-settings', JSON.stringify(notificationSettings)); }, [notificationSettings]);
-    useEffect(() => { localStorage.setItem('nova-reminder-time-settings', JSON.stringify(reminderTimeSettings)); }, [reminderTimeSettings]);
-    useEffect(() => { localStorage.setItem('nova-reminders', JSON.stringify(reminders)); }, [reminders]);
     useEffect(() => { localStorage.setItem('nova-user-categories', JSON.stringify(userCategories)); }, [userCategories]);
     useEffect(() => { localStorage.setItem('nova-folders', JSON.stringify(folders)); }, [folders]);
 
@@ -1758,6 +1785,16 @@ const App: React.FC = () => {
 
     const handleSetCurrentFolder = (folderId: string | null) => {
         setCurrentFolderId(folderId);
+    };
+
+    const handleMoveToFolder = (goalId: number, folderId: string | null) => {
+        setTodos(todos.map(todo =>
+            todo.id === goalId
+                ? { ...todo, folderId: folderId || undefined }
+                : todo
+        ));
+        setToastMessage('✅ 목표가 폴더로 이동되었습니다');
+        setTimeout(() => setToastMessage(''), 3000);
     };
 
     const handleMoveGoalToFolder = (goalId: number, targetFolderId: string | null) => {
@@ -1933,120 +1970,18 @@ const App: React.FC = () => {
     return (
         <div className={`main-page-layout ${isViewModeCalendar ? 'calendar-view-active' : ''}`}>
             <div className={`page-content ${isAnyModalOpen ? 'modal-open' : ''}`}>
-                {/* Folder Navigator */}
-                <div style={{ padding: '12px 0', borderBottom: '1px solid var(--border-color)', overflowX: 'auto', display: 'flex', gap: '8px', alignItems: 'center' }}>
-                    {/* Root folder button */}
-                    <button 
-                        onClick={() => handleSetCurrentFolder(null)}
-                        style={{
-                            padding: '6px 12px',
-                            borderRadius: '6px',
-                            border: 'none',
-                            backgroundColor: currentFolderId === null ? 'var(--primary-color)' : 'transparent',
-                            color: currentFolderId === null ? 'white' : 'var(--text-color)',
-                            cursor: 'pointer',
-                            fontSize: '0.9rem',
-                            fontWeight: 500,
-                            whiteSpace: 'nowrap',
-                            transition: 'all 0.2s'
-                        }}
-                    >
-                        📁 {t('all_goals_label') || 'All Goals'}
-                    </button>
-                    
-                    {/* Folder list */}
-                    {folders.length > 0 && folders.map(folder => {
-                        const folderGoalsCount = todos.filter(t => t.folderId === folder.id).length;
-                        return (
-                            <div 
-                                key={folder.id}
-                                style={{ position: 'relative', display: 'inline-block' }}
-                                onContextMenu={(e) => {
-                                    e.preventDefault();
-                                    const newName = prompt('새로운 폴더 이름:', folder.name);
-                                    if (newName) {
-                                        handleRenameFolder(folder.id, newName);
-                                    }
-                                }}
-                            >
-                                <button 
-                                    onClick={() => handleSetCurrentFolder(folder.id)}
-                                    style={{
-                                        padding: '6px 12px',
-                                        borderRadius: '6px',
-                                        border: 'none',
-                                        backgroundColor: currentFolderId === folder.id ? folder.color || 'var(--primary-color)' : `${folder.color}20` || 'transparent',
-                                        color: currentFolderId === folder.id ? 'white' : 'var(--text-color)',
-                                        cursor: 'pointer',
-                                        fontSize: '0.9rem',
-                                        fontWeight: 500,
-                                        whiteSpace: 'nowrap',
-                                        transition: 'all 0.2s',
-                                        position: 'relative'
-                                    }}
-                                    title="우클릭하여 폴더 이름 변경, Ctrl+클릭으로 삭제"
-                                >
-                                    {folder.name} ({folderGoalsCount})
-                                </button>
-                                {currentFolderId === folder.id && (
-                                    <button 
-                                        onClick={() => {
-                                            if (confirm(`"${folder.name}" 폴더를 삭제하시겠습니까? 폴더 내 목표는 "모든 목표"로 이동됩니다.`)) {
-                                                handleDeleteFolder(folder.id);
-                                            }
-                                        }}
-                                        style={{
-                                            position: 'absolute',
-                                            right: '-20px',
-                                            top: '50%',
-                                            transform: 'translateY(-50%)',
-                                            width: '16px',
-                                            height: '16px',
-                                            padding: '0',
-                                            borderRadius: '50%',
-                                            border: 'none',
-                                            backgroundColor: 'var(--danger-color)',
-                                            color: 'white',
-                                            cursor: 'pointer',
-                                            fontSize: '0.7rem',
-                                            lineHeight: '1',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center'
-                                        }}
-                                        title="폴더 삭제"
-                                    >
-                                        ×
-                                    </button>
-                                )}
-                            </div>
-                        );
-                    })}
-                    
-                    {/* Add folder button */}
-                    <button 
-                        onClick={() => {
-                            const folderName = prompt('폴더 이름을 입력하세요:', 'New Folder');
-                            if (folderName) {
-                                handleCreateFolder(folderName);
-                            }
-                        }}
-                        style={{
-                            padding: '6px 12px',
-                            borderRadius: '6px',
-                            border: '2px dashed var(--primary-color)',
-                            backgroundColor: 'transparent',
-                            color: 'var(--primary-color)',
-                            cursor: 'pointer',
-                            fontSize: '0.9rem',
-                            fontWeight: 500,
-                            whiteSpace: 'nowrap',
-                            transition: 'all 0.2s'
-                        }}
-                    >
-                        + 폴더
-                    </button>
-                </div>
+                {/* Folder Navigator Component */}
+                <FolderNavigator 
+                    folders={folders}
+                    currentFolderId={currentFolderId}
+                    onSetCurrentFolder={handleSetCurrentFolder}
+                    onCreateFolder={handleCreateFolder}
+                    onRenameFolder={handleRenameFolder}
+                    onDeleteFolder={handleDeleteFolder}
+                    onSetCollaboratingFolder={setCollaboratingFolder}
+                    todos={todos}
+                    t={t}
+                />
 
                 <div className="container">
                     <Header 
@@ -2075,65 +2010,36 @@ const App: React.FC = () => {
                         <CalendarView todos={todos} t={t} onGoalClick={setInfoTodo} language={language} />
                     ) : (
                         <>
-                            {reminders.length > 0 && (
-                                <div style={{ marginBottom: '24px', paddingBottom: '16px', borderBottom: '1px solid var(--border-color)' }}>
-                                    <h2 style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: '12px', color: 'var(--text-color)' }}>🔔 {t('reminder_add_title')}</h2>
-                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '12px' }}>
-                                        {reminders.filter(r => r.enabled).map((reminder) => (
-                                            <div key={reminder.id} style={{ 
-                                                padding: '12px', 
-                                                backgroundColor: 'var(--card-bg-color)', 
-                                                borderRadius: '8px', 
-                                                border: '1px solid var(--border-color)',
-                                                transition: 'all 0.2s'
-                                            }}>
-                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', gap: '8px', marginBottom: '8px' }}>
-                                                    <div style={{ fontWeight: 500, color: 'var(--text-color)', flex: 1 }}>{reminder.title}</div>
-                                                </div>
-                                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', fontSize: '0.85rem', marginBottom: '8px' }}>
-                                                    {reminder.category && (
-                                                        <span style={{ backgroundColor: 'rgba(88, 86, 214, 0.1)', color: 'var(--icon-color-indigo)', padding: '3px 8px', borderRadius: '4px' }}>
-                                                            {['school', 'work', 'personal', 'other'].includes(reminder.category) ? {school: '🎓', work: '💼', personal: '👤', other: '📌'}[reminder.category as 'school' | 'work' | 'personal' | 'other'] : ''} {
-                                                            reminder.category === 'school' ? t('category_school') : 
-                                                            reminder.category === 'work' ? t('category_work') : 
-                                                            reminder.category === 'personal' ? t('category_personal') : 
-                                                            t('category_other')
-                                                            }
-                                                        </span>
-                                                    )}
-                                                    {reminder.dueDate && <span style={{ backgroundColor: 'rgba(0, 122, 255, 0.1)', color: 'var(--primary-color)', padding: '3px 8px', borderRadius: '4px' }}>📅 {reminder.dueDate}</span>}
-                                                    {reminder.time && <span style={{ backgroundColor: 'rgba(0, 122, 255, 0.1)', color: 'var(--primary-color)', padding: '3px 8px', borderRadius: '4px' }}>⏰ {reminder.time}</span>}
-                                                    {reminder.isRecurring && <span style={{ backgroundColor: 'rgba(52, 199, 89, 0.1)', color: 'var(--success-color)', padding: '3px 8px', borderRadius: '4px' }}>🔄 {reminder.recurringType === 'daily' ? t('recurring_type_daily') : reminder.recurringType === 'weekly' ? t('recurring_type_weekly') : t('recurring_type_monthly')}</span>}
-                                                </div>
-                                                {reminder.description && <div style={{ marginTop: '8px', fontSize: '0.8rem', color: 'var(--text-secondary-color)' }}>{reminder.description}</div>}
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-                            <TodoList todos={filteredTodos} onToggleComplete={handleToggleComplete} onDelete={handleDeleteTodo} onEdit={setEditingTodo} onInfo={setInfoTodo} t={t} filter={filter} randomEncouragement={randomEncouragement} isSelectionMode={isSelectionMode} selectedTodoIds={selectedTodoIds} onSelectTodo={handleSelectTodo} />
+                            <TodoList todos={filteredTodos} onToggleComplete={handleToggleComplete} onDelete={handleDeleteTodo} onEdit={setEditingTodo} onInfo={setInfoTodo} t={t} filter={filter} randomEncouragement={randomEncouragement} isSelectionMode={isSelectionMode} selectedTodoIds={selectedTodoIds} onSelectTodo={handleSelectTodo} folders={folders} onMoveToFolder={handleMoveToFolder} />
                         </>
                     )}
                 </div>
             </div>
 
-            {isGoalAssistantOpen && <GoalAssistantModal onClose={() => setIsGoalAssistantOpen(false)} onAddTodo={handleAddTodo} onAddMultipleTodos={handleAddMultipleTodos} t={t} language={language} createAI={createAI} onAddReminder={handleAddReminder} reminders={reminders} onDeleteReminder={handleDeleteReminder} userCategories={userCategories} />}
+            {isGoalAssistantOpen && <GoalAssistantModal onClose={() => setIsGoalAssistantOpen(false)} onAddTodo={handleAddTodo} onAddMultipleTodos={handleAddMultipleTodos} t={t} language={language} createAI={createAI} userCategories={userCategories} />}
             {editingTodo && <GoalAssistantModal onClose={() => setEditingTodo(null)} onEditTodo={handleEditTodo} existingTodo={editingTodo} t={t} language={language} createAI={createAI} />}
             {infoTodo && <GoalInfoModal 
                 todo={infoTodo} 
                 onClose={() => setInfoTodo(null)} 
                 t={t} 
                 createAI={createAI}
-                onOpenCollaboration={(goal) => setCollaboratingGoal(goal)}
+                onOpenCollaboration={(goal) => {
+                    // 현재 목표가 속한 폴더를 찾아 협업 설정
+                    const targetFolder = folders.find(f => f.id === goal.folderId) || (goal.folderId === null || goal.folderId === undefined ? null : undefined);
+                    if (targetFolder !== undefined) {
+                        setCollaboratingFolder(targetFolder || null);
+                    }
+                }}
                 userCategories={userCategories}
                 onUpdateGoal={handleEditTodo}
             />}
-            {collaboratingGoal && <CollaborationModal 
-                goal={collaboratingGoal}
-                onClose={() => setCollaboratingGoal(null)}
+            {collaboratingFolder !== undefined && <FolderCollaborationModal 
+                folder={collaboratingFolder}
+                onClose={() => setCollaboratingFolder(undefined)}
                 t={t}
                 googleUser={googleUser}
-                onUpdateCollaborators={handleUpdateCollaborators}
+                onUpdateCollaborators={handleUpdateFolderCollaborators}
+                setAlertConfig={setAlertConfig}
             />}
             {isSettingsOpen && <SettingsModal 
                 onClose={() => setIsSettingsOpen(false)} 
@@ -2168,12 +2074,6 @@ const App: React.FC = () => {
                 isGoogleLoggingOut={isGoogleLoggingOut}
                 isSyncingData={isSyncingData}
                 isLoadingData={isLoadingData}
-                isNotificationsEnabled={isNotificationsEnabled}
-                setIsNotificationsEnabled={setIsNotificationsEnabled}
-                notificationSettings={notificationSettings}
-                setNotificationSettings={setNotificationSettings}
-                reminderTimeSettings={reminderTimeSettings}
-                setReminderTimeSettings={setReminderTimeSettings}
                 isAutoSyncEnabled={isAutoSyncEnabled}
                 setIsAutoSyncEnabled={setIsAutoSyncEnabled}
             />}
@@ -2196,6 +2096,329 @@ const App: React.FC = () => {
             {alertConfig && <AlertModal title={alertConfig.title} message={alertConfig.message} onConfirm={() => { alertConfig.onConfirm?.(); setAlertConfig(null); }} onCancel={alertConfig.onCancel ? () => { alertConfig.onCancel?.(); setAlertConfig(null); } : undefined} confirmText={alertConfig.confirmText} cancelText={alertConfig.cancelText} isDestructive={alertConfig.isDestructive} t={t} />}
             {toastMessage && <div className="toast-notification">{toastMessage}</div>}
             {showPWAPrompt && <PWAInstallPrompt onClose={() => setShowPWAPrompt(false)} />}
+        </div>
+    );
+};
+
+const FolderNavigator: React.FC<{ folders: Folder[]; currentFolderId: string | null; onSetCurrentFolder: (folderId: string | null) => void; onCreateFolder: (name: string) => void; onRenameFolder: (folderId: string, newName: string) => void; onDeleteFolder: (folderId: string) => void; onSetCollaboratingFolder: (folder: Folder | null) => void; todos: Goal[]; t: (key: string) => any; }> = ({ folders, currentFolderId, onSetCurrentFolder, onCreateFolder, onRenameFolder, onDeleteFolder, onSetCollaboratingFolder, todos, t }) => {
+    const [isAddingFolder, setIsAddingFolder] = useState(false);
+    const [newFolderName, setNewFolderName] = useState('');
+    const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null);
+    const [renameInput, setRenameInput] = useState('');
+    const [deletingFolderId, setDeletingFolderId] = useState<string | null>(null);
+
+    const handleAddFolder = () => {
+        if (newFolderName.trim()) {
+            onCreateFolder(newFolderName);
+            setNewFolderName('');
+            setIsAddingFolder(false);
+        }
+    };
+
+    return (
+        <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', overflowX: 'auto', display: 'flex', gap: '8px', alignItems: 'center', backgroundColor: 'var(--card-bg-color)' }}>
+            {/* Root folder button */}
+            <button 
+                onClick={() => onSetCurrentFolder(null)}
+                style={{
+                    padding: '6px 12px',
+                    borderRadius: '8px',
+                    border: 'none',
+                    backgroundColor: currentFolderId === null ? 'var(--primary-color)' : 'transparent',
+                    color: currentFolderId === null ? 'white' : 'var(--text-color)',
+                    cursor: 'pointer',
+                    fontSize: '0.9rem',
+                    fontWeight: 500,
+                    whiteSpace: 'nowrap',
+                    transition: 'all 0.2s',
+                    minWidth: '80px',
+                    textAlign: 'center'
+                }}
+            >
+                📁 {t('all_goals_label') || 'All'}
+            </button>
+            
+            {/* Folder list */}
+            {folders.length > 0 && folders.map(folder => {
+                const folderGoalsCount = todos.filter(t => t.folderId === folder.id).length;
+                return (
+                    <div 
+                        key={folder.id}
+                        style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: '2px' }}
+                    >
+                        <button 
+                            onClick={() => onSetCurrentFolder(folder.id)}
+                            style={{
+                                padding: '6px 12px',
+                                borderRadius: '8px',
+                                border: 'none',
+                                backgroundColor: currentFolderId === folder.id ? folder.color || 'var(--primary-color)' : `${folder.color}20` || 'transparent',
+                                color: currentFolderId === folder.id ? 'white' : 'var(--text-color)',
+                                cursor: 'pointer',
+                                fontSize: '0.9rem',
+                                fontWeight: 500,
+                                whiteSpace: 'nowrap',
+                                transition: 'all 0.2s',
+                                position: 'relative'
+                            }}
+                            title="폴더 선택"
+                        >
+                            {folder.name} ({folderGoalsCount})
+                        </button>
+                        {currentFolderId === folder.id && (
+                            <div style={{ display: 'flex', gap: '2px' }}>
+                                <button 
+                                    onClick={() => onSetCollaboratingFolder(folder)}
+                                    style={{
+                                        width: '24px',
+                                        height: '24px',
+                                        padding: '0',
+                                        borderRadius: '4px',
+                                        border: 'none',
+                                        backgroundColor: 'var(--primary-color)',
+                                        color: 'white',
+                                        cursor: 'pointer',
+                                        fontSize: '0.8rem',
+                                        lineHeight: '1',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        transition: 'all 0.2s'
+                                    }}
+                                    title="폴더 협업"
+                                >
+                                    👥
+                                </button>
+                                <button 
+                                    onClick={() => {
+                                        setRenamingFolderId(folder.id);
+                                        setRenameInput(folder.name);
+                                    }}
+                                    style={{
+                                        width: '24px',
+                                        height: '24px',
+                                        padding: '0',
+                                        borderRadius: '4px',
+                                        border: 'none',
+                                        backgroundColor: 'var(--button-bg-color)',
+                                        color: 'var(--text-color)',
+                                        cursor: 'pointer',
+                                        fontSize: '0.8rem',
+                                        lineHeight: '1',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        transition: 'all 0.2s'
+                                    }}
+                                    title="폴더 이름 변경"
+                                >
+                                    ✏
+                                </button>
+                                <button 
+                                    onClick={() => {
+                                        setDeletingFolderId(folder.id);
+                                    }}
+                                    style={{
+                                        width: '24px',
+                                        height: '24px',
+                                        padding: '0',
+                                        borderRadius: '4px',
+                                        border: 'none',
+                                        backgroundColor: 'var(--danger-color)',
+                                        color: 'white',
+                                        cursor: 'pointer',
+                                        fontSize: '0.8rem',
+                                        lineHeight: '1',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        transition: 'all 0.2s'
+                                    }}
+                                    title="폴더 삭제"
+                                >
+                                    ×
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                );
+            })}
+            
+            {/* Add folder button - improved UI */}
+            {!isAddingFolder ? (
+                <button 
+                    onClick={() => setIsAddingFolder(true)}
+                    style={{
+                        padding: '6px 12px',
+                        borderRadius: '8px',
+                        border: '2px solid var(--primary-color)',
+                        backgroundColor: 'transparent',
+                        color: 'var(--primary-color)',
+                        cursor: 'pointer',
+                        fontSize: '0.9rem',
+                        fontWeight: 500,
+                        whiteSpace: 'nowrap',
+                        transition: 'all 0.2s',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px'
+                    }}
+                >
+                    ➕ 폴더
+                </button>
+            ) : (
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <input 
+                        type="text"
+                        value={newFolderName}
+                        onChange={(e) => setNewFolderName(e.target.value)}
+                        onKeyPress={(e) => {
+                            if (e.key === 'Enter') handleAddFolder();
+                            if (e.key === 'Escape') {
+                                setIsAddingFolder(false);
+                                setNewFolderName('');
+                            }
+                        }}
+                        placeholder="폴더 이름..."
+                        autoFocus
+                        style={{
+                            padding: '6px 12px',
+                            borderRadius: '8px',
+                            border: '2px solid var(--primary-color)',
+                            backgroundColor: 'var(--input-bg-color)',
+                            color: 'var(--text-color)',
+                            fontSize: '0.9rem',
+                            outline: 'none',
+                            width: '120px'
+                        }}
+                    />
+                    <button 
+                        onClick={handleAddFolder}
+                        style={{
+                            padding: '4px 12px',
+                            borderRadius: '8px',
+                            border: 'none',
+                            backgroundColor: 'var(--primary-color)',
+                            color: 'white',
+                            cursor: 'pointer',
+                            fontSize: '0.85rem',
+                            fontWeight: 600,
+                            transition: 'all 0.2s'
+                        }}
+                    >
+                        완료
+                    </button>
+                    <button 
+                        onClick={() => {
+                            setIsAddingFolder(false);
+                            setNewFolderName('');
+                        }}
+                        style={{
+                            padding: '4px 12px',
+                            borderRadius: '8px',
+                            border: '1px solid var(--border-color)',
+                            backgroundColor: 'transparent',
+                            color: 'var(--text-color)',
+                            cursor: 'pointer',
+                            fontSize: '0.85rem',
+                            transition: 'all 0.2s'
+                        }}
+                    >
+                        취소
+                    </button>
+                </div>
+            )}
+            
+            {/* Delete Folder Modal */}
+            {deletingFolderId && (
+                <div className="modal-backdrop alert-backdrop">
+                    <div className="modal-content alert-modal">
+                        <div className="alert-content">
+                            <h2>폴더 삭제</h2>
+                            <p style={{ fontSize: '0.9rem' }}>"{folders.find(f => f.id === deletingFolderId)?.name}" 폴더를 삭제하시겠습니까?<br/>폴더 내 목표는 "모든 목표"로 이동됩니다.</p>
+                        </div>
+                        <div className="modal-buttons">
+                            <button 
+                                onClick={() => setDeletingFolderId(null)}
+                                className="secondary"
+                            >
+                                취소
+                            </button>
+                            <button 
+                                onClick={() => {
+                                    onDeleteFolder(deletingFolderId);
+                                    setDeletingFolderId(null);
+                                }}
+                                className="destructive"
+                            >
+                                삭제
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            
+            {/* Rename Folder Modal */}
+            {renamingFolderId && (
+                <div className="modal-backdrop alert-backdrop">
+                    <div className="modal-content alert-modal">
+                        <div className="alert-content">
+                            <h2>폴더 이름 변경</h2>
+                            <p style={{ fontSize: '0.9rem', marginBottom: '16px' }}>새로운 폴더 이름을 입력하세요</p>
+                            <input 
+                                type="text"
+                                value={renameInput}
+                                onChange={(e) => setRenameInput(e.target.value)}
+                                onKeyPress={(e) => {
+                                    if (e.key === 'Enter') {
+                                        if (renameInput.trim()) {
+                                            onRenameFolder(renamingFolderId, renameInput);
+                                            setRenamingFolderId(null);
+                                            setRenameInput('');
+                                        }
+                                    }
+                                }}
+                                placeholder="폴더 이름..."
+                                autoFocus
+                                style={{
+                                    width: '100%',
+                                    padding: '10px 12px',
+                                    borderRadius: '8px',
+                                    border: '1px solid var(--border-color)',
+                                    backgroundColor: 'var(--input-bg-color)',
+                                    color: 'var(--text-color)',
+                                    fontSize: '0.95rem',
+                                    outline: 'none',
+                                    boxSizing: 'border-box'
+                                }}
+                            />
+                        </div>
+                        <div className="modal-buttons">
+                            <button 
+                                onClick={() => {
+                                    setRenamingFolderId(null);
+                                    setRenameInput('');
+                                }}
+                                className="secondary"
+                            >
+                                취소
+                            </button>
+                            <button 
+                                onClick={() => {
+                                    if (renameInput.trim()) {
+                                        onRenameFolder(renamingFolderId, renameInput);
+                                        setRenamingFolderId(null);
+                                        setRenameInput('');
+                                    }
+                                }}
+                                className="primary"
+                            >
+                                변경
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
@@ -2300,15 +2523,15 @@ const Header: React.FC<{ t: (key: string) => any; isSelectionMode: boolean; sele
     );
 };
 
-const TodoList: React.FC<{ todos: Goal[]; onToggleComplete: (id: number) => void; onDelete: (id: number) => void; onEdit: (todo: Goal) => void; onInfo: (todo: Goal) => void; t: (key: string) => any; filter: string; randomEncouragement: string; isSelectionMode: boolean; selectedTodoIds: Set<number>; onSelectTodo: (id: number) => void; }> = ({ todos, onToggleComplete, onDelete, onEdit, onInfo, t, filter, randomEncouragement, isSelectionMode, selectedTodoIds, onSelectTodo }) => {
+const TodoList: React.FC<{ todos: Goal[]; onToggleComplete: (id: number) => void; onDelete: (id: number) => void; onEdit: (todo: Goal) => void; onInfo: (todo: Goal) => void; t: (key: string) => any; filter: string; randomEncouragement: string; isSelectionMode: boolean; selectedTodoIds: Set<number>; onSelectTodo: (id: number) => void; folders: Folder[]; onMoveToFolder: (goalId: number, folderId: string | null) => void; }> = ({ todos, onToggleComplete, onDelete, onEdit, onInfo, t, filter, randomEncouragement, isSelectionMode, selectedTodoIds, onSelectTodo, folders, onMoveToFolder }) => {
     if (todos.length === 0) {
         const messageKey = `empty_message_${filter}`;
         return <div className="empty-message"><p>{t(messageKey)}</p></div>;
     }
-    return <ul>{todos.map(todo => <TodoItem key={todo.id} todo={todo} onToggleComplete={onToggleComplete} onDelete={onDelete} onEdit={onEdit} onInfo={onInfo} t={t} isSelectionMode={isSelectionMode} isSelected={selectedTodoIds.has(todo.id)} onSelect={onSelectTodo} />)}</ul>;
+    return <ul>{todos.map(todo => <TodoItem key={todo.id} todo={todo} onToggleComplete={onToggleComplete} onDelete={onDelete} onEdit={onEdit} onInfo={onInfo} t={t} isSelectionMode={isSelectionMode} isSelected={selectedTodoIds.has(todo.id)} onSelect={onSelectTodo} folders={folders} onMoveToFolder={onMoveToFolder} />)}</ul>;
 };
 
-const TodoItem: React.FC<{ todo: Goal; onToggleComplete: (id: number) => void; onDelete: (id: number) => void; onEdit: (todo: Goal) => void; onInfo: (todo: Goal) => void; t: (key: string) => any; isSelectionMode: boolean; isSelected: boolean; onSelect: (id: number) => void; }> = React.memo(({ todo, onToggleComplete, onDelete, onEdit, onInfo, t, isSelectionMode, isSelected, onSelect }) => {
+const TodoItem: React.FC<{ todo: Goal; onToggleComplete: (id: number) => void; onDelete: (id: number) => void; onEdit: (todo: Goal) => void; onInfo: (todo: Goal) => void; t: (key: string) => any; isSelectionMode: boolean; isSelected: boolean; onSelect: (id: number) => void; folders: Folder[]; onMoveToFolder: (goalId: number, folderId: string | null) => void; }> = React.memo(({ todo, onToggleComplete, onDelete, onEdit, onInfo, t, isSelectionMode, isSelected, onSelect, folders, onMoveToFolder }) => {
     const handleItemClick = () => { if (isSelectionMode) onSelect(todo.id); };
     
     const categoryEmoji = {
@@ -2351,8 +2574,38 @@ const TodoItem: React.FC<{ todo: Goal; onToggleComplete: (id: number) => void; o
                                 🤝 {todo.collaborators.length}
                             </span>
                         )}
+                        {/* 폴더 표시 */}
+                        {todo.folderId && (
+                            <span style={{ backgroundColor: 'rgba(100, 150, 200, 0.15)', color: 'var(--primary-color)', padding: '4px 8px', borderRadius: '4px', fontSize: '0.8rem', marginLeft: '4px', display: 'inline-flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}>
+                                📁 {folders.find(f => f.id === todo.folderId)?.name || 'Unknown'}
+                            </span>
+                        )}
                     </div>
                     <div className="todo-buttons">
+                        {/* 폴더 이동 드롭다운 */}
+                        <select 
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) => {
+                                onMoveToFolder(todo.id, e.target.value === 'root' ? null : e.target.value);
+                            }}
+                            defaultValue={todo.folderId || 'root'}
+                            style={{
+                                padding: '4px 8px',
+                                borderRadius: '4px',
+                                border: '1px solid var(--border-color)',
+                                backgroundColor: 'var(--card-bg-color)',
+                                color: 'var(--text-color)',
+                                cursor: 'pointer',
+                                fontSize: '0.85rem',
+                                fontFamily: 'inherit'
+                            }}
+                            title="폴더 선택"
+                        >
+                            <option value="root">📁 All Goals</option>
+                            {folders.map(folder => (
+                                <option key={folder.id} value={folder.id}>{folder.name}</option>
+                            ))}
+                        </select>
                         <button onClick={(e) => { e.stopPropagation(); onEdit(todo); }} className="info-button edit-button" aria-label={t('edit_button_aria')}>{icons.edit}</button>
                         <button onClick={(e) => { e.stopPropagation(); onDelete(todo.id); }} className="delete-button" aria-label={t('delete_button')}>{icons.delete}</button>
                         <button onClick={(e) => { e.stopPropagation(); onInfo(todo); }} className="info-button" aria-label={t('info_button_aria')}>{icons.info}</button>
@@ -2546,302 +2799,10 @@ const AutomationForm: React.FC<{ onGenerate: (goals: Omit<Goal, 'id' | 'complete
     );
 };
 
-const ReminderStepContent: React.FC<{ step: number; t: (key: string) => any; [key: string]: any }> = ({ step, t, ...props }) => {
-    const { title, setTitle, dueDate, setDueDate, time, setTime, isRecurring, setIsRecurring, recurringType, setRecurringType, description, setDescription, enabled, setEnabled, category, setCategory, userCategories, errors } = props;
-    
-    switch (step) {
-        case 1:
-            return (
-                <div>
-                    <h3>{t('reminder_step1_title')}</h3>
-                    <div className="step-guidance"><p className="tip">{t('reminder_step1_desc')}</p></div>
-                    <textarea 
-                        value={title} 
-                        onChange={(e) => setTitle(e.target.value)} 
-                        placeholder="예: 회의 참석" 
-                        className={errors.title ? 'input-error' : ''}
-                        rows={3}
-                    />
-                    {errors.title && <p className="field-error-message">{icons.exclamation} {t('reminder_form_title')}를 입력하세요</p>}
-                </div>
-            );
-        case 2:
-            return (
-                <div>
-                    <h3>{t('reminder_step2_title')}</h3>
-                    <div className="step-guidance"><p className="tip">{t('reminder_step2_desc')}</p></div>
-                    
-                    <label className="settings-item standalone-toggle" style={{ marginBottom: '20px' }}>
-                        <span style={{ fontWeight: 500 }}>{t('reminder_step2_date_toggle')}</span>
-                        <label className="theme-toggle-switch">
-                            <input 
-                                type="checkbox" 
-                                checked={!!dueDate} 
-                                onChange={(e) => setDueDate(e.target.checked ? new Date().toISOString().split('T')[0] : '')} 
-                            />
-                            <span className="slider round"></span>
-                        </label>
-                    </label>
 
-                    {dueDate && (
-                        <div style={{ marginBottom: '20px' }}>
-                            <h4 style={{ fontSize: '0.9rem', fontWeight: 500, marginBottom: '8px' }}>{t('reminder_form_date')}</h4>
-                            <input 
-                                type="date" 
-                                value={dueDate} 
-                                onChange={(e) => setDueDate(e.target.value)} 
-                                style={{ width: '100%', padding: '12px', borderRadius: '8px', border: `1px solid var(--border-color)`, backgroundColor: 'var(--input-bg-color)', color: 'var(--text-color)', fontFamily: 'inherit', fontSize: '1rem' }}
-                            />
-                        </div>
-                    )}
-
-                    <label className="settings-item standalone-toggle" style={{ marginBottom: '20px' }}>
-                        <span style={{ fontWeight: 500 }}>{t('reminder_step2_time_toggle')}</span>
-                        <label className="theme-toggle-switch">
-                            <input 
-                                type="checkbox" 
-                                checked={!!time} 
-                                onChange={(e) => setTime(e.target.checked ? '09:00' : '')} 
-                            />
-                            <span className="slider round"></span>
-                        </label>
-                    </label>
-
-                    {time && (
-                        <div>
-                            <h4 style={{ fontSize: '0.9rem', fontWeight: 500, marginBottom: '8px' }}>{t('reminder_form_time')}</h4>
-                            <input 
-                                type="time" 
-                                value={time} 
-                                onChange={(e) => setTime(e.target.value)} 
-                                style={{ width: '100%', padding: '12px', borderRadius: '8px', border: `1px solid var(--border-color)`, backgroundColor: 'var(--input-bg-color)', color: 'var(--text-color)', fontFamily: 'inherit', fontSize: '1rem' }}
-                            />
-                        </div>
-                    )}
-                </div>
-            );
-        case 3:
-            return (
-                <div>
-                    <h3>{t('reminder_step3_title')}</h3>
-                    <div className="step-guidance"><p className="tip">{t('reminder_step3_desc')}</p></div>
-                    <label className="settings-item standalone-toggle" style={{ marginBottom: '20px' }}>
-                        <span style={{ fontWeight: 500 }}>{t('reminder_step3_enable_recurring')}</span>
-                        <label className="theme-toggle-switch">
-                            <input 
-                                type="checkbox" 
-                                checked={isRecurring} 
-                                onChange={(e) => setIsRecurring(e.target.checked)} 
-                            />
-                            <span className="slider round"></span>
-                        </label>
-                    </label>
-
-                    {isRecurring && (
-                        <div>
-                            <h4 style={{ fontSize: '0.9rem', fontWeight: 500, marginBottom: '12px' }}>{t('reminder_form_recurring')}</h4>
-                            <select 
-                                value={recurringType} 
-                                onChange={(e) => setRecurringType(e.target.value as 'daily' | 'weekly' | 'monthly')}
-                                style={{ width: '100%', padding: '12px', borderRadius: '8px', border: `1px solid var(--border-color)`, backgroundColor: 'var(--input-bg-color)', color: 'var(--text-color)', fontFamily: 'inherit', fontSize: '1rem', cursor: 'pointer' }}
-                            >
-                                <option value="daily">{t('recurring_type_daily')}</option>
-                                <option value="weekly">{t('recurring_type_weekly')}</option>
-                                <option value="monthly">{t('recurring_type_monthly')}</option>
-                            </select>
-                        </div>
-                    )}
-                </div>
-            );
-        case 4:
-            return (
-                <div>
-                    <h3>{t('reminder_step4_title')}</h3>
-                    <div className="step-guidance"><p className="tip">{t('reminder_step4_desc')}</p></div>
-                    <textarea 
-                        value={description} 
-                        onChange={(e) => setDescription(e.target.value)} 
-                        placeholder="추가 설명을 입력하세요..." 
-                        rows={3}
-                    />
-                </div>
-            );
-        case 5:
-            return (
-                <div>
-                    <h3>{t('reminder_step5_title')} & {t('category_label')}</h3>
-                    <div className="step-guidance"><p className="tip">{t('reminder_step5_desc')}</p></div>
-                    <label className="settings-item standalone-toggle">
-                        <span style={{ fontWeight: 500 }}>{t('reminder_form_enabled')}</span>
-                        <label className="theme-toggle-switch">
-                            <input 
-                                type="checkbox" 
-                                checked={enabled} 
-                                onChange={(e) => setEnabled(e.target.checked)} 
-                            />
-                            <span className="slider round"></span>
-                        </label>
-                    </label>
-                    <hr style={{ margin: '16px 0' }} />
-                    <div style={{ marginTop: '16px' }}>
-                        <h4 style={{ fontSize: '0.9rem', fontWeight: 500, marginBottom: '12px' }}>{t('category_label')}</h4>
-                        <div style={{ display: 'grid', gridTemplateColumns: userCategories && userCategories.length > 2 ? 'repeat(2, 1fr)' : 'repeat(1, 1fr)', gap: '8px' }}>
-                            {userCategories && userCategories.map((cat) => (
-                                <button key={cat} onClick={() => setCategory(cat)} className={`category-button ${category === cat ? 'active' : ''}`}>{cat}</button>
-                            ))}
-                        </div>
-                    </div>
-                </div>
-            );
-        default:
-            return null;
-    }
-};
-
-interface ReminderFormProps {
-    onAddReminder?: (reminder: Omit<Reminder, 'id' | 'createdAt'>) => void;
-    t: (key: string) => any;
-    reminders?: Reminder[];
-    onDeleteReminder?: (id: string) => void;
-    onClose?: () => void;
-    userCategories?: string[];
-}
-
-const ReminderForm: React.FC<ReminderFormProps> = ({ onAddReminder, t, reminders = [], onDeleteReminder, onClose, userCategories = ['personal'] }) => {
-    const [step, setStep] = useState(1);
-    const [animationDir, setAnimationDir] = useState<'forward' | 'backward'>('forward');
-    const [title, setTitle] = useState('');
-    const [dueDate, setDueDate] = useState('');
-    const [time, setTime] = useState('');
-    const [isRecurring, setIsRecurring] = useState(false);
-    const [recurringType, setRecurringType] = useState<'daily' | 'weekly' | 'monthly'>('daily');
-    const [description, setDescription] = useState('');
-    const [enabled, setEnabled] = useState(true);
-    const [category, setCategory] = useState<'school' | 'work' | 'personal' | 'other'>('personal');
-    const [errors, setErrors] = useState<{ [key: string]: boolean }>({});
-
-    const totalSteps = 5;
-
-    const validateStep = (currentStep: number) => {
-        const newErrors: { [key: string]: boolean } = {};
-        if (currentStep === 1 && !title.trim()) newErrors.title = true;
-        setErrors(newErrors);
-        return Object.keys(newErrors).length === 0;
-    };
-
-    const handleNext = () => {
-        if (!validateStep(step)) return;
-        if (step === totalSteps) {
-            handleSubmit();
-        } else {
-            setAnimationDir('forward');
-            setStep(step + 1);
-        }
-    };
-
-    const handleBack = () => {
-        setAnimationDir('backward');
-        setStep(step - 1);
-    };
-
-    const handleSubmit = () => {
-        if (onAddReminder) {
-            onAddReminder({
-                title: title.trim(),
-                dueDate: dueDate || undefined,
-                time: time || undefined,
-                isRecurring,
-                recurringType: isRecurring ? recurringType : undefined,
-                description: description.trim() || undefined,
-                enabled,
-                category,
-            });
-        }
-        
-        setTitle('');
-        setDueDate('');
-        setTime('');
-        setIsRecurring(false);
-        setRecurringType('daily');
-        setDescription('');
-        setEnabled(true);
-        setCategory('personal');
-        setStep(1);
-        setErrors({});
-    };
-
-    return (
-        <>
-            <div className="progress-bar-container"><div className="progress-bar" style={{ width: `${(step / totalSteps) * 100}%` }}></div></div>
-            <div className={`goal-assistant-step-content-animator ${animationDir}`} key={step}>
-                <ReminderStepContent step={step} t={t} {...{ title, setTitle, dueDate, setDueDate, time, setTime, isRecurring, setIsRecurring, recurringType, setRecurringType, description, setDescription, enabled, setEnabled, category, setCategory, userCategories, errors }} />
-            </div>
-            <div className="goal-assistant-nav">
-                {step > 1 ? (
-                    <button onClick={handleBack} className="secondary">{t('back_button')}</button>
-                ) : (
-                    <div /> /* Placeholder for alignment */
-                )}
-                <button onClick={handleNext} className="primary">{step === totalSteps ? t('add_button') : t('next_button')}</button>
-            </div>
-
-            {reminders.length > 0 && (
-                <div style={{ marginTop: '28px', paddingTop: '24px', borderTop: `1px solid var(--border-color)`, marginLeft: '16px', marginRight: '16px' }}>
-                    <h3 style={{ textAlign: 'center', marginBottom: '16px', fontSize: '1rem', fontWeight: 600, color: 'var(--text-secondary-color)' }}>미리알림 목록</h3>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        {reminders.map((reminder) => (
-                            <div key={reminder.id} className="reminder-list-item">
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
-                                    <div style={{ flex: 1 }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                                            <input 
-                                                type="checkbox" 
-                                                checked={reminder.enabled} 
-                                                disabled 
-                                                style={{ cursor: 'not-allowed', opacity: 0.6 }}
-                                            />
-                                            <span style={{ fontWeight: 500, textDecoration: reminder.enabled ? 'none' : 'line-through', opacity: reminder.enabled ? 1 : 0.5 }}>{reminder.title}</span>
-                                        </div>
-                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', fontSize: '0.8rem' }}>
-                                            {reminder.category && (
-                                                <span style={{ backgroundColor: 'rgba(88, 86, 214, 0.1)', color: 'var(--icon-color-indigo)', padding: '2px 6px', borderRadius: '4px' }}>
-                                                    {reminder.category === 'school' ? '🎓' : reminder.category === 'work' ? '💼' : reminder.category === 'personal' ? '👤' : '📌'} {
-                                                    reminder.category === 'school' ? t('category_school') : 
-                                                    reminder.category === 'work' ? t('category_work') : 
-                                                    reminder.category === 'personal' ? t('category_personal') : 
-                                                    t('category_other')
-                                                    }
-                                                </span>
-                                            )}
-                                            {reminder.dueDate && <span style={{ backgroundColor: 'rgba(0, 122, 255, 0.1)', color: 'var(--primary-color)', padding: '2px 6px', borderRadius: '4px' }}>📅 {reminder.dueDate}</span>}
-                                            {reminder.time && <span style={{ backgroundColor: 'rgba(0, 122, 255, 0.1)', color: 'var(--primary-color)', padding: '2px 6px', borderRadius: '4px' }}>⏰ {reminder.time}</span>}
-                                            {reminder.isRecurring && <span style={{ backgroundColor: 'rgba(52, 199, 89, 0.1)', color: 'var(--success-color)', padding: '2px 6px', borderRadius: '4px' }}>🔄 {reminder.recurringType === 'daily' ? '매일' : reminder.recurringType === 'weekly' ? '매주' : '매월'}</span>}
-                                        </div>
-                                        {reminder.description && <div style={{ marginTop: '6px', fontSize: '0.85rem', color: 'var(--text-secondary-color)', paddingLeft: '24px' }}>{reminder.description}</div>}
-                                    </div>
-                                    {onDeleteReminder && (
-                                        <button 
-                                            onClick={() => onDeleteReminder(reminder.id)} 
-                                            style={{ background: 'none', border: 'none', color: 'var(--danger-color)', cursor: 'pointer', fontSize: '1.2rem', padding: '4px 8px', borderRadius: '6px', transition: 'background-color 0.2s' }}
-                                            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'rgba(255, 59, 48, 0.1)')}
-                                            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
-                                        >
-                                            ✕
-                                        </button>
-                                    )}
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            )}
-        </>
-    );
-};
-
-const GoalAssistantModal: React.FC<{ onClose: () => void; onAddTodo?: (newTodoData: Omit<Goal, 'id' | 'completed' | 'lastCompletedDate' | 'streak'>) => void; onAddMultipleTodos?: (newTodosData: Omit<Goal, 'id' | 'completed' | 'lastCompletedDate' | 'streak'>[]) => void; onEditTodo?: (updatedTodo: Goal) => void; existingTodo?: Goal; t: (key: string) => any; language: string; createAI: () => GoogleGenAI | null; onAddReminder?: (reminder: Omit<Reminder, 'id' | 'createdAt'>) => void; reminders?: Reminder[]; onDeleteReminder?: (id: string) => void; userCategories?: string[]; }> = ({ onClose, onAddTodo, onAddMultipleTodos, onEditTodo, existingTodo, t, language, createAI, onAddReminder, reminders, onDeleteReminder, userCategories = ['personal'] }) => {
+const GoalAssistantModal: React.FC<{ onClose: () => void; onAddTodo?: (newTodoData: Omit<Goal, 'id' | 'completed' | 'lastCompletedDate' | 'streak'>) => void; onAddMultipleTodos?: (newTodosData: Omit<Goal, 'id' | 'completed' | 'lastCompletedDate' | 'streak'>[]) => void; onEditTodo?: (updatedTodo: Goal) => void; existingTodo?: Goal; t: (key: string) => any; language: string; createAI: () => GoogleGenAI | null; userCategories?: string[]; }> = ({ onClose, onAddTodo, onAddMultipleTodos, onEditTodo, existingTodo, t, language, createAI, userCategories = ['personal'] }) => {
     const [isClosing, handleClose] = useModalAnimation(onClose);
-    const [mode, setMode] = useState<'woop' | 'reminder' | 'automation'>('woop');
+    const [mode, setMode] = useState<'woop' | 'quick' | 'automation'>('woop');
     const [step, setStep] = useState(1);
     const [animationDir, setAnimationDir] = useState<'forward' | 'backward'>('forward');
     const [wish, setWish] = useState(existingTodo?.wish || '');
@@ -2852,8 +2813,13 @@ const GoalAssistantModal: React.FC<{ onClose: () => void; onAddTodo?: (newTodoDa
     const [recurringDays, setRecurringDays] = useState<number[]>(existingTodo?.recurringDays || []);
     const [deadline, setDeadline] = useState(existingTodo?.deadline || '');
     const [noDeadline, setNoDeadline] = useState(!existingTodo?.deadline);
-    const [category, setCategory] = useState<'school' | 'work' | 'personal' | 'other'>(existingTodo?.category || 'personal');
+    const [category, setCategory] = useState<'school' | 'work' | 'personal' | 'other'>((existingTodo?.category as 'school' | 'work' | 'personal' | 'other' | undefined) || 'personal');
     const [errors, setErrors] = useState<{ [key: string]: boolean }>({});
+    // Quick task mode states
+    const [quickTaskTitle, setQuickTaskTitle] = useState('');
+    const [quickTaskDeadline, setQuickTaskDeadline] = useState('');
+    const [quickTaskTime, setQuickTaskTime] = useState('');
+    const [quickTaskCategory, setQuickTaskCategory] = useState<'school' | 'work' | 'personal' | 'other'>('personal');
 
     const totalSteps = 5;
 
@@ -2893,12 +2859,32 @@ const GoalAssistantModal: React.FC<{ onClose: () => void; onAddTodo?: (newTodoDa
         if (existingTodo && onEditTodo) onEditTodo({ ...existingTodo, ...goalData });
         else if (onAddTodo) onAddTodo(goalData);
     };
+    const handleQuickTaskSubmit = () => {
+        if (!quickTaskTitle.trim()) return;
+        if (onAddTodo) {
+            onAddTodo({
+                wish: quickTaskTitle.trim(),
+                outcome: quickTaskTitle.trim(),
+                obstacle: '',
+                plan: '',
+                isRecurring: false,
+                recurringDays: [],
+                deadline: quickTaskDeadline,
+                category: quickTaskCategory
+            });
+        }
+        setQuickTaskTitle('');
+        setQuickTaskDeadline('');
+        setQuickTaskTime('');
+        setQuickTaskCategory('personal');
+        handleClose();
+    };
 
     return (
         <Modal onClose={handleClose} isClosing={isClosing} className="goal-assistant-modal">
             <div className="goal-assistant-header">
                 <div className="goal-assistant-header-left">{step > 1 && mode === 'woop' && <button onClick={handleBack} className="settings-back-button">{icons.back}</button>}</div>
-                <h2>{t('goal_assistant_title')}</h2>
+                <h2>{mode === 'woop' ? '새로운 목표' : mode === 'quick' ? '새로운 할일' : mode === 'automation' ? '새로운 계획' : t('goal_assistant_title')}</h2>
                 <div className="goal-assistant-header-right"><button onClick={handleClose} className="close-button">{icons.close}</button></div>
             </div>
             
@@ -2906,7 +2892,7 @@ const GoalAssistantModal: React.FC<{ onClose: () => void; onAddTodo?: (newTodoDa
                  <div className="modal-mode-switcher-container">
                     <div className="modal-mode-switcher">
                         <button onClick={() => setMode('woop')} className={mode === 'woop' ? 'active' : ''}>{t('goal_assistant_mode_woop')}</button>
-                        <button onClick={() => setMode('reminder')} className={mode === 'reminder' ? 'active' : ''}>🔔 미리알림</button>
+                        <button onClick={() => setMode('quick')} className={mode === 'quick' ? 'active' : ''}>새로운 할일</button>
                         <button onClick={() => setMode('automation')} className={mode === 'automation' ? 'active' : ''}>{t('goal_assistant_mode_automation')}</button>
                     </div>
                 </div>
@@ -2928,8 +2914,71 @@ const GoalAssistantModal: React.FC<{ onClose: () => void; onAddTodo?: (newTodoDa
                             <button onClick={handleNext} className="primary">{step === totalSteps ? (existingTodo ? t('save_button') : t('add_button')) : t('next_button')}</button>
                         </div>
                     </>
-                ) : mode === 'reminder' ? (
-                    <ReminderForm onAddReminder={onAddReminder} t={t} reminders={reminders} onDeleteReminder={onDeleteReminder} userCategories={userCategories} />
+                ) : mode === 'quick' ? (
+                    <div style={{ padding: '24px 16px' }}>
+                        <div style={{ marginBottom: '20px' }}>
+                            <h3 style={{ fontSize: '1rem', fontWeight: '600', marginBottom: '12px' }}>새로운 할일</h3>
+                            <div className="step-guidance"><p className="tip">빠르게 할일을 추가하세요</p></div>
+                            <textarea 
+                                value={quickTaskTitle} 
+                                onChange={(e) => setQuickTaskTitle(e.target.value)} 
+                                placeholder="예: 선물 사기" 
+                                rows={2}
+                                style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)', backgroundColor: 'var(--input-bg-color)', color: 'var(--text-color)', fontSize: '14px', fontFamily: 'inherit', resize: 'none', marginTop: '12px' }}
+                                onKeyPress={(e) => { if (e.key === 'Enter' && e.ctrlKey) handleQuickTaskSubmit(); }}
+                            />
+                        </div>
+                        <hr />
+                        <div style={{ marginBottom: '20px' }}>
+                            <div className="step-guidance" style={{ marginTop: '16px' }}><p className="tip">마감일 설정 (선택)</p></div>
+                            <label className="settings-item standalone-toggle" style={{ marginTop: '12px' }}>
+                                <span style={{ fontWeight: '500' }}>마감일 설정</span>
+                                <label className="theme-toggle-switch">
+                                    <input 
+                                        type="checkbox" 
+                                        checked={!!quickTaskDeadline} 
+                                        onChange={(e) => setQuickTaskDeadline(e.target.checked ? new Date().toISOString().split('T')[0] : '')} 
+                                    />
+                                    <span className="slider round"></span>
+                                </label>
+                            </label>
+                            {quickTaskDeadline && (
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '12px' }}>
+                                    <div>
+                                        <label style={{ fontSize: '12px', opacity: 0.7, display: 'block', marginBottom: '4px' }}>날짜</label>
+                                        <input 
+                                            type="date" 
+                                            value={quickTaskDeadline} 
+                                            onChange={(e) => setQuickTaskDeadline(e.target.value)}
+                                            style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid var(--border-color)', backgroundColor: 'var(--input-bg-color)', color: 'var(--text-color)', fontSize: '13px' }}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label style={{ fontSize: '12px', opacity: 0.7, display: 'block', marginBottom: '4px' }}>시간 (선택)</label>
+                                        <input 
+                                            type="time" 
+                                            value={quickTaskTime}
+                                            onChange={(e) => setQuickTaskTime(e.target.value)}
+                                            style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid var(--border-color)', backgroundColor: 'var(--input-bg-color)', color: 'var(--text-color)', fontSize: '13px' }}
+                                        />
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                        <hr />
+                        <div style={{ marginBottom: '24px' }}>
+                            <div className="step-guidance" style={{ marginTop: '16px' }}><p className="tip">{t('category_label')}</p></div>
+                            <div style={{ display: 'grid', gridTemplateColumns: userCategories && userCategories.length > 2 ? 'repeat(2, 1fr)' : 'repeat(1, 1fr)', gap: '8px', marginTop: '12px' }}>
+                                {userCategories && userCategories.map((cat) => (
+                                    <button key={cat} onClick={() => setQuickTaskCategory(cat as any)} className={`category-button ${quickTaskCategory === cat ? 'active' : ''}`}>{cat}</button>
+                                ))}
+                            </div>
+                        </div>
+                        <div className="goal-assistant-nav">
+                            <button onClick={handleClose} className="secondary">{t('cancel_button')}</button>
+                            <button onClick={handleQuickTaskSubmit} className="primary" disabled={!quickTaskTitle.trim()}>{t('add_button')}</button>
+                        </div>
+                    </div>
                 ) : (
                     onAddMultipleTodos && <AutomationForm onGenerate={onAddMultipleTodos} t={t} />
                 )}
@@ -2987,7 +3036,7 @@ const GoalInfoModal: React.FC<{
                 {userCategories && userCategories.length > 0 && onUpdateGoal && (
                     <div className="info-section" style={{ borderTop: '1px solid var(--border-color)', paddingTop: '16px', marginTop: '16px' }}>
                         <h4 style={{ marginBottom: '12px' }}>{t('category_label')}</h4>
-                        <div style={{ display: 'grid', gridTemplateColumns: userCategories.length > 2 ? 'repeat(2, 1fr)' : 'repeat(1, 1fr)', gap: '8px' }}>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
                             {userCategories.map((cat) => (
                                 <button
                                     key={cat}
@@ -2997,15 +3046,18 @@ const GoalInfoModal: React.FC<{
                                     }}
                                     className={`category-button ${todo.category === cat ? 'active' : ''}`}
                                     style={{
-                                        padding: '10px 12px',
-                                        borderRadius: '6px',
-                                        border: todo.category === cat ? '2px solid var(--primary-color)' : '1px solid var(--border-color)',
-                                        backgroundColor: todo.category === cat ? 'var(--primary-color)' : 'var(--card-bg-color)',
-                                        color: todo.category === cat ? 'white' : 'inherit',
+                                        padding: '8px 16px',
+                                        borderRadius: '20px',
+                                        border: todo.category === cat ? '2px solid var(--primary-color)' : '2px solid var(--border-color)',
+                                        backgroundColor: todo.category === cat ? 'var(--primary-color)' : 'transparent',
+                                        color: todo.category === cat ? 'white' : 'var(--text-color)',
                                         cursor: 'pointer',
                                         fontSize: '14px',
                                         fontWeight: todo.category === cat ? '600' : '500',
-                                        transition: 'all 0.2s ease'
+                                        transition: 'all 0.25s ease',
+                                        whiteSpace: 'nowrap',
+                                        display: 'inline-block',
+                                        boxShadow: todo.category === cat ? '0 2px 8px rgba(88, 86, 214, 0.2)' : 'none'
                                     }}
                                 >
                                     {cat}
@@ -3025,6 +3077,346 @@ const GoalInfoModal: React.FC<{
                     <button onClick={() => { onOpenCollaboration(todo); handleClose(); }} className="secondary">🤝 협업</button>
                 )}
                 <button onClick={handleClose} className="primary">{t('close_button')}</button>
+            </div>
+        </Modal>
+    );
+};
+
+const FolderCollaborationModal: React.FC<{ 
+    folder: Folder | null; 
+    onClose: () => void; 
+    t: (key: string) => any; 
+    googleUser: User | null;
+    onUpdateCollaborators: (folderId: string | null, collaborators: Collaborator[]) => void;
+    setAlertConfig: (config: any) => void;
+}> = ({ folder, onClose, t, googleUser, onUpdateCollaborators, setAlertConfig }) => {
+    const [isClosing, handleClose] = useModalAnimation(onClose);
+    const [shareableLink, setShareableLink] = useState('');
+    const [isGeneratingLink, setIsGeneratingLink] = useState(false);
+    const [linkPassword, setLinkPassword] = useState('');
+    const [showPasswordInput, setShowPasswordInput] = useState(false);
+
+    const handleCreateShareLink = async () => {
+        if (!folder) return;
+        
+        setIsGeneratingLink(true);
+        
+        try {
+            // 폴더 정보와 협업자 정보를 포함한 공유 데이터 생성
+            const shareData = {
+                type: 'folder_share',
+                folderId: folder.id,
+                folderName: folder.name,
+                folderColor: folder.color,
+                goals: [], // 비움 - 폴더만 공유
+                sharedBy: googleUser?.email,
+                sharedAt: new Date().toISOString(),
+                password: linkPassword || undefined, // 암호 포함
+            };
+            
+            // 데이터 압축 및 인코딩
+            const encodedData = utf8ToBase64(JSON.stringify(shareData));
+            const longUrl = `${window.location.origin}${window.location.pathname}?folder_share=${encodeURIComponent(encodedData)}`;
+            
+            // 단축 URL 생성 시도
+            const finalUrl = await createShortUrl(longUrl);
+            setShareableLink(finalUrl);
+            
+            setAlertConfig({
+                title: '공유 링크 생성 완료',
+                message: `${linkPassword ? '암호가 설정되었습니다. ' : ''}클립보드에 복사되었습니다. 협업자에게 공유해주세요!`,
+                confirmText: '확인',
+                onConfirm: () => {
+                    navigator.clipboard.writeText(finalUrl);
+                }
+            });
+        } catch (error) {
+            console.error('공유 링크 생성 실패:', error);
+            setAlertConfig({
+                title: '생성 실패',
+                message: '공유 링크 생성에 실패했습니다. 다시 시도해주세요.',
+                confirmText: '확인',
+                onConfirm: () => {}
+            });
+        } finally {
+            setIsGeneratingLink(false);
+        }
+    };
+
+    const handleCopyLink = () => {
+        if (shareableLink) {
+            navigator.clipboard.writeText(shareableLink).then(() => {
+                setAlertConfig({
+                    title: '복사 완료',
+                    message: '링크가 클립보드에 복사되었습니다.',
+                    confirmText: '확인',
+                    onConfirm: () => {}
+                });
+            });
+        }
+    };
+
+    const handleRemoveCollaborator = async (userId: string) => {
+        if (!folder || !googleUser) return;
+        
+        try {
+            const foldersRef = collection(db, 'users', googleUser.uid, 'folders');
+            const folderDocRef = doc(foldersRef, folder.id);
+            
+            const updatedCollaborators = (folder.collaborators || []).filter(c => c.userId !== userId);
+            
+            // Firestore 업데이트 (문서가 없으면 생성하도록 merge 사용)
+            await setDoc(folderDocRef, {
+                collaborators: updatedCollaborators,
+                updatedAt: new Date().toISOString()
+            }, { merge: true });
+            
+            onUpdateCollaborators(folder.id, updatedCollaborators);
+            
+            setAlertConfig({
+                title: '제거 완료',
+                message: '협업자가 제거되었습니다.',
+                confirmText: '확인',
+                onConfirm: () => {}
+            });
+        } catch (error) {
+            console.error('협업자 제거 실패:', error);
+            setAlertConfig({
+                title: '제거 실패',
+                message: `협업자 제거에 실패했습니다. ${error instanceof Error ? error.message : ''}`,
+                confirmText: '확인',
+                onConfirm: () => {}
+            });
+        }
+    };
+
+    const handleChangeCollaboratorRole = async (userId: string, newRole: 'editor' | 'viewer') => {
+        if (!folder || !googleUser) return;
+        
+        try {
+            const foldersRef = collection(db, 'users', googleUser.uid, 'folders');
+            const folderDocRef = doc(foldersRef, folder.id);
+            
+            const updatedCollaborators = (folder.collaborators || []).map(c => 
+                c.userId === userId ? { ...c, role: newRole } : c
+            );
+            
+            // Firestore 업데이트
+            await setDoc(folderDocRef, {
+                collaborators: updatedCollaborators,
+                updatedAt: new Date().toISOString()
+            }, { merge: true });
+            
+            onUpdateCollaborators(folder.id, updatedCollaborators);
+            
+            setAlertConfig({
+                title: '권한 변경 완료',
+                message: `협업자의 권한이 ${newRole === 'editor' ? '편집자' : '뷰어'}로 변경되었습니다.`,
+                confirmText: '확인',
+                onConfirm: () => {}
+            });
+        } catch (error) {
+            console.error('권한 변경 실패:', error);
+            setAlertConfig({
+                title: '권한 변경 실패',
+                message: `협업자 권한 변경에 실패했습니다.`,
+                confirmText: '확인',
+                onConfirm: () => {}
+            });
+        }
+    };
+
+    if (!folder) return null;
+
+    return (
+        <Modal onClose={handleClose} isClosing={isClosing} className="collaboration-modal">
+            <div style={{ padding: '24px' }}>
+                <h2 style={{ marginBottom: '20px', fontSize: '1.2rem', fontWeight: 600 }}>📁 {folder.name} 폴더 공유</h2>
+                
+                {/* 현재 협업자 목록 */}
+                <div style={{ marginBottom: '24px', paddingBottom: '16px', borderBottom: '1px solid var(--border-color)' }}>
+                    <h3 style={{ fontSize: '0.95rem', fontWeight: 500, marginBottom: '12px' }}>현재 협업자</h3>
+                    {folder.collaborators && folder.collaborators.length > 0 ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            {folder.collaborators.map((collab) => (
+                                <div key={collab.userId} style={{ 
+                                    display: 'flex', 
+                                    justifyContent: 'space-between', 
+                                    alignItems: 'center', 
+                                    padding: '10px', 
+                                    backgroundColor: 'var(--card-bg-color)', 
+                                    borderRadius: '6px',
+                                    border: '1px solid var(--border-color)'
+                                }}>
+                                    <div style={{ flex: 1 }}>
+                                        <div style={{ fontWeight: 500, fontSize: '0.9rem' }}>{collab.email}</div>
+                                        {collab.role === 'owner' ? (
+                                            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary-color)', fontWeight: 500 }}>
+                                                소유자
+                                            </div>
+                                        ) : (
+                                            <select 
+                                                value={collab.role}
+                                                onChange={(e) => handleChangeCollaboratorRole(collab.userId, e.target.value as 'editor' | 'viewer')}
+                                                style={{ 
+                                                    fontSize: '0.8rem', 
+                                                    padding: '2px 4px',
+                                                    borderRadius: '4px',
+                                                    border: '1px solid var(--border-color)',
+                                                    backgroundColor: 'var(--input-bg-color)',
+                                                    color: 'var(--text-color)',
+                                                    cursor: 'pointer'
+                                                }}
+                                            >
+                                                <option value="editor">편집자</option>
+                                                <option value="viewer">뷰어</option>
+                                            </select>
+                                        )}
+                                    </div>
+                                    {collab.role !== 'owner' && (
+                                        <button 
+                                            onClick={() => handleRemoveCollaborator(collab.userId)}
+                                            style={{ 
+                                                padding: '4px 12px', 
+                                                backgroundColor: 'var(--danger-color)', 
+                                                color: 'white', 
+                                                border: 'none', 
+                                                borderRadius: '4px', 
+                                                cursor: 'pointer',
+                                                fontSize: '0.8rem',
+                                                marginLeft: '8px'
+                                            }}
+                                        >
+                                            제거
+                                        </button>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <p style={{ color: 'var(--text-secondary-color)', fontSize: '0.9rem' }}>협업자가 없습니다.</p>
+                    )}
+                </div>
+
+                {/* 공유 링크 섹션 */}
+                <div>
+                    <h3 style={{ fontSize: '0.95rem', fontWeight: 500, marginBottom: '12px' }}>공유 링크로 협업자 추가</h3>
+                    <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary-color)', marginBottom: '12px' }}>
+                        공유 링크를 생성하고 협업자에게 전달하면, 그들이 해당 폴더에 접근할 수 있습니다.
+                    </p>
+                    
+                    {!shareableLink ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                            {/* 암호 설정 옵션 */}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <input 
+                                    type="checkbox" 
+                                    id="password-toggle"
+                                    checked={showPasswordInput}
+                                    onChange={(e) => setShowPasswordInput(e.target.checked)}
+                                    style={{ cursor: 'pointer' }}
+                                />
+                                <label htmlFor="password-toggle" style={{ fontSize: '0.9rem', cursor: 'pointer' }}>
+                                    링크에 암호 설정
+                                </label>
+                            </div>
+                            
+                            {showPasswordInput && (
+                                <input 
+                                    type="password" 
+                                    placeholder="암호 입력 (선택사항)" 
+                                    value={linkPassword}
+                                    onChange={(e) => setLinkPassword(e.target.value)}
+                                    style={{ 
+                                        width: '100%', 
+                                        padding: '10px', 
+                                        borderRadius: '6px', 
+                                        border: '1px solid var(--border-color)', 
+                                        backgroundColor: 'var(--input-bg-color)', 
+                                        color: 'var(--text-color)',
+                                        fontFamily: 'inherit'
+                                    }}
+                                />
+                            )}
+                            
+                            <button 
+                                onClick={handleCreateShareLink}
+                                disabled={isGeneratingLink}
+                                style={{ 
+                                    width: '100%',
+                                    padding: '10px', 
+                                    backgroundColor: 'var(--primary-color)', 
+                                    color: 'white', 
+                                    border: 'none', 
+                                    borderRadius: '6px', 
+                                    cursor: isGeneratingLink ? 'not-allowed' : 'pointer',
+                                    fontWeight: 500,
+                                    opacity: isGeneratingLink ? 0.6 : 1
+                                }}
+                            >
+                                {isGeneratingLink ? '링크 생성 중...' : '공유 링크 생성'}
+                            </button>
+                        </div>
+                    ) : (
+                        <div>
+                            <div style={{ marginBottom: '12px', padding: '12px', backgroundColor: 'var(--card-bg-color)', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+                                <input 
+                                    type="text" 
+                                    readOnly 
+                                    value={shareableLink} 
+                                    onClick={(e) => (e.target as HTMLInputElement).select()}
+                                    style={{
+                                        width: '100%',
+                                        padding: '8px',
+                                        border: '1px solid var(--border-color)',
+                                        borderRadius: '4px',
+                                        backgroundColor: 'var(--input-bg-color)',
+                                        color: 'var(--text-color)',
+                                        fontSize: '0.85rem',
+                                        boxSizing: 'border-box',
+                                        fontFamily: 'monospace'
+                                    }}
+                                />
+                            </div>
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                                <button 
+                                    onClick={handleCopyLink}
+                                    style={{ 
+                                        flex: 1,
+                                        padding: '10px', 
+                                        backgroundColor: 'var(--primary-color)', 
+                                        color: 'white', 
+                                        border: 'none', 
+                                        borderRadius: '6px', 
+                                        cursor: 'pointer',
+                                        fontWeight: 500
+                                    }}
+                                >
+                                    클립보드 복사
+                                </button>
+                                <button 
+                                    onClick={() => setShareableLink('')}
+                                    style={{ 
+                                        flex: 1,
+                                        padding: '10px', 
+                                        backgroundColor: 'transparent', 
+                                        color: 'var(--primary-color)', 
+                                        border: '1px solid var(--primary-color)', 
+                                        borderRadius: '6px', 
+                                        cursor: 'pointer',
+                                        fontWeight: 500
+                                    }}
+                                >
+                                    새로 생성
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+                <div style={{ marginTop: '24px', display: 'flex', justifyContent: 'flex-end' }}>
+                    <button onClick={handleClose} className="primary">닫기</button>
+                </div>
             </div>
         </Modal>
     );
@@ -3215,12 +3607,6 @@ const SettingsModal: React.FC<{
     isGoogleLoggingOut?: boolean;
     isSyncingData?: boolean;
     isLoadingData?: boolean;
-    isNotificationsEnabled: boolean;
-    setIsNotificationsEnabled: (enabled: boolean) => void;
-    notificationSettings: { deadline: boolean; suggestion: boolean; achievement: boolean; reminder: boolean };
-    setNotificationSettings: (settings: { deadline: boolean; suggestion: boolean; achievement: boolean; reminder: boolean }) => void;
-    reminderTimeSettings: { enabled: boolean; startTime: string; endTime: string };
-    setReminderTimeSettings: (settings: { enabled: boolean; startTime: string; endTime: string }) => void;
     isAutoSyncEnabled: boolean;
     setIsAutoSyncEnabled: (enabled: boolean) => void;
 }> = ({
@@ -3230,8 +3616,7 @@ const SettingsModal: React.FC<{
     apiKey, onSetApiKey, isOfflineMode, onToggleOfflineMode,
     googleUser, onGoogleLogin, onGoogleLogout, onSyncDataToFirebase, onLoadDataFromFirebase,
     isGoogleLoggingIn = false, isGoogleLoggingOut = false, isSyncingData = false, isLoadingData = false,
-    isNotificationsEnabled, setIsNotificationsEnabled, notificationSettings, setNotificationSettings,
-    reminderTimeSettings, setReminderTimeSettings, isAutoSyncEnabled, setIsAutoSyncEnabled
+    isAutoSyncEnabled, setIsAutoSyncEnabled
 
 }) => {
     const [isClosing, handleClose] = useModalAnimation(onClose);
@@ -3239,10 +3624,12 @@ const SettingsModal: React.FC<{
     const [shareableLink, setShareableLink] = useState('');
     const [isGeneratingLink, setIsGeneratingLink] = useState(false);
     const [modalSize, setModalSize] = useState<'small' | 'medium' | 'large'>('medium');
+    const [alertMessage, setAlertMessage] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     
     const tabs = [
         { id: 'appearance', label: t('settings_section_background'), icon: icons.background },
+        { id: 'notifications', label: t('settings_notifications'), icon: icons.settings },
         { id: 'general', label: t('settings_section_general'), icon: icons.settings },
         { id: 'data', label: t('settings_section_data'), icon: icons.data },
     ];
@@ -3260,7 +3647,7 @@ const SettingsModal: React.FC<{
     const handleCreateShareLink = async () => {
         // 데이터가 없는지 확인
         if (!todos || todos.length === 0) {
-            alert(t('no_data_to_share'));
+            setAlertMessage(t('no_data_to_share'));
             return;
         }
         
@@ -3332,7 +3719,7 @@ const SettingsModal: React.FC<{
                         </div>
                         <div className="settings-section-header">{t('settings_background_header')}</div>
                         <div className="settings-section-body">
-                           {backgroundOptions.map(option => (
+                            {backgroundOptions.map(option => (
                                 <div key={option.id} className="settings-item nav-indicator" onClick={() => onSetBackgroundTheme(option.id)}>
                                     <span>{t(isDarkMode ? option.darkNameKey : option.lightNameKey)}</span>
                                     {backgroundTheme === option.id && icons.check}
@@ -3341,9 +3728,62 @@ const SettingsModal: React.FC<{
                         </div>
                     </>
                 );
+            case 'notifications':
+                return (
+                    <>
+                        <div className="settings-section-header">{t('notification_settings_title')}</div>
+                        <div className="settings-section-body">
+                            <label className="settings-item">
+                                <div>
+                                    <span>{t('notification_deadline')}</span>
+                                    <div style={{ fontSize: '12px', opacity: 0.7, marginTop: '4px' }}>{t('notification_deadline_desc')}</div>
+                                </div>
+                                <div className="theme-toggle-switch">
+                                    <input type="checkbox" defaultChecked={true} onChange={() => {}} />
+                                    <span className="slider round"></span>
+                                </div>
+                            </label>
+                            <label className="settings-item">
+                                <div>
+                                    <span>{t('notification_suggestion')}</span>
+                                    <div style={{ fontSize: '12px', opacity: 0.7, marginTop: '4px' }}>지정된 시간에 할일을 제안합니다.</div>
+                                </div>
+                                <div className="theme-toggle-switch">
+                                    <input type="checkbox" defaultChecked={true} onChange={() => {}} />
+                                    <span className="slider round"></span>
+                                </div>
+                            </label>
+                        </div>
+                        <div className="settings-section-header">알림 권한</div>
+                        <div className="settings-section-body">
+                            <button 
+                                className="settings-item action-item" 
+                                onClick={async () => {
+                                    const granted = await requestNotificationPermission();
+                                    if (granted) {
+                                        setToastMessage('알림 권한이 허용되었습니다.');
+                                        await subscribeToPushNotifications();
+                                    } else {
+                                        setToastMessage('알림 권한을 거부했습니다.');
+                                    }
+                                }}
+                            >
+                                <span className="action-text">알림 권한 요청</span>
+                            </button>
+                            <div style={{ fontSize: '12px', opacity: 0.7, padding: '12px', marginTop: '8px' }}>
+                                현재 권한: {Notification.permission === 'granted' ? '✓ 허용됨' : Notification.permission === 'denied' ? '✗ 거부됨' : '? 미정'}
+                            </div>
+                        </div>
+                    </>
+                );
             case 'general':
                 return (
                     <>
+                        <div className="settings-section-header">{t('settings_language')}</div>
+                        <div className="settings-section-body">
+                            <div className="settings-item nav-indicator" onClick={() => onSetLanguage('ko')}><span>한국어</span>{language === 'ko' && icons.check}</div>
+                            <div className="settings-item nav-indicator" onClick={() => onSetLanguage('en')}><span>English</span>{language === 'en' && icons.check}</div>
+                        </div>
                         <div className="settings-section-header">{t('settings_api_key')}</div>
                         <div className="settings-section-body">
                             <div className="settings-item">
@@ -3366,124 +3806,6 @@ const SettingsModal: React.FC<{
                                 </div>
                             </label>
                         </div>
-                        <div className="settings-section-header">{t('settings_notifications')}</div>
-                        <div className="settings-section-body">
-                            <label className="settings-item">
-                                <div>
-                                    <span>{t('settings_notifications')}</span>
-                                    <div style={{ fontSize: '12px', opacity: 0.7, marginTop: '4px' }}>{t('settings_notifications_desc')}</div>
-                                </div>
-                                <div className="theme-toggle-switch">
-                                    <input 
-                                        type="checkbox" 
-                                        checked={isNotificationsEnabled} 
-                                        onChange={(e) => {
-                                            setIsNotificationsEnabled(e.target.checked);
-                                            if (e.target.checked && isStandalone() && isMobile()) {
-                                                requestNotificationPermission();
-                                            }
-                                        }} 
-                                    />
-                                    <span className="slider round"></span>
-                                </div>
-                            </label>
-                            {isNotificationsEnabled && (
-                                <>
-                                    <div style={{ fontSize: '13px', fontWeight: '500', padding: '16px 0 8px 0' }}>
-                                        {t('notification_settings_title')}
-                                    </div>
-                                    <label className="settings-item">
-                                        <div>
-                                            <span>{t('notification_deadline')}</span>
-                                            <div style={{ fontSize: '12px', opacity: 0.7, marginTop: '4px' }}>{t('notification_deadline_desc')}</div>
-                                        </div>
-                                        <div className="theme-toggle-switch">
-                                            <input 
-                                                type="checkbox" 
-                                                checked={notificationSettings.deadline} 
-                                                onChange={(e) => setNotificationSettings({ ...notificationSettings, deadline: e.target.checked })} 
-                                            />
-                                            <span className="slider round"></span>
-                                        </div>
-                                    </label>
-                                    <label className="settings-item">
-                                        <div>
-                                            <span>{t('notification_suggestion')}</span>
-                                            <div style={{ fontSize: '12px', opacity: 0.7, marginTop: '4px' }}>{t('notification_suggestion_desc')}</div>
-                                        </div>
-                                        <div className="theme-toggle-switch">
-                                            <input 
-                                                type="checkbox" 
-                                                checked={notificationSettings.suggestion} 
-                                                onChange={(e) => setNotificationSettings({ ...notificationSettings, suggestion: e.target.checked })} 
-                                            />
-                                            <span className="slider round"></span>
-                                        </div>
-                                    </label>
-                                    <label className="settings-item">
-                                        <div>
-                                            <span>{t('notification_achievement')}</span>
-                                            <div style={{ fontSize: '12px', opacity: 0.7, marginTop: '4px' }}>{t('notification_achievement_desc')}</div>
-                                        </div>
-                                        <div className="theme-toggle-switch">
-                                            <input 
-                                                type="checkbox" 
-                                                checked={notificationSettings.achievement} 
-                                                onChange={(e) => setNotificationSettings({ ...notificationSettings, achievement: e.target.checked })} 
-                                            />
-                                            <span className="slider round"></span>
-                                        </div>
-                                    </label>
-                                    <label className="settings-item">
-                                        <div>
-                                            <span>{t('notification_reminder')}</span>
-                                            <div style={{ fontSize: '12px', opacity: 0.7, marginTop: '4px' }}>{t('notification_reminder_desc')}</div>
-                                        </div>
-                                        <div className="theme-toggle-switch">
-                                            <input 
-                                                type="checkbox" 
-                                                checked={notificationSettings.reminder} 
-                                                onChange={(e) => setNotificationSettings({ ...notificationSettings, reminder: e.target.checked })} 
-                                            />
-                                            <span className="slider round"></span>
-                                        </div>
-                                    </label>
-                                    {notificationSettings.reminder && (
-                                        <div style={{ paddingLeft: '16px', marginTop: '12px', borderLeft: '3px solid var(--primary-color, #6366f1)' }}>
-                                            <div style={{ fontSize: '12px', fontWeight: '500', marginBottom: '8px' }}>⏰ {t('reminder_time_settings_title')}</div>
-                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '12px' }}>
-                                                <div>
-                                                    <label style={{ fontSize: '11px', opacity: 0.7, display: 'block', marginBottom: '4px' }}>{t('reminder_start_time')}</label>
-                                                    <input 
-                                                        type="time" 
-                                                        value={reminderTimeSettings.startTime}
-                                                        onChange={(e) => setReminderTimeSettings({ ...reminderTimeSettings, startTime: e.target.value })}
-                                                        style={{ width: '100%', padding: '6px', borderRadius: '6px', border: '1px solid rgba(0,0,0,0.1)', fontSize: '12px' }}
-                                                    />
-                                                </div>
-                                                <div>
-                                                    <label style={{ fontSize: '11px', opacity: 0.7, display: 'block', marginBottom: '4px' }}>{t('reminder_end_time')}</label>
-                                                    <input 
-                                                        type="time" 
-                                                        value={reminderTimeSettings.endTime}
-                                                        onChange={(e) => setReminderTimeSettings({ ...reminderTimeSettings, endTime: e.target.value })}
-                                                        style={{ width: '100%', padding: '6px', borderRadius: '6px', border: '1px solid rgba(0,0,0,0.1)', fontSize: '12px' }}
-                                                    />
-                                                </div>
-                                            </div>
-                                            <div style={{ fontSize: '11px', opacity: 0.6, padding: '8px', backgroundColor: 'rgba(0,0,0,0.03)', borderRadius: '6px' }}>
-                                                💡 {reminderTimeSettings.startTime} ~ {reminderTimeSettings.endTime}에만 알림을 받습니다.
-                                            </div>
-                                        </div>
-                                    )}
-                                </>
-                            )}
-                        </div>
-                        <div className="settings-section-header">{t('settings_language')}</div>
-                        <div className="settings-section-body">
-                            <div className="settings-item nav-indicator" onClick={() => onSetLanguage('ko')}><span>한국어</span>{language === 'ko' && icons.check}</div>
-                            <div className="settings-item nav-indicator" onClick={() => onSetLanguage('en')}><span>English</span>{language === 'en' && icons.check}</div>
-                        </div>
                         <div className="settings-section-header">{t('settings_section_info')}</div>
                         <div className="settings-section-body">
                             <div className="settings-item nav-indicator" onClick={onOpenVersionInfo}>
@@ -3503,45 +3825,10 @@ const SettingsModal: React.FC<{
                                 <span>{t('settings_developer')}</span>
                                 <span className="settings-item-value">{t('developer_name')}</span>
                             </div>
-                             <div className="settings-item">
+                            <div className="settings-item">
                                 <span>{t('settings_copyright')}</span>
                                 <span className="settings-item-value">{t('copyright_notice')}</span>
                             </div>
-                        </div>
-                        <div className="settings-section-header" style={{ marginTop: '20px' }}>🧪 Developer Menu</div>
-                        <div className="settings-section-body">
-                            <button 
-                                className="settings-item action-item" 
-                                onClick={() => sendTestNotification('deadline')}
-                                disabled={!isNotificationsEnabled}
-                                style={{ opacity: !isNotificationsEnabled ? 0.5 : 1, cursor: !isNotificationsEnabled ? 'not-allowed' : 'pointer' }}
-                            >
-                                <span className="action-text">🧪 테스트: 마감일 알림</span>
-                            </button>
-                            <button 
-                                className="settings-item action-item" 
-                                onClick={() => sendTestNotification('suggestion')}
-                                disabled={!isNotificationsEnabled}
-                                style={{ opacity: !isNotificationsEnabled ? 0.5 : 1, cursor: !isNotificationsEnabled ? 'not-allowed' : 'pointer' }}
-                            >
-                                <span className="action-text">🧪 테스트: 제안 알림</span>
-                            </button>
-                            <button 
-                                className="settings-item action-item" 
-                                onClick={() => sendTestNotification('achievement')}
-                                disabled={!isNotificationsEnabled}
-                                style={{ opacity: !isNotificationsEnabled ? 0.5 : 1, cursor: !isNotificationsEnabled ? 'not-allowed' : 'pointer' }}
-                            >
-                                <span className="action-text">🧪 테스트: 달성 축하 알림</span>
-                            </button>
-                            <button 
-                                className="settings-item action-item" 
-                                onClick={() => sendTestNotification('reminder')}
-                                disabled={!isNotificationsEnabled}
-                                style={{ opacity: !isNotificationsEnabled ? 0.5 : 1, cursor: !isNotificationsEnabled ? 'not-allowed' : 'pointer' }}
-                            >
-                                <span className="action-text">🧪 테스트: 미리알림</span>
-                            </button>
                         </div>
                     </>
                 );
@@ -3555,72 +3842,18 @@ const SettingsModal: React.FC<{
                                     <div className="settings-item">
                                         <div>
                                             <span>Google 계정</span>
-                                            <div style={{ fontSize: '12px', opacity: 0.7, marginTop: '4px' }}>
-                                                📧 {googleUser.email}
-                                            </div>
-                                            <div style={{ fontSize: '12px', opacity: 0.7, marginTop: '4px' }}>
-                                                👤 {googleUser.displayName}
-                                            </div>
+                                            <div style={{ fontSize: '12px', opacity: 0.7, marginTop: '4px' }}>{googleUser.email}</div>
+                                            <div style={{ fontSize: '12px', opacity: 0.7, marginTop: '4px' }}>{googleUser.displayName}</div>
                                         </div>
                                         <span style={{ color: 'var(--success-color, #4CAF50)' }}>✓</span>
                                     </div>
-                                    <button className="settings-item action-item" onClick={onSyncDataToFirebase} disabled={isSyncingData}>
-                                        <span className="action-text">{isSyncingData ? '⏳ 저장중...' : '☁️ 클라우드에 저장'}</span>
-                                    </button>
-                                    <button className="settings-item action-item" onClick={onLoadDataFromFirebase} disabled={isLoadingData}>
-                                        <span className="action-text">{isLoadingData ? '⏳ 로드중...' : '☁️ 클라우드에서 불러오기'}</span>
-                                    </button>
-                                    <label className="settings-item">
-                                        <div>
-                                            <span>⚡ 자동 동기화</span>
-                                            <div style={{ fontSize: '12px', opacity: 0.7, marginTop: '4px' }}>목표 변경 시 자동으로 저장</div>
-                                        </div>
-                                        <div className="theme-toggle-switch">
-                                            <input 
-                                                type="checkbox" 
-                                                checked={isAutoSyncEnabled}
-                                                onChange={(e) => setIsAutoSyncEnabled(e.target.checked)}
-                                            />
-                                            <span className="slider round"></span>
-                                        </div>
-                                    </label>
                                     <button className="settings-item action-item" onClick={onGoogleLogout} disabled={isGoogleLoggingOut} style={{opacity: isGoogleLoggingOut ? 0.6 : 1}}>
-                                        <span className="action-text">{isGoogleLoggingOut ? '⏳ 로그아웃 중...' : '🔓 로그아웃'}</span>
+                                        <span className="action-text">{isGoogleLoggingOut ? '⏳ 로그아웃 중...' : '로그아웃'}</span>
                                     </button>
                                 </div>
                             ) : (
                                 <div style={{ display: 'flex', justifyContent: 'center', padding: '12px 0' }}>
-                                    <button 
-                                        onClick={onGoogleLogin}
-                                        disabled={isGoogleLoggingIn}
-                                        style={{ 
-                                            backgroundColor: isGoogleLoggingIn ? '#E0E0E0' : 'white',
-                                            border: '1px solid #D3D3D3',
-                                            borderRadius: '24px',
-                                            padding: '8px 20px',
-                                            fontSize: '14px',
-                                            fontWeight: '500',
-                                            cursor: isGoogleLoggingIn ? 'not-allowed' : 'pointer',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: '8px',
-                                            color: isGoogleLoggingIn ? '#999999' : '#1F2937',
-                                            transition: 'all 0.2s',
-                                            opacity: isGoogleLoggingIn ? 0.6 : 1
-                                        }}
-                                        onMouseEnter={(e) => {
-                                            if (!isGoogleLoggingIn) {
-                                                e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.12)';
-                                                e.currentTarget.style.backgroundColor = '#F8F9FA';
-                                            }
-                                        }}
-                                        onMouseLeave={(e) => {
-                                            if (!isGoogleLoggingIn) {
-                                                e.currentTarget.style.boxShadow = 'none';
-                                                e.currentTarget.style.backgroundColor = 'white';
-                                            }
-                                        }}
-                                    >
+                                    <button onClick={onGoogleLogin} disabled={isGoogleLoggingIn} style={{ backgroundColor: isGoogleLoggingIn ? '#E0E0E0' : 'white', border: '1px solid #D3D3D3', borderRadius: '24px', padding: '8px 20px', fontSize: '14px', fontWeight: '500', cursor: isGoogleLoggingIn ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '8px', color: isGoogleLoggingIn ? '#999999' : '#1F2937', transition: 'all 0.2s', opacity: isGoogleLoggingIn ? 0.6 : 1 }}>
                                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
                                             <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
                                             <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
@@ -3631,59 +3864,77 @@ const SettingsModal: React.FC<{
                                     </button>
                                 </div>
                             )}
-                        </div>
 
-                        <div className="settings-section-header">{t('settings_data_header')}</div>
-                        <div className="settings-section-body">
-                            <button className="settings-item action-item" onClick={onExportData} disabled={dataActionStatus !== 'idle'}><span className="action-text">{dataActionStatus === 'exporting' ? t('data_exporting') : t('settings_export_data')}</span></button>
-                            <button className="settings-item action-item" onClick={() => fileInputRef.current?.click()} disabled={dataActionStatus !== 'idle'}><span className="action-text">{dataActionStatus === 'importing' ? t('data_importing') : t('settings_import_data')}</span><input type="file" ref={fileInputRef} onChange={onImportData} accept=".json" style={{ display: 'none' }} /></button>
-                        </div>
+                            <div className="settings-section-header">클라우드 동기화</div>
+                            <div className="settings-section-body">
+                                {googleUser && (
+                                    <>
+                                        <button className="settings-item action-item" onClick={onSyncDataToFirebase} disabled={isSyncingData}>
+                                            <span className="action-text">{isSyncingData ? '저장중...' : '클라우드에 저장'}</span>
+                                        </button>
+                                        <button className="settings-item action-item" onClick={onLoadDataFromFirebase} disabled={isLoadingData}>
+                                            <span className="action-text">{isLoadingData ? '로드중...' : '클라우드에서 불러오기'}</span>
+                                        </button>
+                                        <label className="settings-item">
+                                            <div>
+                                                <span>자동 동기화</span>
+                                                <div style={{ fontSize: '12px', opacity: 0.7, marginTop: '4px' }}>목표 변경 시 자동으로 저장</div>
+                                            </div>
+                                            <div className="theme-toggle-switch">
+                                                <input type="checkbox" checked={isAutoSyncEnabled} onChange={(e) => setIsAutoSyncEnabled(e.target.checked)} />
+                                                <span className="slider round"></span>
+                                            </div>
+                                        </label>
+                                    </>
+                                )}
+                            </div>
 
-                        <div className="settings-section-header">{t('settings_share_link_header')}</div>
-                        <div className="settings-section-body">
-                            {!shareableLink && (
-                                <button 
-                                    className="settings-item action-item" 
-                                    onClick={handleCreateShareLink}
-                                    disabled={isGeneratingLink}
-                                >
-                                    <span className="action-text">
-                                        {isGeneratingLink ? '🔗 단축 URL 생성 중...' : t('settings_generate_link')}
-                                    </span>
-                                </button>
-                            )}
-                            {shareableLink && (
-                                <div className="share-link-container">
-                                    <div style={{ marginBottom: '8px', fontSize: '12px', opacity: 0.7 }}>
-                                        {shareableLink.length < 100 ? '📎 단축 URL' : '🔗 일반 링크'} 
-                                        ({shareableLink.length}자)
+                            <div className="settings-section-header">{t('settings_data_header')}</div>
+                            <div className="settings-section-body">
+                                <button className="settings-item action-item" onClick={onExportData} disabled={dataActionStatus !== 'idle'}><span className="action-text">{dataActionStatus === 'exporting' ? t('data_exporting') : t('settings_export_data')}</span></button>
+                                <button className="settings-item action-item" onClick={() => fileInputRef.current?.click()} disabled={dataActionStatus !== 'idle'}><span className="action-text">{dataActionStatus === 'importing' ? t('data_importing') : t('settings_import_data')}</span><input type="file" ref={fileInputRef} onChange={onImportData} accept=".json" style={{ display: 'none' }} /></button>
+                            </div>
+
+                            <div className="settings-section-header">{t('settings_share_link_header')}</div>
+                            <div className="settings-section-body">
+                                {!shareableLink && (
+                                    <button className="settings-item action-item" onClick={handleCreateShareLink} disabled={isGeneratingLink}><span className="action-text">{isGeneratingLink ? '단축 URL 생성 중...' : t('settings_generate_link')}</span></button>
+                                )}
+                                {shareableLink && (
+                                    <div className="share-link-container">
+                                        <div style={{ marginBottom: '8px', fontSize: '12px', opacity: 0.7 }}>{shareableLink.length < 100 ? '단축 URL' : '일반 링크'} ({shareableLink.length}자)</div>
+                                        <input type="text" readOnly value={shareableLink} onClick={(e) => (e.target as HTMLInputElement).select()} />
+                                        <button onClick={handleCopyLink}>{t('settings_copy_link')}</button>
                                     </div>
-                                    <input type="text" readOnly value={shareableLink} onClick={(e) => (e.target as HTMLInputElement).select()} />
-                                    <button onClick={handleCopyLink}>{t('settings_copy_link')}</button>
-                                </div>
-                            )}
-                        </div>
+                                )}
+                            </div>
 
-                        <div className="settings-section-header">{t('settings_delete_account')}</div>
-                        <div className="settings-section-body">
-                            <button className="settings-item action-item" onClick={handleDeleteClick} disabled={dataActionStatus !== 'idle'}>
-                                <span className="action-text destructive">{dataActionStatus === 'deleting' ? t('data_deleting') : t('settings_delete_account')}</span>
-                            </button>
+                            <div className="settings-section-header">{t('settings_section_info')}</div>
+                            <div className="settings-section-body">
+                                <div className="settings-item nav-indicator" onClick={onOpenVersionInfo}>
+                                    <span>{t('settings_version')}</span>
+                                    <div className="settings-item-value-with-icon"><span>1.5</span>{icons.forward}</div>
+                                </div>
+                                <div className="settings-item nav-indicator" onClick={onOpenUsageGuide}><span>{t('usage_guide_title')}</span><div className="settings-item-value-with-icon">{icons.forward}</div></div>
+                                <div className="settings-item"><span>{t('settings_developer')}</span><span className="settings-item-value">{t('developer_name')}</span></div>
+                                <div className="settings-item"><span>{t('settings_copyright')}</span><span className="settings-item-value">{t('copyright_notice')}</span></div>
+                            </div>
+
+                            <div className="settings-section-header">{t('settings_delete_account')}</div>
+                            <div className="settings-section-body">
+                                <button className="settings-item action-item" onClick={handleDeleteClick} disabled={dataActionStatus !== 'idle'}><span className="action-text destructive">{dataActionStatus === 'deleting' ? t('data_deleting') : t('settings_delete_account')}</span></button>
+                            </div>
                         </div>
                     </>
                 );
-            default: return null;
+            default:
+                return null;
         }
     }
     
     return (
         <Modal onClose={handleClose} isClosing={isClosing} className="settings-modal" size={modalSize}>
             <div className="settings-modal-header">
-                <div style={{ display: 'flex', gap: '8px' }}>
-                    <button onClick={() => setModalSize('small')} className={`header-icon-button ${modalSize === 'small' ? 'active' : ''}`} title="작게" style={{ padding: '6px 10px', fontSize: '0.8rem', backgroundColor: modalSize === 'small' ? 'var(--primary-color)' : 'transparent', color: modalSize === 'small' ? 'white' : 'var(--text-color)' }}>−</button>
-                    <button onClick={() => setModalSize('medium')} className={`header-icon-button ${modalSize === 'medium' ? 'active' : ''}`} title="중간" style={{ padding: '6px 10px', fontSize: '0.8rem', backgroundColor: modalSize === 'medium' ? 'var(--primary-color)' : 'transparent', color: modalSize === 'medium' ? 'white' : 'var(--text-color)' }}>◻</button>
-                    <button onClick={() => setModalSize('large')} className={`header-icon-button ${modalSize === 'large' ? 'active' : ''}`} title="크게" style={{ padding: '6px 10px', fontSize: '0.8rem', backgroundColor: modalSize === 'large' ? 'var(--primary-color)' : 'transparent', color: modalSize === 'large' ? 'white' : 'var(--text-color)' }}>+</button>
-                </div>
                 <h2>{t('settings_title')}</h2>
                 <div className="settings-modal-header-right">
                     <button onClick={handleClose} className="close-button">{icons.close}</button>
@@ -3709,6 +3960,26 @@ const SettingsModal: React.FC<{
                     </div>
                 </div>
             </div>
+            
+            {/* Alert Modal */}
+            {alertMessage && (
+                <div className="modal-backdrop alert-backdrop">
+                    <div className="modal-content alert-modal">
+                        <div className="alert-content">
+                            <h2>알림</h2>
+                            <p>{alertMessage}</p>
+                        </div>
+                        <div className="modal-buttons">
+                            <button 
+                                onClick={() => setAlertMessage(null)}
+                                className="primary"
+                            >
+                                확인
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </Modal>
     );
 };
@@ -3913,6 +4184,7 @@ const AlertModal: React.FC<{ title: string; message: string; onConfirm: () => vo
                 <div className="alert-content"><h2>{title}</h2><p dangerouslySetInnerHTML={{ __html: message }} /></div>
                 <div className="modal-buttons">
                     {hasCancel && <button onClick={onCancel} className="secondary">{cancelText || t('cancel_button')}</button>}
+                    {/* Keep destructive actions red, otherwise use primary (blue) for confirm */}
                     <button onClick={onConfirm} className={isDestructive ? 'destructive' : 'primary'}>{confirmText || t('confirm_button')}</button>
                 </div>
             </div>
