@@ -2012,7 +2012,14 @@ const TodoItem: React.FC<{ todo: Goal; onToggleComplete: (id: number) => void; o
                 <label className="checkbox-container" onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={todo.completed} onChange={() => onToggleComplete(todo.id)} /><span className="checkmark"></span></label>
                 <div className="todo-text-with-streak"><span className="todo-text">{todo.wish}</span>{todo.isRecurring && todo.streak > 0 && <div className="streak-indicator">{icons.flame}<span>{todo.streak}</span></div>}</div>
                 <div className="todo-actions-and-meta">
-                    <div className="todo-meta-badges">{todo.deadline && <span className="todo-deadline">{getRelativeTime(todo.deadline, t)}</span>}</div>
+                    <div className="todo-meta-badges">
+                        {todo.deadline && <span className="todo-deadline">{getRelativeTime(todo.deadline, t)}</span>}
+                        {todo.collaborators && todo.collaborators.length > 0 && (
+                            <span style={{ backgroundColor: 'rgba(52, 199, 89, 0.1)', color: 'var(--success-color)', padding: '4px 8px', borderRadius: '4px', fontSize: '0.85rem', marginLeft: '4px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                🤝 {todo.collaborators.length}
+                            </span>
+                        )}
+                    </div>
                     <div className="todo-buttons">
                         <button onClick={(e) => { e.stopPropagation(); onEdit(todo); }} className="info-button edit-button" aria-label={t('edit_button_aria')}>{icons.edit}</button>
                         <button onClick={(e) => { e.stopPropagation(); onDelete(todo.id); }} className="delete-button" aria-label={t('delete_button')}>{icons.delete}</button>
