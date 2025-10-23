@@ -4,7 +4,7 @@ import { GoogleOAuthProvider, useGoogleLogin } from '@react-oauth/google';
 import { GoogleGenAI, Type } from "@google/genai";
 import { auth, googleProvider, db } from './firebase-config';
 import { signInWithPopup, signOut, onAuthStateChanged, User } from 'firebase/auth';
-import { collection, doc, updateDoc, setDoc, onSnapshot, getDoc, deleteDoc } from 'firebase/firestore';
+import { collection, doc, updateDoc, setDoc, onSnapshot, getDoc, deleteDoc, query, where, getDocs } from 'firebase/firestore';
 import { httpsCallable, getFunctions } from 'firebase/functions';
 import './index.css';
 
@@ -1477,15 +1477,20 @@ const App: React.FC = () => {
                             // Firestore에서 최신 협업자 목록 조회 및 자동 추가
                             if (ownerUserId && googleUser) {
                                 try {
+                                    console.log('🔍 협업자 추가 시작:', { ownerUserId, googleUserUid: googleUser.uid });
                                     const foldersRef = collection(db, 'users', ownerUserId, 'folders');
                                     const folderDocRef = doc(foldersRef, shareInfo.folderId);
                                     const folderDoc = await getDoc(folderDocRef);
                                     
+                                    console.log('📄 폴더 조회 결과:', { exists: folderDoc.exists() });
+                                    
                                     if (folderDoc.exists()) {
                                         let collaborators = folderDoc.data().collaborators || [];
+                                        console.log('👥 현재 협업자 목록:', collaborators);
                                         
                                         // 현재 사용자가 협업자 목록에 있는지 확인
                                         const isCollaborator = collaborators.some((c: any) => c.userId === googleUser.uid);
+                                        console.log('🔎 협업자 여부:', { isCollaborator });
                                         
                                         if (!isCollaborator) {
                                             // 협업자 자동 추가 (링크로 접근한 사용자는 자동으로 추가됨)
@@ -1496,6 +1501,7 @@ const App: React.FC = () => {
                                                 addedAt: new Date().toISOString()
                                             };
                                             collaborators = [...collaborators, newCollaborator];
+                                            console.log('📝 새로운 협업자 목록:', collaborators);
                                             
                                             // 소유자의 Firestore에 협업자 목록 저장
                                             await setDoc(folderDocRef, {
@@ -1503,15 +1509,21 @@ const App: React.FC = () => {
                                                 updatedAt: new Date().toISOString()
                                             }, { merge: true });
                                             
-                                            console.log('✅ 협업자 자동 추가:', newCollaborator);
+                                            console.log('✅ 협업자 Firestore 저장 완료:', newCollaborator);
+                                        } else {
+                                            console.log('ℹ️ 이미 협업자임');
                                         }
                                         
                                         // 협업자 목록 업데이트
                                         newFolder.collaborators = collaborators;
+                                    } else {
+                                        console.warn('⚠️ 폴더가 존재하지 않음:', shareInfo.folderId);
                                     }
                                 } catch (error) {
-                                    console.error('협업자 목록 조회/추가 실패:', error);
+                                    console.error('❌ 협업자 목록 조회/추가 실패:', error);
                                 }
+                            } else {
+                                console.warn('⚠️ 협업자 추가 조건 미충족:', { ownerUserId, hasGoogleUser: !!googleUser });
                             }
 
                             setFolders([...folders, newFolder]);
@@ -1992,6 +2004,37 @@ const App: React.FC = () => {
 
     const handleSetCurrentFolder = (folderId: string | null) => {
         setCurrentFolderId(folderId);
+        
+        // 폴더 선택 시 Firestore에서 해당 폴더의 모든 목표를 로드
+        if (folderId && googleUser) {
+            const folder = folders.find(f => f.id === folderId);
+            if (folder?.ownerId) {
+                (async () => {
+                    try {
+                        console.log('📥 Firestore에서 폴더 목표 로드:', { folderId, ownerUid: folder.ownerId });
+                        const todosRef = collection(db, 'users', folder.ownerId, 'todos');
+                        const q = query(todosRef, where('folderId', '==', folderId));
+                        const snapshot = await getDocs(q);
+                        
+                        const loadedTodos: Goal[] = [];
+                        snapshot.forEach((doc) => {
+                            loadedTodos.push({ id: parseInt(doc.id), ...doc.data() } as Goal);
+                        });
+                        
+                        console.log('✅ 폴더 목표 로드 완료:', { count: loadedTodos.length, todos: loadedTodos });
+                        
+                        // 로드된 목표와 기존 목표를 병합
+                        setTodos(prevTodos => {
+                            const otherTodos = prevTodos.filter(t => t.folderId !== folderId);
+                            const merged = [...otherTodos, ...loadedTodos];
+                            return merged;
+                        });
+                    } catch (error) {
+                        console.error('❌ 폴더 목표 로드 실패:', error);
+                    }
+                })();
+            }
+        }
     };
 
     const handleMoveToFolder = (goalId: number, folderId: string | null) => {
