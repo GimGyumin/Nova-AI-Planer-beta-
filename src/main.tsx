@@ -319,6 +319,17 @@ const PWAInstallPrompt: React.FC<{ onClose: () => void }> = ({ onClose }) => {
 };
 
 // --- 타입 정의 ---
+interface Folder {
+  id: string;
+  name: string;
+  ownerId: string;
+  createdAt: string;
+  updatedAt: string;
+  collaborators?: Collaborator[];  // 폴더 단위 협업자
+  sharedWith?: { [userId: string]: 'viewer' | 'editor' };  // 폴더 권한
+  color?: string;  // 폴더 색상 (선택사항)
+}
+
 interface Goal {
   id: number;
   wish: string;
@@ -331,12 +342,14 @@ interface Goal {
   completed: boolean;
   lastCompletedDate: string | null;
   streak: number;
+  // 폴더 관련 필드
+  folderId?: string;  // 폴더 ID (없으면 최상위)
   // 협업 관련 필드
   ownerId?: string;  // 소유자 UID
   collaborators?: Collaborator[];  // 협업자 목록
   sharedWith?: { [userId: string]: 'viewer' | 'editor' };  // 권한 설정
   // 섹션/카테고리 필드
-  category?: 'school' | 'work' | 'personal' | 'other';  // 학교, 회사, 개인, 기타
+  category?: string;  // 사용자 정의 카테고리
 }
 
 interface Collaborator {
@@ -362,6 +375,7 @@ const translations = {
 
     // Main Page
     my_goals_title: '나의 목표',
+    all_goals_label: '모든 목표',
     sort_label_manual: '사용자화',
     sort_label_deadline: '마감일순',
     sort_label_newest: '최신순',
@@ -630,6 +644,7 @@ const translations = {
 
     // Main Page
     my_goals_title: 'My Goals',
+    all_goals_label: 'All Goals',
     sort_label_manual: 'Manual',
     sort_label_deadline: 'Deadline',
     sort_label_newest: 'Newest',
@@ -1028,6 +1043,11 @@ const backgroundOptions = [
 const App: React.FC = () => {
     const [language, setLanguage] = useState<string>(() => localStorage.getItem('nova-lang') || 'ko');
     const [todos, setTodos] = useState<Goal[]>([]);
+    const [folders, setFolders] = useState<Folder[]>(() => {
+        const saved = localStorage.getItem('nova-folders');
+        return saved ? JSON.parse(saved) : [];
+    });
+    const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);  // 현재 폴더
     const [filter, setFilter] = useState<string>('all');
     const [categoryFilter, setCategoryFilter] = useState<string>('all');  // 카테고리 필터
     const [sortType, setSortType] = useState<string>('manual');
@@ -1582,6 +1602,7 @@ const App: React.FC = () => {
     useEffect(() => { localStorage.setItem('nova-reminder-time-settings', JSON.stringify(reminderTimeSettings)); }, [reminderTimeSettings]);
     useEffect(() => { localStorage.setItem('nova-reminders', JSON.stringify(reminders)); }, [reminders]);
     useEffect(() => { localStorage.setItem('nova-user-categories', JSON.stringify(userCategories)); }, [userCategories]);
+    useEffect(() => { localStorage.setItem('nova-folders', JSON.stringify(folders)); }, [folders]);
 
     useEffect(() => {
         const selectedTheme = backgroundOptions.find(opt => opt.id === backgroundTheme) || backgroundOptions[0];
@@ -1604,6 +1625,16 @@ const App: React.FC = () => {
 
     const filteredTodos = useMemo(() => {
         let sortedTodos = [...todos];
+        
+        // 현재 폴더에 속한 목표만 필터링
+        if (currentFolderId === null) {
+            // "모든 목표"를 선택한 경우, 모든 목표 표시
+            sortedTodos = sortedTodos;
+        } else {
+            // 특정 폴더를 선택한 경우, 해당 폴더의 목표만 표시
+            sortedTodos = sortedTodos.filter(todo => todo.folderId === currentFolderId);
+        }
+        
         if (sortType === 'deadline') {
             sortedTodos.sort((a, b) => {
                 if (!a.deadline && !b.deadline) return 0;
@@ -1627,10 +1658,17 @@ const App: React.FC = () => {
         }
         
         return sortedTodos;
-    }, [todos, filter, sortType, categoryFilter]);
+    }, [todos, filter, sortType, categoryFilter, currentFolderId]);
     
     const handleAddTodo = (newTodoData: Omit<Goal, 'id' | 'completed' | 'lastCompletedDate' | 'streak'>) => {
-        const newTodo: Goal = { ...newTodoData, id: Date.now(), completed: false, lastCompletedDate: null, streak: 0 };
+        const newTodo: Goal = { 
+            ...newTodoData, 
+            id: Date.now(), 
+            completed: false, 
+            lastCompletedDate: null, 
+            streak: 0,
+            folderId: currentFolderId || undefined  // 현재 폴더에 추가
+        };
         setTodos(prev => [newTodo, ...prev]);
         setIsGoalAssistantOpen(false);
     };
@@ -1642,6 +1680,7 @@ const App: React.FC = () => {
             completed: false,
             lastCompletedDate: null,
             streak: 0,
+            folderId: currentFolderId || undefined  // 현재 폴더에 추가
         })).reverse(); // So the first goal appears at the top
         setTodos(prev => [...newTodos, ...prev]);
         setIsGoalAssistantOpen(false);
@@ -1654,6 +1693,79 @@ const App: React.FC = () => {
 
     const handleDeleteTodo = (id: number) => {
         setTodos(todos.filter(todo => todo.id !== id));
+    };
+
+    // Folder Management Functions
+    const handleCreateFolder = (folderName: string) => {
+        if (!folderName.trim()) {
+            setAlertConfig({ title: 'Error', message: 'Folder name cannot be empty.' });
+            return;
+        }
+
+        const newFolder: Folder = {
+            id: Date.now().toString(),
+            name: folderName,
+            ownerId: auth.currentUser?.uid || 'unknown',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            color: '#3b82f6', // Default blue color
+        };
+
+        setFolders([...folders, newFolder]);
+        return newFolder;
+    };
+
+    const handleRenameFolder = (folderId: string, newName: string) => {
+        if (!newName.trim()) {
+            setAlertConfig({ title: 'Error', message: 'Folder name cannot be empty.' });
+            return;
+        }
+
+        setFolders(folders.map(folder =>
+            folder.id === folderId
+                ? { ...folder, name: newName, updatedAt: new Date().toISOString() }
+                : folder
+        ));
+    };
+
+    const handleDeleteFolder = (folderId: string) => {
+        const folder = folders.find(f => f.id === folderId);
+        if (!folder) return;
+
+        // Move all goals in this folder to root (folderId = undefined)
+        setTodos(todos.map(todo =>
+            todo.folderId === folderId
+                ? { ...todo, folderId: undefined }
+                : todo
+        ));
+
+        // Delete the folder
+        setFolders(folders.filter(f => f.id !== folderId));
+
+        // If current folder is deleted, reset to root
+        if (currentFolderId === folderId) {
+            setCurrentFolderId(null);
+        }
+    };
+
+    const handleChangeFolderColor = (folderId: string, color: string) => {
+        setFolders(folders.map(folder =>
+            folder.id === folderId
+                ? { ...folder, color, updatedAt: new Date().toISOString() }
+                : folder
+        ));
+    };
+
+    const handleSetCurrentFolder = (folderId: string | null) => {
+        setCurrentFolderId(folderId);
+    };
+
+    const handleMoveGoalToFolder = (goalId: number, targetFolderId: string | null) => {
+        setTodos(todos.map(todo =>
+            todo.id === goalId
+                ? { ...todo, folderId: targetFolderId || undefined }
+                : todo
+        ));
     };
 
     const handleToggleComplete = (id: number) => {
@@ -1821,6 +1933,121 @@ const App: React.FC = () => {
     return (
         <div className={`main-page-layout ${isViewModeCalendar ? 'calendar-view-active' : ''}`}>
             <div className={`page-content ${isAnyModalOpen ? 'modal-open' : ''}`}>
+                {/* Folder Navigator */}
+                <div style={{ padding: '12px 0', borderBottom: '1px solid var(--border-color)', overflowX: 'auto', display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    {/* Root folder button */}
+                    <button 
+                        onClick={() => handleSetCurrentFolder(null)}
+                        style={{
+                            padding: '6px 12px',
+                            borderRadius: '6px',
+                            border: 'none',
+                            backgroundColor: currentFolderId === null ? 'var(--primary-color)' : 'transparent',
+                            color: currentFolderId === null ? 'white' : 'var(--text-color)',
+                            cursor: 'pointer',
+                            fontSize: '0.9rem',
+                            fontWeight: 500,
+                            whiteSpace: 'nowrap',
+                            transition: 'all 0.2s'
+                        }}
+                    >
+                        📁 {t('all_goals_label') || 'All Goals'}
+                    </button>
+                    
+                    {/* Folder list */}
+                    {folders.length > 0 && folders.map(folder => {
+                        const folderGoalsCount = todos.filter(t => t.folderId === folder.id).length;
+                        return (
+                            <div 
+                                key={folder.id}
+                                style={{ position: 'relative', display: 'inline-block' }}
+                                onContextMenu={(e) => {
+                                    e.preventDefault();
+                                    const newName = prompt('새로운 폴더 이름:', folder.name);
+                                    if (newName) {
+                                        handleRenameFolder(folder.id, newName);
+                                    }
+                                }}
+                            >
+                                <button 
+                                    onClick={() => handleSetCurrentFolder(folder.id)}
+                                    style={{
+                                        padding: '6px 12px',
+                                        borderRadius: '6px',
+                                        border: 'none',
+                                        backgroundColor: currentFolderId === folder.id ? folder.color || 'var(--primary-color)' : `${folder.color}20` || 'transparent',
+                                        color: currentFolderId === folder.id ? 'white' : 'var(--text-color)',
+                                        cursor: 'pointer',
+                                        fontSize: '0.9rem',
+                                        fontWeight: 500,
+                                        whiteSpace: 'nowrap',
+                                        transition: 'all 0.2s',
+                                        position: 'relative'
+                                    }}
+                                    title="우클릭하여 폴더 이름 변경, Ctrl+클릭으로 삭제"
+                                >
+                                    {folder.name} ({folderGoalsCount})
+                                </button>
+                                {currentFolderId === folder.id && (
+                                    <button 
+                                        onClick={() => {
+                                            if (confirm(`"${folder.name}" 폴더를 삭제하시겠습니까? 폴더 내 목표는 "모든 목표"로 이동됩니다.`)) {
+                                                handleDeleteFolder(folder.id);
+                                            }
+                                        }}
+                                        style={{
+                                            position: 'absolute',
+                                            right: '-20px',
+                                            top: '50%',
+                                            transform: 'translateY(-50%)',
+                                            width: '16px',
+                                            height: '16px',
+                                            padding: '0',
+                                            borderRadius: '50%',
+                                            border: 'none',
+                                            backgroundColor: 'var(--danger-color)',
+                                            color: 'white',
+                                            cursor: 'pointer',
+                                            fontSize: '0.7rem',
+                                            lineHeight: '1',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center'
+                                        }}
+                                        title="폴더 삭제"
+                                    >
+                                        ×
+                                    </button>
+                                )}
+                            </div>
+                        );
+                    })}
+                    
+                    {/* Add folder button */}
+                    <button 
+                        onClick={() => {
+                            const folderName = prompt('폴더 이름을 입력하세요:', 'New Folder');
+                            if (folderName) {
+                                handleCreateFolder(folderName);
+                            }
+                        }}
+                        style={{
+                            padding: '6px 12px',
+                            borderRadius: '6px',
+                            border: '2px dashed var(--primary-color)',
+                            backgroundColor: 'transparent',
+                            color: 'var(--primary-color)',
+                            cursor: 'pointer',
+                            fontSize: '0.9rem',
+                            fontWeight: 500,
+                            whiteSpace: 'nowrap',
+                            transition: 'all 0.2s'
+                        }}
+                    >
+                        + 폴더
+                    </button>
+                </div>
+
                 <div className="container">
                     <Header 
                         t={t} 
@@ -1898,6 +2125,8 @@ const App: React.FC = () => {
                 t={t} 
                 createAI={createAI}
                 onOpenCollaboration={(goal) => setCollaboratingGoal(goal)}
+                userCategories={userCategories}
+                onUpdateGoal={handleEditTodo}
             />}
             {collaboratingGoal && <CollaborationModal 
                 goal={collaboratingGoal}
@@ -2711,7 +2940,9 @@ const GoalInfoModal: React.FC<{
     t: (key: string) => any; 
     createAI: () => GoogleGenAI | null;
     onOpenCollaboration?: (goal: Goal) => void;
-}> = ({ todo, onClose, t, createAI, onOpenCollaboration }) => {
+    userCategories?: string[];
+    onUpdateGoal?: (goal: Goal) => void;
+}> = ({ todo, onClose, t, createAI, onOpenCollaboration, userCategories, onUpdateGoal }) => {
     const [isClosing, handleClose] = useModalAnimation(onClose);
     const [aiFeedback, setAiFeedback] = useState('');
     const [isAiLoading, setIsAiLoading] = useState(false);
@@ -2747,6 +2978,39 @@ const GoalInfoModal: React.FC<{
                 <div className="info-section"><h4>{t('outcome_label')}</h4><p>{todo.outcome}</p></div>
                 <div className="info-section"><h4>{t('obstacle_label')}</h4><p>{todo.obstacle}</p></div>
                 <div className="info-section"><h4>{t('plan_label')}</h4><p>{todo.plan}</p></div>
+                
+                {/* 카테고리 선택 섹션 */}
+                {userCategories && userCategories.length > 0 && onUpdateGoal && (
+                    <div className="info-section" style={{ borderTop: '1px solid var(--border-color)', paddingTop: '16px', marginTop: '16px' }}>
+                        <h4 style={{ marginBottom: '12px' }}>{t('category_label')}</h4>
+                        <div style={{ display: 'grid', gridTemplateColumns: userCategories.length > 2 ? 'repeat(2, 1fr)' : 'repeat(1, 1fr)', gap: '8px' }}>
+                            {userCategories.map((cat) => (
+                                <button
+                                    key={cat}
+                                    onClick={() => {
+                                        onUpdateGoal({ ...todo, category: cat as any });
+                                        handleClose();
+                                    }}
+                                    className={`category-button ${todo.category === cat ? 'active' : ''}`}
+                                    style={{
+                                        padding: '10px 12px',
+                                        borderRadius: '6px',
+                                        border: todo.category === cat ? '2px solid var(--primary-color)' : '1px solid var(--border-color)',
+                                        backgroundColor: todo.category === cat ? 'var(--primary-color)' : 'var(--card-bg-color)',
+                                        color: todo.category === cat ? 'white' : 'inherit',
+                                        cursor: 'pointer',
+                                        fontSize: '14px',
+                                        fontWeight: todo.category === cat ? '600' : '500',
+                                        transition: 'all 0.2s ease'
+                                    }}
+                                >
+                                    {cat}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                )}
+                
                 <div className="ai-analysis-section">
                     <h4>{t('ai_coach_suggestion')}</h4>
                     {isAiLoading ? <p>{t('ai_analyzing')}</p> : aiFeedback ? <p>{aiFeedback}</p> : aiError ? <p className="ai-error">{t('ai_sort_error_message')}</p> : <button onClick={getAIFeedback} className="feedback-button">{t('ai_coach_suggestion')}</button>}
