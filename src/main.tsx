@@ -444,9 +444,39 @@ const translations = {
     settings_api_key: 'Gemini AI 설정',
     settings_api_key_placeholder: 'Gemini API 키 입력',
     settings_offline_mode: '오프라인 사용',
+    settings_offline_mode_desc: 'AI 기능 없이 기본 기능 사용',
     settings_notifications: '알림',
     settings_notifications_desc: 'PWA 알림 설정',
     notification_settings_title: '어떤 알림을 받을까요?',
+    // Reminder UI
+    reminder_add_title: '미리알림 추가',
+    reminder_step_title: '{step}/5 단계',
+    reminder_step1_title: '🔔 제목',
+    reminder_step1_desc: '미리알림의 제목을 입력하세요',
+    reminder_step2_title: '📅 기한 & ⏰ 시간',
+    reminder_step2_desc: '기한 날짜와 시간을 설정하세요 (선택사항)',
+    reminder_step2_date_toggle: '기한 설정',
+    reminder_step2_time_toggle: '시간 설정',
+    reminder_step3_title: '🔄 반복 설정',
+    reminder_step3_desc: '반복 여부와 반복 주기를 선택하세요',
+    reminder_step3_enable_recurring: '반복 설정',
+    reminder_step4_title: '📝 설명',
+    reminder_step4_desc: '추가 설명을 입력하세요 (선택사항)',
+    reminder_step5_title: '✅ 활성화',
+    reminder_step5_desc: '미리알림 활성화 여부를 선택하세요',
+    reminder_next_button: '다음',
+    reminder_back_button: '이전',
+    reminder_submit_button: '추가',
+    reminder_form_title: '제목',
+    reminder_form_date: '기한',
+    reminder_form_time: '시간',
+    reminder_form_recurring: '반복',
+    reminder_form_description: '설명',
+    reminder_form_enabled: '활성화',
+    recurring_type_none: '반복 없음',
+    recurring_type_daily: '매일',
+    recurring_type_weekly: '매주',
+    recurring_type_monthly: '매월',
     notification_deadline: '마감일 임박 알림',
     notification_deadline_desc: '마감이 가까운 목표에 대해 알려줍니다.',
     notification_suggestion: '지금할일 제안',
@@ -685,6 +715,35 @@ const translations = {
     reminder_time_settings_title: 'Reminder Time Settings',
     reminder_start_time: 'Start Time',
     reminder_end_time: 'End Time',
+    // Reminder UI
+    reminder_add_title: 'Add Reminder',
+    reminder_step_title: 'Step {step}/5',
+    reminder_step1_title: '🔔 Title',
+    reminder_step1_desc: 'Enter the reminder title',
+    reminder_step2_title: '📅 Date & ⏰ Time',
+    reminder_step2_desc: 'Set the reminder date and time (optional)',
+    reminder_step2_date_toggle: 'Set Date',
+    reminder_step2_time_toggle: 'Set Time',
+    reminder_step3_title: '🔄 Recurring',
+    reminder_step3_desc: 'Choose recurrence settings',
+    reminder_step3_enable_recurring: 'Enable Recurring',
+    reminder_step4_title: '📝 Description',
+    reminder_step4_desc: 'Add optional description',
+    reminder_step5_title: '✅ Enable',
+    reminder_step5_desc: 'Choose whether to enable reminder',
+    reminder_next_button: 'Next',
+    reminder_back_button: 'Back',
+    reminder_submit_button: 'Add',
+    reminder_form_title: 'Title',
+    reminder_form_date: 'Date',
+    reminder_form_time: 'Time',
+    reminder_form_recurring: 'Recurring',
+    reminder_form_description: 'Description',
+    reminder_form_enabled: 'Enabled',
+    recurring_type_none: 'No Recurrence',
+    recurring_type_daily: 'Daily',
+    recurring_type_weekly: 'Weekly',
+    recurring_type_monthly: 'Monthly',
     language_name: 'English (US)',
     language_modal_title: 'Language',
     settings_section_background: 'Appearance',
@@ -2055,8 +2114,8 @@ const ReminderStepContent: React.FC<{ step: number; t: (key: string) => any; [ke
         case 1:
             return (
                 <div>
-                    <h3>🔔 미리알림 제목</h3>
-                    <div className="step-guidance"><p className="tip">미리알림의 제목을 입력하세요</p></div>
+                    <h3>{t('reminder_step1_title')}</h3>
+                    <div className="step-guidance"><p className="tip">{t('reminder_step1_desc')}</p></div>
                     <textarea 
                         value={title} 
                         onChange={(e) => setTitle(e.target.value)} 
@@ -2064,17 +2123,17 @@ const ReminderStepContent: React.FC<{ step: number; t: (key: string) => any; [ke
                         className={errors.title ? 'input-error' : ''}
                         rows={3}
                     />
-                    {errors.title && <p className="field-error-message">{icons.exclamation} 제목을 입력하세요</p>}
+                    {errors.title && <p className="field-error-message">{icons.exclamation} {t('reminder_form_title')}를 입력하세요</p>}
                 </div>
             );
         case 2:
             return (
                 <div>
-                    <h3>📅 기한 & ⏰ 시간</h3>
-                    <div className="step-guidance"><p className="tip">기한 날짜와 시간을 설정하세요 (선택사항)</p></div>
+                    <h3>{t('reminder_step2_title')}</h3>
+                    <div className="step-guidance"><p className="tip">{t('reminder_step2_desc')}</p></div>
                     
                     <label className="settings-item standalone-toggle" style={{ marginBottom: '20px' }}>
-                        <span style={{ fontWeight: 500 }}>기한 설정</span>
+                        <span style={{ fontWeight: 500 }}>{t('reminder_step2_date_toggle')}</span>
                         <label className="theme-toggle-switch">
                             <input 
                                 type="checkbox" 
@@ -2087,7 +2146,7 @@ const ReminderStepContent: React.FC<{ step: number; t: (key: string) => any; [ke
 
                     {dueDate && (
                         <div style={{ marginBottom: '20px' }}>
-                            <h4 style={{ fontSize: '0.9rem', fontWeight: 500, marginBottom: '8px' }}>기한 날짜</h4>
+                            <h4 style={{ fontSize: '0.9rem', fontWeight: 500, marginBottom: '8px' }}>{t('reminder_form_date')}</h4>
                             <input 
                                 type="date" 
                                 value={dueDate} 
@@ -2098,7 +2157,7 @@ const ReminderStepContent: React.FC<{ step: number; t: (key: string) => any; [ke
                     )}
 
                     <label className="settings-item standalone-toggle" style={{ marginBottom: '20px' }}>
-                        <span style={{ fontWeight: 500 }}>시간 설정</span>
+                        <span style={{ fontWeight: 500 }}>{t('reminder_step2_time_toggle')}</span>
                         <label className="theme-toggle-switch">
                             <input 
                                 type="checkbox" 
@@ -2111,7 +2170,7 @@ const ReminderStepContent: React.FC<{ step: number; t: (key: string) => any; [ke
 
                     {time && (
                         <div>
-                            <h4 style={{ fontSize: '0.9rem', fontWeight: 500, marginBottom: '8px' }}>시간</h4>
+                            <h4 style={{ fontSize: '0.9rem', fontWeight: 500, marginBottom: '8px' }}>{t('reminder_form_time')}</h4>
                             <input 
                                 type="time" 
                                 value={time} 
@@ -2125,10 +2184,10 @@ const ReminderStepContent: React.FC<{ step: number; t: (key: string) => any; [ke
         case 3:
             return (
                 <div>
-                    <h3>🔄 반복 설정</h3>
-                    <div className="step-guidance"><p className="tip">반복 여부와 반복 유형을 설정하세요</p></div>
+                    <h3>{t('reminder_step3_title')}</h3>
+                    <div className="step-guidance"><p className="tip">{t('reminder_step3_desc')}</p></div>
                     <label className="settings-item standalone-toggle" style={{ marginBottom: '20px' }}>
-                        <span style={{ fontWeight: 500 }}>반복 설정</span>
+                        <span style={{ fontWeight: 500 }}>{t('reminder_step3_enable_recurring')}</span>
                         <label className="theme-toggle-switch">
                             <input 
                                 type="checkbox" 
@@ -2141,15 +2200,15 @@ const ReminderStepContent: React.FC<{ step: number; t: (key: string) => any; [ke
 
                     {isRecurring && (
                         <div>
-                            <h4 style={{ fontSize: '0.9rem', fontWeight: 500, marginBottom: '12px' }}>반복 유형</h4>
+                            <h4 style={{ fontSize: '0.9rem', fontWeight: 500, marginBottom: '12px' }}>{t('reminder_form_recurring')}</h4>
                             <select 
                                 value={recurringType} 
                                 onChange={(e) => setRecurringType(e.target.value as 'daily' | 'weekly' | 'monthly')}
                                 style={{ width: '100%', padding: '12px', borderRadius: '8px', border: `1px solid var(--border-color)`, backgroundColor: 'var(--input-bg-color)', color: 'var(--text-color)', fontFamily: 'inherit', fontSize: '1rem', cursor: 'pointer' }}
                             >
-                                <option value="daily">매일</option>
-                                <option value="weekly">매주</option>
-                                <option value="monthly">매월</option>
+                                <option value="daily">{t('recurring_type_daily')}</option>
+                                <option value="weekly">{t('recurring_type_weekly')}</option>
+                                <option value="monthly">{t('recurring_type_monthly')}</option>
                             </select>
                         </div>
                     )}
@@ -2158,8 +2217,8 @@ const ReminderStepContent: React.FC<{ step: number; t: (key: string) => any; [ke
         case 4:
             return (
                 <div>
-                    <h3>📝 설명 (선택사항)</h3>
-                    <div className="step-guidance"><p className="tip">추가 설명과 상세 정보를 입력하세요</p></div>
+                    <h3>{t('reminder_step4_title')}</h3>
+                    <div className="step-guidance"><p className="tip">{t('reminder_step4_desc')}</p></div>
                     <textarea 
                         value={description} 
                         onChange={(e) => setDescription(e.target.value)} 
@@ -2171,10 +2230,10 @@ const ReminderStepContent: React.FC<{ step: number; t: (key: string) => any; [ke
         case 5:
             return (
                 <div>
-                    <h3>✅ 최종 설정</h3>
-                    <div className="step-guidance"><p className="tip">미리알림 활성화 여부를 설정하세요</p></div>
+                    <h3>{t('reminder_step5_title')}</h3>
+                    <div className="step-guidance"><p className="tip">{t('reminder_step5_desc')}</p></div>
                     <label className="settings-item standalone-toggle">
-                        <span style={{ fontWeight: 500 }}>활성화</span>
+                        <span style={{ fontWeight: 500 }}>{t('reminder_form_enabled')}</span>
                         <label className="theme-toggle-switch">
                             <input 
                                 type="checkbox" 
