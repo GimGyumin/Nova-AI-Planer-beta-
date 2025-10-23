@@ -1581,14 +1581,17 @@ const App: React.FC = () => {
         if (!owner) return;
 
         // 소유자의 Firestore에서 이 폴더의 목표를 감시
-        const ownerDocId = owner.userId && owner.userId.startsWith('owner_') ? null : owner.userId;
-        const ownerKey = ownerDocId || (owner.email ? owner.email.split('@')[0] : null);
-        if (!ownerKey) return;
+        // 👉 중요: owner.userId는 Firebase UID여야 함 (폴더 공유 링크에서 ownerId로 전달됨)
+        const ownerUid = owner.userId;
+        if (!ownerUid || ownerUid.startsWith('owner_')) {
+            console.warn('⚠️ Invalid owner UID:', owner);
+            return; // 유효한 UID가 없으면 리스너 시작 안 함
+        }
 
         const unsubscribers: (() => void)[] = [];
 
         // 1. 폴더 메타데이터 감시
-        const folderRef = doc(db, 'users', ownerKey, 'folders', currentFolderId);
+        const folderRef = doc(db, 'users', ownerUid, 'folders', currentFolderId);
         const folderUnsubscribe = onSnapshot(folderRef, (folderSnapshot) => {
             if (folderSnapshot.exists()) {
                 const sharedFolderData = folderSnapshot.data();
@@ -1608,8 +1611,8 @@ const App: React.FC = () => {
         unsubscribers.push(folderUnsubscribe);
 
         // 2. 소유자의 목표 컬렉션 감시
-        const todosRef = collection(db, 'users', ownerKey, 'todos');
-        console.log('📊 Syncing todos from owner:', { ownerKey, currentFolderId });
+        const todosRef = collection(db, 'users', ownerUid, 'todos');
+        console.log('📊 Syncing todos from owner:', { ownerUid, currentFolderId });
         
         const todosUnsubscribe = onSnapshot(todosRef, (todosSnapshot) => {
             const ownerTodos: Goal[] = [];

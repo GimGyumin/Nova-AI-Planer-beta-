@@ -1,9 +1,15 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // 인증된 사용자만 자신의 데이터를 읽고 쓸 수 있음
-    match /users/{userId}/{document=**} {
+    // 사용자의 자신의 폴더
+    match /users/{userId}/folders/{folderId} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // 사용자의 목표 (모든 인증된 사용자가 접근 - 실제 협업자 확인은 클라이언트에서)
+    match /users/{userId}/todos/{todoId} {
+      allow read, write: if request.auth != null;
     }
   }
 }
+
