@@ -330,6 +330,19 @@ interface Goal {
   completed: boolean;
   lastCompletedDate: string | null;
   streak: number;
+  // 협업 관련 필드
+  ownerId?: string;  // 소유자 UID
+  collaborators?: Collaborator[];  // 협업자 목록
+  sharedWith?: { [userId: string]: 'viewer' | 'editor' };  // 권한 설정
+}
+
+interface Collaborator {
+  userId: string;
+  email: string;
+  displayName?: string;
+  photoURL?: string;
+  role: 'owner' | 'editor' | 'viewer';
+  addedAt: string;
 }
 
 // --- 번역 객체 ---
@@ -1027,6 +1040,7 @@ const App: React.FC = () => {
     const [isUsageGuideOpen, setIsUsageGuideOpen] = useState<boolean>(false);
     const [aiSortReason, setAiSortReason] = useState<string>('');
     const [showAiSortReasonModal, setShowAiSortReasonModal] = useState<boolean>(false);
+    const [collaboratingGoal, setCollaboratingGoal] = useState<Goal | null>(null);
     
     // PWA 관련 상태
     const [showPWAPrompt, setShowPWAPrompt] = useState<boolean>(false);
@@ -1195,6 +1209,17 @@ const App: React.FC = () => {
         setToastMessage('✅ 미리알림이 삭제되었습니다');
         setTimeout(() => setToastMessage(''), 3000);
     }, []);
+
+    // 협업자 업데이트 핸들러
+    const handleUpdateCollaborators = (goalId: number, collaborators: Collaborator[]) => {
+        setTodos(todos.map(todo => 
+            todo.id === goalId 
+                ? { ...todo, collaborators } 
+                : todo
+        ));
+        setToastMessage('✅ 협업자가 업데이트되었습니다');
+        setTimeout(() => setToastMessage(''), 3000);
+    };
 
     // Firebase 로그아웃 핸들러 (로그아웃 전에 데이터 저장)
     const handleFirebaseLogout = useCallback(async () => {
@@ -1816,7 +1841,20 @@ const App: React.FC = () => {
 
             {isGoalAssistantOpen && <GoalAssistantModal onClose={() => setIsGoalAssistantOpen(false)} onAddTodo={handleAddTodo} onAddMultipleTodos={handleAddMultipleTodos} t={t} language={language} createAI={createAI} onAddReminder={handleAddReminder} reminders={reminders} onDeleteReminder={handleDeleteReminder} />}
             {editingTodo && <GoalAssistantModal onClose={() => setEditingTodo(null)} onEditTodo={handleEditTodo} existingTodo={editingTodo} t={t} language={language} createAI={createAI} />}
-            {infoTodo && <GoalInfoModal todo={infoTodo} onClose={() => setInfoTodo(null)} t={t} createAI={createAI} />}
+            {infoTodo && <GoalInfoModal 
+                todo={infoTodo} 
+                onClose={() => setInfoTodo(null)} 
+                t={t} 
+                createAI={createAI}
+                onOpenCollaboration={(goal) => setCollaboratingGoal(goal)}
+            />}
+            {collaboratingGoal && <CollaborationModal 
+                goal={collaboratingGoal}
+                onClose={() => setCollaboratingGoal(null)}
+                t={t}
+                googleUser={googleUser}
+                onUpdateCollaborators={handleUpdateCollaborators}
+            />}
             {isSettingsOpen && <SettingsModal 
                 onClose={() => setIsSettingsOpen(false)} 
                 isDarkMode={isDarkMode} 
@@ -2521,7 +2559,13 @@ const GoalAssistantModal: React.FC<{ onClose: () => void; onAddTodo?: (newTodoDa
     );
 };
 
-const GoalInfoModal: React.FC<{ todo: Goal; onClose: () => void; t: (key: string) => any; createAI: () => GoogleGenAI | null; }> = ({ todo, onClose, t, createAI }) => {
+const GoalInfoModal: React.FC<{ 
+    todo: Goal; 
+    onClose: () => void; 
+    t: (key: string) => any; 
+    createAI: () => GoogleGenAI | null;
+    onOpenCollaboration?: (goal: Goal) => void;
+}> = ({ todo, onClose, t, createAI, onOpenCollaboration }) => {
     const [isClosing, handleClose] = useModalAnimation(onClose);
     const [aiFeedback, setAiFeedback] = useState('');
     const [isAiLoading, setIsAiLoading] = useState(false);
@@ -2562,7 +2606,164 @@ const GoalInfoModal: React.FC<{ todo: Goal; onClose: () => void; t: (key: string
                     {isAiLoading ? <p>{t('ai_analyzing')}</p> : aiFeedback ? <p>{aiFeedback}</p> : aiError ? <p className="ai-error">{t('ai_sort_error_message')}</p> : <button onClick={getAIFeedback} className="feedback-button">{t('ai_coach_suggestion')}</button>}
                 </div>
             </div>
-            <div className="modal-buttons"><button onClick={handleClose} className="primary">{t('close_button')}</button></div>
+            <div className="modal-buttons">
+                {onOpenCollaboration && (
+                    <button onClick={() => { onOpenCollaboration(todo); handleClose(); }} className="secondary">🤝 협업</button>
+                )}
+                <button onClick={handleClose} className="primary">{t('close_button')}</button>
+            </div>
+        </Modal>
+    );
+};
+
+const CollaborationModal: React.FC<{ 
+    goal: Goal; 
+    onClose: () => void; 
+    t: (key: string) => any; 
+    googleUser: User | null;
+    onUpdateCollaborators: (goalId: number, collaborators: Collaborator[]) => void;
+}> = ({ goal, onClose, t, googleUser, onUpdateCollaborators }) => {
+    const [isClosing, handleClose] = useModalAnimation(onClose);
+    const [inviteEmail, setInviteEmail] = useState('');
+    const [inviteRole, setInviteRole] = useState<'editor' | 'viewer'>('editor');
+    const [isInviting, setIsInviting] = useState(false);
+
+    const handleInvite = async () => {
+        if (!inviteEmail.trim() || !googleUser) return;
+        
+        setIsInviting(true);
+        try {
+            // 새 협업자 추가
+            const newCollaborator: Collaborator = {
+                userId: `invited_${Date.now()}`,  // 임시 ID (실제로는 Firebase Auth로 생성)
+                email: inviteEmail,
+                role: inviteRole,
+                addedAt: new Date().toISOString()
+            };
+
+            const updatedCollaborators = [...(goal.collaborators || []), newCollaborator];
+            onUpdateCollaborators(goal.id, updatedCollaborators);
+            setInviteEmail('');
+            setInviteRole('editor');
+        } finally {
+            setIsInviting(false);
+        }
+    };
+
+    const handleRemoveCollaborator = (userId: string) => {
+        const updatedCollaborators = (goal.collaborators || []).filter(c => c.userId !== userId);
+        onUpdateCollaborators(goal.id, updatedCollaborators);
+    };
+
+    return (
+        <Modal onClose={handleClose} isClosing={isClosing} className="collaboration-modal">
+            <div style={{ padding: '24px' }}>
+                <h2 style={{ marginBottom: '20px', fontSize: '1.2rem', fontWeight: 600 }}>🤝 협업 공유</h2>
+                
+                {/* 현재 협업자 목록 */}
+                <div style={{ marginBottom: '24px', paddingBottom: '16px', borderBottom: '1px solid var(--border-color)' }}>
+                    <h3 style={{ fontSize: '0.95rem', fontWeight: 500, marginBottom: '12px' }}>현재 협업자</h3>
+                    {goal.collaborators && goal.collaborators.length > 0 ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            {goal.collaborators.map((collab) => (
+                                <div key={collab.userId} style={{ 
+                                    display: 'flex', 
+                                    justifyContent: 'space-between', 
+                                    alignItems: 'center', 
+                                    padding: '10px', 
+                                    backgroundColor: 'var(--card-bg-color)', 
+                                    borderRadius: '6px',
+                                    border: '1px solid var(--border-color)'
+                                }}>
+                                    <div style={{ flex: 1 }}>
+                                        <div style={{ fontWeight: 500, fontSize: '0.9rem' }}>{collab.email}</div>
+                                        <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary-color)' }}>
+                                            {collab.role === 'owner' ? '소유자' : collab.role === 'editor' ? '편집자' : '뷰어'}
+                                        </div>
+                                    </div>
+                                    {collab.role !== 'owner' && (
+                                        <button 
+                                            onClick={() => handleRemoveCollaborator(collab.userId)}
+                                            style={{ 
+                                                padding: '4px 12px', 
+                                                backgroundColor: 'var(--danger-color)', 
+                                                color: 'white', 
+                                                border: 'none', 
+                                                borderRadius: '4px', 
+                                                cursor: 'pointer',
+                                                fontSize: '0.8rem'
+                                            }}
+                                        >
+                                            제거
+                                        </button>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <p style={{ color: 'var(--text-secondary-color)', fontSize: '0.9rem' }}>협업자가 없습니다.</p>
+                    )}
+                </div>
+
+                {/* 협업자 초대 */}
+                <div>
+                    <h3 style={{ fontSize: '0.95rem', fontWeight: 500, marginBottom: '12px' }}>협업자 초대</h3>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                        <input 
+                            type="email" 
+                            placeholder="이메일 주소 입력" 
+                            value={inviteEmail}
+                            onChange={(e) => setInviteEmail(e.target.value)}
+                            style={{ 
+                                width: '100%', 
+                                padding: '10px', 
+                                borderRadius: '6px', 
+                                border: '1px solid var(--border-color)', 
+                                backgroundColor: 'var(--input-bg-color)', 
+                                color: 'var(--text-color)',
+                                fontFamily: 'inherit'
+                            }}
+                        />
+                        <select 
+                            value={inviteRole}
+                            onChange={(e) => setInviteRole(e.target.value as 'editor' | 'viewer')}
+                            style={{ 
+                                width: '100%', 
+                                padding: '10px', 
+                                borderRadius: '6px', 
+                                border: '1px solid var(--border-color)', 
+                                backgroundColor: 'var(--input-bg-color)', 
+                                color: 'var(--text-color)',
+                                fontFamily: 'inherit',
+                                cursor: 'pointer'
+                            }}
+                        >
+                            <option value="editor">편집자 (수정 가능)</option>
+                            <option value="viewer">뷰어 (읽기만)</option>
+                        </select>
+                        <button 
+                            onClick={handleInvite}
+                            disabled={!inviteEmail.trim() || isInviting}
+                            style={{ 
+                                padding: '10px', 
+                                backgroundColor: 'var(--primary-color)', 
+                                color: 'white', 
+                                border: 'none', 
+                                borderRadius: '6px', 
+                                cursor: isInviting ? 'not-allowed' : 'pointer',
+                                fontWeight: 500,
+                                opacity: isInviting || !inviteEmail.trim() ? 0.6 : 1
+                            }}
+                        >
+                            {isInviting ? '초대 중...' : '초대하기'}
+                        </button>
+                    </div>
+                </div>
+
+                <div style={{ marginTop: '24px', display: 'flex', justifyContent: 'flex-end' }}>
+                    <button onClick={handleClose} className="primary">닫기</button>
+                </div>
+            </div>
         </Modal>
     );
 };
