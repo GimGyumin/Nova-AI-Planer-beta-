@@ -17,6 +17,7 @@ interface Reminder {
     description?: string;
     enabled: boolean;
     createdAt: string;
+    category?: 'school' | 'work' | 'personal' | 'other';  // 학교, 회사, 개인, 기타
 }
 
 // --- PWA 유틸리티 함수 ---
@@ -334,6 +335,8 @@ interface Goal {
   ownerId?: string;  // 소유자 UID
   collaborators?: Collaborator[];  // 협업자 목록
   sharedWith?: { [userId: string]: 'viewer' | 'editor' };  // 권한 설정
+  // 섹션/카테고리 필드
+  category?: 'school' | 'work' | 'personal' | 'other';  // 학교, 회사, 개인, 기타
 }
 
 interface Collaborator {
@@ -369,6 +372,14 @@ const translations = {
     filter_all: '모든 목표',
     filter_active: '진행중',
     filter_completed: '완료됨',
+    // 카테고리 필터
+    filter_category: '카테고리',
+    category_all: '모든 카테고리',
+    category_school: '학교',
+    category_work: '회사',
+    category_personal: '개인',
+    category_other: '기타',
+    category_label: '카테고리 선택',
     empty_message_all: '+ 버튼으로 목표를 추가해보세요',
     empty_message_active: '진행중인 목표가 없습니다.',
     empty_message_completed: '아직 완료된 목표가 없습니다.',
@@ -629,6 +640,14 @@ const translations = {
     filter_all: 'All Goals',
     filter_active: 'In Progress',
     filter_completed: 'Completed',
+    // Category Filters
+    filter_category: 'Category',
+    category_all: 'All Categories',
+    category_school: 'School',
+    category_work: 'Work',
+    category_personal: 'Personal',
+    category_other: 'Other',
+    category_label: 'Select Category',
     empty_message_all: 'Add a goal with the + button',
     empty_message_active: 'No goals in progress.',
     empty_message_completed: 'No completed goals yet.',
@@ -1010,7 +1029,12 @@ const App: React.FC = () => {
     const [language, setLanguage] = useState<string>(() => localStorage.getItem('nova-lang') || 'ko');
     const [todos, setTodos] = useState<Goal[]>([]);
     const [filter, setFilter] = useState<string>('all');
+    const [categoryFilter, setCategoryFilter] = useState<string>('all');  // 카테고리 필터
     const [sortType, setSortType] = useState<string>('manual');
+    const [userCategories, setUserCategories] = useState<string[]>(() => {
+        const saved = localStorage.getItem('nova-user-categories');
+        return saved ? JSON.parse(saved) : ['school', 'work', 'personal', 'other'];
+    });
     
     // 다크모드 시스템 설정 따라가기
     const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
@@ -1553,6 +1577,7 @@ const App: React.FC = () => {
     useEffect(() => { localStorage.setItem('nova-notification-settings', JSON.stringify(notificationSettings)); }, [notificationSettings]);
     useEffect(() => { localStorage.setItem('nova-reminder-time-settings', JSON.stringify(reminderTimeSettings)); }, [reminderTimeSettings]);
     useEffect(() => { localStorage.setItem('nova-reminders', JSON.stringify(reminders)); }, [reminders]);
+    useEffect(() => { localStorage.setItem('nova-user-categories', JSON.stringify(userCategories)); }, [userCategories]);
 
     useEffect(() => {
         const selectedTheme = backgroundOptions.find(opt => opt.id === backgroundTheme) || backgroundOptions[0];
@@ -1588,10 +1613,17 @@ const App: React.FC = () => {
             sortedTodos.sort((a, b) => a.wish.localeCompare(b.wish));
         }
 
-        if (filter === 'active') return sortedTodos.filter(todo => !todo.completed);
-        if (filter === 'completed') return sortedTodos.filter(todo => todo.completed);
+        // 상태 필터 (모든 목표, 진행중, 완료됨)
+        if (filter === 'active') sortedTodos = sortedTodos.filter(todo => !todo.completed);
+        if (filter === 'completed') sortedTodos = sortedTodos.filter(todo => todo.completed);
+        
+        // 카테고리 필터
+        if (categoryFilter !== 'all') {
+            sortedTodos = sortedTodos.filter(todo => (todo.category || 'other') === categoryFilter);
+        }
+        
         return sortedTodos;
-    }, [todos, filter, sortType]);
+    }, [todos, filter, sortType, categoryFilter]);
     
     const handleAddTodo = (newTodoData: Omit<Goal, 'id' | 'completed' | 'lastCompletedDate' | 'streak'>) => {
         const newTodo: Goal = { ...newTodoData, id: Date.now(), completed: false, lastCompletedDate: null, streak: 0 };
@@ -1799,6 +1831,11 @@ const App: React.FC = () => {
                         onSort={handleSort} 
                         filter={filter} 
                         onFilter={setFilter} 
+                        categoryFilter={categoryFilter}
+                        onCategoryFilter={setCategoryFilter}
+                        userCategories={userCategories}
+                        onAddCategory={(cat) => setUserCategories([...userCategories, cat])}
+                        onRemoveCategory={(cat) => setUserCategories(userCategories.filter(c => c !== cat))}
                         onSetSelectionMode={() => setIsSelectionMode(true)}
                         onOpenSettings={() => setIsSettingsOpen(true)}
                         onAddGoal={() => setIsGoalAssistantOpen(true)}
@@ -1822,7 +1859,17 @@ const App: React.FC = () => {
                                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', gap: '8px', marginBottom: '8px' }}>
                                                     <div style={{ fontWeight: 500, color: 'var(--text-color)', flex: 1 }}>{reminder.title}</div>
                                                 </div>
-                                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', fontSize: '0.85rem' }}>
+                                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', fontSize: '0.85rem', marginBottom: '8px' }}>
+                                                    {reminder.category && (
+                                                        <span style={{ backgroundColor: 'rgba(88, 86, 214, 0.1)', color: 'var(--icon-color-indigo)', padding: '3px 8px', borderRadius: '4px' }}>
+                                                            {['school', 'work', 'personal', 'other'].includes(reminder.category) ? {school: '🎓', work: '💼', personal: '👤', other: '📌'}[reminder.category as 'school' | 'work' | 'personal' | 'other'] : ''} {
+                                                            reminder.category === 'school' ? t('category_school') : 
+                                                            reminder.category === 'work' ? t('category_work') : 
+                                                            reminder.category === 'personal' ? t('category_personal') : 
+                                                            t('category_other')
+                                                            }
+                                                        </span>
+                                                    )}
                                                     {reminder.dueDate && <span style={{ backgroundColor: 'rgba(0, 122, 255, 0.1)', color: 'var(--primary-color)', padding: '3px 8px', borderRadius: '4px' }}>📅 {reminder.dueDate}</span>}
                                                     {reminder.time && <span style={{ backgroundColor: 'rgba(0, 122, 255, 0.1)', color: 'var(--primary-color)', padding: '3px 8px', borderRadius: '4px' }}>⏰ {reminder.time}</span>}
                                                     {reminder.isRecurring && <span style={{ backgroundColor: 'rgba(52, 199, 89, 0.1)', color: 'var(--success-color)', padding: '3px 8px', borderRadius: '4px' }}>🔄 {reminder.recurringType === 'daily' ? t('recurring_type_daily') : reminder.recurringType === 'weekly' ? t('recurring_type_weekly') : t('recurring_type_monthly')}</span>}
@@ -1839,7 +1886,7 @@ const App: React.FC = () => {
                 </div>
             </div>
 
-            {isGoalAssistantOpen && <GoalAssistantModal onClose={() => setIsGoalAssistantOpen(false)} onAddTodo={handleAddTodo} onAddMultipleTodos={handleAddMultipleTodos} t={t} language={language} createAI={createAI} onAddReminder={handleAddReminder} reminders={reminders} onDeleteReminder={handleDeleteReminder} />}
+            {isGoalAssistantOpen && <GoalAssistantModal onClose={() => setIsGoalAssistantOpen(false)} onAddTodo={handleAddTodo} onAddMultipleTodos={handleAddMultipleTodos} t={t} language={language} createAI={createAI} onAddReminder={handleAddReminder} reminders={reminders} onDeleteReminder={handleDeleteReminder} userCategories={userCategories} />}
             {editingTodo && <GoalAssistantModal onClose={() => setEditingTodo(null)} onEditTodo={handleEditTodo} existingTodo={editingTodo} t={t} language={language} createAI={createAI} />}
             {infoTodo && <GoalInfoModal 
                 todo={infoTodo} 
@@ -1920,7 +1967,7 @@ const App: React.FC = () => {
     );
 };
 
-const Header: React.FC<{ t: (key: string) => any; isSelectionMode: boolean; selectedCount: number; onCancelSelection: () => void; onDeleteSelected: () => void; isViewModeCalendar: boolean; onToggleViewMode: () => void; isAiSorting: boolean; sortType: string; onSort: (type: string) => void; filter: string; onFilter: (type: string) => void; onSetSelectionMode: () => void; onOpenSettings: () => void; onAddGoal: () => void; }> = ({ t, isSelectionMode, selectedCount, onCancelSelection, onDeleteSelected, isViewModeCalendar, onToggleViewMode, isAiSorting, sortType, onSort, filter, onFilter, onSetSelectionMode, onOpenSettings, onAddGoal }) => {
+const Header: React.FC<{ t: (key: string) => any; isSelectionMode: boolean; selectedCount: number; onCancelSelection: () => void; onDeleteSelected: () => void; isViewModeCalendar: boolean; onToggleViewMode: () => void; isAiSorting: boolean; sortType: string; onSort: (type: string) => void; filter: string; onFilter: (type: string) => void; categoryFilter: string; onCategoryFilter: (category: string) => void; userCategories: string[]; onAddCategory: (cat: string) => void; onRemoveCategory: (cat: string) => void; onSetSelectionMode: () => void; onOpenSettings: () => void; onAddGoal: () => void; }> = ({ t, isSelectionMode, selectedCount, onCancelSelection, onDeleteSelected, isViewModeCalendar, onToggleViewMode, isAiSorting, sortType, onSort, filter, onFilter, categoryFilter, onCategoryFilter, userCategories, onAddCategory, onRemoveCategory, onSetSelectionMode, onOpenSettings, onAddGoal }) => {
     const [isFilterPopoverOpen, setIsFilterPopoverOpen] = useState(false);
 
     useEffect(() => {
@@ -1969,6 +2016,29 @@ const Header: React.FC<{ t: (key: string) => any; isSelectionMode: boolean; sele
                                         <button onClick={() => { onFilter('completed'); }} className={`popover-action-button ${filter === 'completed' ? 'active' : ''}`}><span>{t('filter_completed')}</span>{filter === 'completed' && icons.check}</button>
                                     </div>
                                     <div className="popover-section">
+                                        <h4 style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                            <span>{t('filter_category')}</span>
+                                            <button onClick={() => {
+                                                const newCat = prompt('새 카테고리 이름: (New category name:)');
+                                                if (newCat && newCat.trim() && !userCategories.includes(newCat.trim())) {
+                                                    onAddCategory(newCat.trim());
+                                                }
+                                            }} style={{ background: 'none', border: 'none', color: 'var(--primary-color)', cursor: 'pointer', fontSize: '1.2rem', padding: '0' }}>+</button>
+                                        </h4>
+                                        <button onClick={() => { onCategoryFilter('all'); }} className={`popover-action-button ${categoryFilter === 'all' ? 'active' : ''}`}><span>{t('category_all')}</span>{categoryFilter === 'all' && icons.check}</button>
+                                        {userCategories.map((cat) => (
+                                            <div key={cat} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                <button onClick={() => { onCategoryFilter(cat); }} className={`popover-action-button ${categoryFilter === cat ? 'active' : ''}`} style={{ flex: 1, justifyContent: 'space-between' }}>
+                                                    <span>{cat}</span>
+                                                    {categoryFilter === cat && icons.check}
+                                                </button>
+                                                {!['school', 'work', 'personal', 'other'].includes(cat) && (
+                                                    <button onClick={() => onRemoveCategory(cat)} style={{ background: 'rgba(255, 59, 48, 0.1)', border: 'none', color: 'var(--danger-color)', borderRadius: '4px', padding: '4px 8px', cursor: 'pointer', fontSize: '0.8rem' }}>✕</button>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <div className="popover-section">
                                         <h4>{t('sort_title')}</h4>
                                         <button onClick={() => { onSort('manual'); }} className={`popover-action-button ${sortType === 'manual' ? 'active' : ''}`}><span>{t('sort_label_manual')}</span>{sortType === 'manual' && icons.check}</button>
                                         <button onClick={() => { onSort('deadline'); }} className={`popover-action-button ${sortType === 'deadline' ? 'active' : ''}`}><span>{t('sort_label_deadline')}</span>{sortType === 'deadline' && icons.check}</button>
@@ -2006,6 +2076,25 @@ const TodoList: React.FC<{ todos: Goal[]; onToggleComplete: (id: number) => void
 
 const TodoItem: React.FC<{ todo: Goal; onToggleComplete: (id: number) => void; onDelete: (id: number) => void; onEdit: (todo: Goal) => void; onInfo: (todo: Goal) => void; t: (key: string) => any; isSelectionMode: boolean; isSelected: boolean; onSelect: (id: number) => void; }> = React.memo(({ todo, onToggleComplete, onDelete, onEdit, onInfo, t, isSelectionMode, isSelected, onSelect }) => {
     const handleItemClick = () => { if (isSelectionMode) onSelect(todo.id); };
+    
+    const categoryEmoji = {
+        'school': '🎓',
+        'work': '💼',
+        'personal': '👤',
+        'other': '📌'
+    };
+    
+    const getCategoryLabel = (category?: string) => {
+        const cat = category || 'personal';
+        const labels: Record<string, string> = {
+            'school': t('category_school'),
+            'work': t('category_work'),
+            'personal': t('category_personal'),
+            'other': t('category_other')
+        };
+        return labels[cat] || labels['personal'];
+    };
+    
     return (
         <li className={`${todo.completed ? 'completed' : ''} ${isSelectionMode ? 'selection-mode' : ''} ${isSelected ? 'selected' : ''}`} onClick={handleItemClick}>
             <div className="swipeable-content">
@@ -2013,6 +2102,11 @@ const TodoItem: React.FC<{ todo: Goal; onToggleComplete: (id: number) => void; o
                 <div className="todo-text-with-streak"><span className="todo-text">{todo.wish}</span>{todo.isRecurring && todo.streak > 0 && <div className="streak-indicator">{icons.flame}<span>{todo.streak}</span></div>}</div>
                 <div className="todo-actions-and-meta">
                     <div className="todo-meta-badges">
+                        {todo.category && (
+                            <span style={{ backgroundColor: 'rgba(88, 86, 214, 0.1)', color: 'var(--icon-color-indigo)', padding: '4px 8px', borderRadius: '4px', fontSize: '0.8rem', marginRight: '4px', display: 'inline-flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}>
+                                {categoryEmoji[todo.category as keyof typeof categoryEmoji]} {getCategoryLabel(todo.category)}
+                            </span>
+                        )}
                         {todo.deadline && <span className="todo-deadline">{getRelativeTime(todo.deadline, t)}</span>}
                         {todo.collaborators && todo.collaborators.length > 0 && (
                             <span style={{ backgroundColor: 'rgba(52, 199, 89, 0.1)', color: 'var(--success-color)', padding: '4px 8px', borderRadius: '4px', fontSize: '0.85rem', marginLeft: '4px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
@@ -2047,7 +2141,7 @@ const useModalAnimation = (onClose: () => void): [boolean, () => void] => {
 };
 
 const GoalAssistantStepContent: React.FC<{ step: number; t: (key: string) => any; createAI: () => GoogleGenAI | null; [key: string]: any }> = ({ step, t, createAI, ...props }) => {
-    const { wish, setWish, outcome, setOutcome, obstacle, setObstacle, plan, setPlan, isRecurring, setIsRecurring, recurringDays, setRecurringDays, deadline, setDeadline, noDeadline, setNoDeadline, errors, language } = props;
+    const { wish, setWish, outcome, setOutcome, obstacle, setObstacle, plan, setPlan, isRecurring, setIsRecurring, recurringDays, setRecurringDays, deadline, setDeadline, noDeadline, setNoDeadline, category, setCategory, userCategories, errors, language } = props;
     const [isAiLoading, setIsAiLoading] = useState(false);
     const [aiFeedback, setAiFeedback] = useState('');
     const [aiError, setAiError] = useState('');
@@ -2089,7 +2183,7 @@ const GoalAssistantStepContent: React.FC<{ step: number; t: (key: string) => any
                 else newDays.push(dayIndex);
                 setRecurringDays(newDays);
             };
-            return (<div><h3>{t('recurrence_label')} & {t('deadline_label')}</h3>
+            return (<div><h3>{t('recurrence_label')} & {t('deadline_label')} & {t('category_label')}</h3>
                 <div className="step-guidance"><p className="tip">{t('recurrence_tip')}</p><p className="example">{t('recurrence_example')}</p></div>
                 <label className="settings-item standalone-toggle"><span style={{ fontWeight: 500 }}>{t('recurrence_option_daily')}</span><label className="theme-toggle-switch"><input type="checkbox" checked={isRecurring} onChange={(e) => setIsRecurring(e.target.checked)} /><span className="slider round"></span></label></label>
                 {isRecurring && <div className="day-picker">{t('day_names_short_picker').map((day, i) => <button key={i} onClick={() => toggleDay(i)} className={`day-button ${recurringDays.includes(i) ? 'selected' : ''}`}>{day}</button>)}</div>}
@@ -2099,6 +2193,13 @@ const GoalAssistantStepContent: React.FC<{ step: number; t: (key: string) => any
                 <label className="settings-item standalone-toggle"><span style={{ fontWeight: 500 }}>{t('deadline_option_no_deadline')}</span><label className="theme-toggle-switch"><input type="checkbox" checked={noDeadline} onChange={(e) => setNoDeadline(e.target.checked)} /><span className="slider round"></span></label></label>
                 {!noDeadline && <input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} className={errors.deadline ? 'input-error' : ''} style={{ marginTop: '12px' }} />}
                 {errors.deadline && <p className="field-error-message">{icons.exclamation} {t('error_deadline_required')}</p>}
+                <hr />
+                <div className="step-guidance" style={{ marginTop: '16px' }}><p className="tip">{t('category_label')}</p></div>
+                <div style={{ display: 'grid', gridTemplateColumns: userCategories && userCategories.length > 2 ? 'repeat(2, 1fr)' : 'repeat(1, 1fr)', gap: '8px', marginTop: '12px' }}>
+                    {userCategories && userCategories.map((cat) => (
+                        <button key={cat} onClick={() => setCategory(cat)} className={`category-button ${category === cat ? 'active' : ''}`}>{cat}</button>
+                    ))}
+                </div>
             </div>);
         default: return null;
     }
@@ -2154,6 +2255,7 @@ const AutomationForm: React.FC<{ onGenerate: (goals: Omit<Goal, 'id' | 'complete
                 isRecurring: false,
                 recurringDays: [],
                 deadline: currentDate.toISOString().split('T')[0],
+                category: 'personal' as const,
             });
         }
         
@@ -2199,7 +2301,7 @@ const AutomationForm: React.FC<{ onGenerate: (goals: Omit<Goal, 'id' | 'complete
 };
 
 const ReminderStepContent: React.FC<{ step: number; t: (key: string) => any; [key: string]: any }> = ({ step, t, ...props }) => {
-    const { title, setTitle, dueDate, setDueDate, time, setTime, isRecurring, setIsRecurring, recurringType, setRecurringType, description, setDescription, enabled, setEnabled, errors } = props;
+    const { title, setTitle, dueDate, setDueDate, time, setTime, isRecurring, setIsRecurring, recurringType, setRecurringType, description, setDescription, enabled, setEnabled, category, setCategory, userCategories, errors } = props;
     
     switch (step) {
         case 1:
@@ -2321,7 +2423,7 @@ const ReminderStepContent: React.FC<{ step: number; t: (key: string) => any; [ke
         case 5:
             return (
                 <div>
-                    <h3>{t('reminder_step5_title')}</h3>
+                    <h3>{t('reminder_step5_title')} & {t('category_label')}</h3>
                     <div className="step-guidance"><p className="tip">{t('reminder_step5_desc')}</p></div>
                     <label className="settings-item standalone-toggle">
                         <span style={{ fontWeight: 500 }}>{t('reminder_form_enabled')}</span>
@@ -2334,6 +2436,15 @@ const ReminderStepContent: React.FC<{ step: number; t: (key: string) => any; [ke
                             <span className="slider round"></span>
                         </label>
                     </label>
+                    <hr style={{ margin: '16px 0' }} />
+                    <div style={{ marginTop: '16px' }}>
+                        <h4 style={{ fontSize: '0.9rem', fontWeight: 500, marginBottom: '12px' }}>{t('category_label')}</h4>
+                        <div style={{ display: 'grid', gridTemplateColumns: userCategories && userCategories.length > 2 ? 'repeat(2, 1fr)' : 'repeat(1, 1fr)', gap: '8px' }}>
+                            {userCategories && userCategories.map((cat) => (
+                                <button key={cat} onClick={() => setCategory(cat)} className={`category-button ${category === cat ? 'active' : ''}`}>{cat}</button>
+                            ))}
+                        </div>
+                    </div>
                 </div>
             );
         default:
@@ -2347,9 +2458,10 @@ interface ReminderFormProps {
     reminders?: Reminder[];
     onDeleteReminder?: (id: string) => void;
     onClose?: () => void;
+    userCategories?: string[];
 }
 
-const ReminderForm: React.FC<ReminderFormProps> = ({ onAddReminder, t, reminders = [], onDeleteReminder, onClose }) => {
+const ReminderForm: React.FC<ReminderFormProps> = ({ onAddReminder, t, reminders = [], onDeleteReminder, onClose, userCategories = ['personal'] }) => {
     const [step, setStep] = useState(1);
     const [animationDir, setAnimationDir] = useState<'forward' | 'backward'>('forward');
     const [title, setTitle] = useState('');
@@ -2359,6 +2471,7 @@ const ReminderForm: React.FC<ReminderFormProps> = ({ onAddReminder, t, reminders
     const [recurringType, setRecurringType] = useState<'daily' | 'weekly' | 'monthly'>('daily');
     const [description, setDescription] = useState('');
     const [enabled, setEnabled] = useState(true);
+    const [category, setCategory] = useState<'school' | 'work' | 'personal' | 'other'>('personal');
     const [errors, setErrors] = useState<{ [key: string]: boolean }>({});
 
     const totalSteps = 5;
@@ -2395,6 +2508,7 @@ const ReminderForm: React.FC<ReminderFormProps> = ({ onAddReminder, t, reminders
                 recurringType: isRecurring ? recurringType : undefined,
                 description: description.trim() || undefined,
                 enabled,
+                category,
             });
         }
         
@@ -2405,6 +2519,7 @@ const ReminderForm: React.FC<ReminderFormProps> = ({ onAddReminder, t, reminders
         setRecurringType('daily');
         setDescription('');
         setEnabled(true);
+        setCategory('personal');
         setStep(1);
         setErrors({});
     };
@@ -2413,7 +2528,7 @@ const ReminderForm: React.FC<ReminderFormProps> = ({ onAddReminder, t, reminders
         <>
             <div className="progress-bar-container"><div className="progress-bar" style={{ width: `${(step / totalSteps) * 100}%` }}></div></div>
             <div className={`goal-assistant-step-content-animator ${animationDir}`} key={step}>
-                <ReminderStepContent step={step} t={t} {...{ title, setTitle, dueDate, setDueDate, time, setTime, isRecurring, setIsRecurring, recurringType, setRecurringType, description, setDescription, enabled, setEnabled, errors }} />
+                <ReminderStepContent step={step} t={t} {...{ title, setTitle, dueDate, setDueDate, time, setTime, isRecurring, setIsRecurring, recurringType, setRecurringType, description, setDescription, enabled, setEnabled, category, setCategory, userCategories, errors }} />
             </div>
             <div className="goal-assistant-nav">
                 {step > 1 ? (
@@ -2442,6 +2557,16 @@ const ReminderForm: React.FC<ReminderFormProps> = ({ onAddReminder, t, reminders
                                             <span style={{ fontWeight: 500, textDecoration: reminder.enabled ? 'none' : 'line-through', opacity: reminder.enabled ? 1 : 0.5 }}>{reminder.title}</span>
                                         </div>
                                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', fontSize: '0.8rem' }}>
+                                            {reminder.category && (
+                                                <span style={{ backgroundColor: 'rgba(88, 86, 214, 0.1)', color: 'var(--icon-color-indigo)', padding: '2px 6px', borderRadius: '4px' }}>
+                                                    {reminder.category === 'school' ? '🎓' : reminder.category === 'work' ? '💼' : reminder.category === 'personal' ? '👤' : '📌'} {
+                                                    reminder.category === 'school' ? t('category_school') : 
+                                                    reminder.category === 'work' ? t('category_work') : 
+                                                    reminder.category === 'personal' ? t('category_personal') : 
+                                                    t('category_other')
+                                                    }
+                                                </span>
+                                            )}
                                             {reminder.dueDate && <span style={{ backgroundColor: 'rgba(0, 122, 255, 0.1)', color: 'var(--primary-color)', padding: '2px 6px', borderRadius: '4px' }}>📅 {reminder.dueDate}</span>}
                                             {reminder.time && <span style={{ backgroundColor: 'rgba(0, 122, 255, 0.1)', color: 'var(--primary-color)', padding: '2px 6px', borderRadius: '4px' }}>⏰ {reminder.time}</span>}
                                             {reminder.isRecurring && <span style={{ backgroundColor: 'rgba(52, 199, 89, 0.1)', color: 'var(--success-color)', padding: '2px 6px', borderRadius: '4px' }}>🔄 {reminder.recurringType === 'daily' ? '매일' : reminder.recurringType === 'weekly' ? '매주' : '매월'}</span>}
@@ -2468,7 +2593,7 @@ const ReminderForm: React.FC<ReminderFormProps> = ({ onAddReminder, t, reminders
     );
 };
 
-const GoalAssistantModal: React.FC<{ onClose: () => void; onAddTodo?: (newTodoData: Omit<Goal, 'id' | 'completed' | 'lastCompletedDate' | 'streak'>) => void; onAddMultipleTodos?: (newTodosData: Omit<Goal, 'id' | 'completed' | 'lastCompletedDate' | 'streak'>[]) => void; onEditTodo?: (updatedTodo: Goal) => void; existingTodo?: Goal; t: (key: string) => any; language: string; createAI: () => GoogleGenAI | null; onAddReminder?: (reminder: Omit<Reminder, 'id' | 'createdAt'>) => void; reminders?: Reminder[]; onDeleteReminder?: (id: string) => void; }> = ({ onClose, onAddTodo, onAddMultipleTodos, onEditTodo, existingTodo, t, language, createAI, onAddReminder, reminders, onDeleteReminder }) => {
+const GoalAssistantModal: React.FC<{ onClose: () => void; onAddTodo?: (newTodoData: Omit<Goal, 'id' | 'completed' | 'lastCompletedDate' | 'streak'>) => void; onAddMultipleTodos?: (newTodosData: Omit<Goal, 'id' | 'completed' | 'lastCompletedDate' | 'streak'>[]) => void; onEditTodo?: (updatedTodo: Goal) => void; existingTodo?: Goal; t: (key: string) => any; language: string; createAI: () => GoogleGenAI | null; onAddReminder?: (reminder: Omit<Reminder, 'id' | 'createdAt'>) => void; reminders?: Reminder[]; onDeleteReminder?: (id: string) => void; userCategories?: string[]; }> = ({ onClose, onAddTodo, onAddMultipleTodos, onEditTodo, existingTodo, t, language, createAI, onAddReminder, reminders, onDeleteReminder, userCategories = ['personal'] }) => {
     const [isClosing, handleClose] = useModalAnimation(onClose);
     const [mode, setMode] = useState<'woop' | 'reminder' | 'automation'>('woop');
     const [step, setStep] = useState(1);
@@ -2481,6 +2606,7 @@ const GoalAssistantModal: React.FC<{ onClose: () => void; onAddTodo?: (newTodoDa
     const [recurringDays, setRecurringDays] = useState<number[]>(existingTodo?.recurringDays || []);
     const [deadline, setDeadline] = useState(existingTodo?.deadline || '');
     const [noDeadline, setNoDeadline] = useState(!existingTodo?.deadline);
+    const [category, setCategory] = useState<'school' | 'work' | 'personal' | 'other'>(existingTodo?.category || 'personal');
     const [errors, setErrors] = useState<{ [key: string]: boolean }>({});
 
     const totalSteps = 5;
@@ -2517,7 +2643,7 @@ const GoalAssistantModal: React.FC<{ onClose: () => void; onAddTodo?: (newTodoDa
     };
     const handleSubmit = () => {
         if (!validateStep(5)) return;
-        const goalData = { wish, outcome, obstacle, plan, isRecurring, recurringDays, deadline: noDeadline ? '' : deadline };
+        const goalData = { wish, outcome, obstacle, plan, isRecurring, recurringDays, deadline: noDeadline ? '' : deadline, category };
         if (existingTodo && onEditTodo) onEditTodo({ ...existingTodo, ...goalData });
         else if (onAddTodo) onAddTodo(goalData);
     };
@@ -2545,7 +2671,7 @@ const GoalAssistantModal: React.FC<{ onClose: () => void; onAddTodo?: (newTodoDa
                     <>
                         <div className="progress-bar-container"><div className="progress-bar" style={{ width: `${(step / totalSteps) * 100}%` }}></div></div>
                         <div className={`goal-assistant-step-content-animator ${animationDir}`} key={step}>
-                            <GoalAssistantStepContent step={step} t={t} createAI={createAI} {...{ wish, setWish, outcome, setOutcome, obstacle, setObstacle, plan, setPlan, isRecurring, setIsRecurring, recurringDays, setRecurringDays, deadline, setDeadline, noDeadline, setNoDeadline, errors, language }} />
+                            <GoalAssistantStepContent step={step} t={t} createAI={createAI} {...{ wish, setWish, outcome, setOutcome, obstacle, setObstacle, plan, setPlan, isRecurring, setIsRecurring, recurringDays, setRecurringDays, deadline, setDeadline, noDeadline, setNoDeadline, category, setCategory, userCategories, errors, language }} />
                         </div>
                          <div className="goal-assistant-nav">
                             {step > 1 ? (
@@ -2557,7 +2683,7 @@ const GoalAssistantModal: React.FC<{ onClose: () => void; onAddTodo?: (newTodoDa
                         </div>
                     </>
                 ) : mode === 'reminder' ? (
-                    <ReminderForm onAddReminder={onAddReminder} t={t} reminders={reminders} onDeleteReminder={onDeleteReminder} />
+                    <ReminderForm onAddReminder={onAddReminder} t={t} reminders={reminders} onDeleteReminder={onDeleteReminder} userCategories={userCategories} />
                 ) : (
                     onAddMultipleTodos && <AutomationForm onGenerate={onAddMultipleTodos} t={t} />
                 )}

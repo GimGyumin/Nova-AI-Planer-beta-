@@ -1257,6 +1257,29 @@ input:checked + .slider:before { -webkit-transform: translateX(20px); -ms-transf
 .day-button { flex: 1; aspect-ratio: 1 / 1; border-radius: 50%; background-color: var(--button-bg-color); border: 1px solid var(--border-color); color: var(--text-color); font-weight: 500; }
 .day-button.selected { background-color: var(--primary-color); border-color: var(--primary-color); color: white; }
 
+/* Category Button Styles */
+.category-button {
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background-color: var(--button-bg-color);
+  color: var(--text-color);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.category-button:hover {
+  background-color: var(--bg-secondary-color);
+  border-color: var(--primary-color);
+}
+
+.category-button.active {
+  background-color: var(--primary-color);
+  border-color: var(--primary-color);
+  color: white;
+}
+
 /* Spinner Animation */
 @keyframes spin {
   to { transform: rotate(360deg); }
