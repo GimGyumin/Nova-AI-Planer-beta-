@@ -30,7 +30,7 @@ const isStandalone = () => {
 
 // --- Firestore 데이터 정제 함수 ---
 const sanitizeFirestoreData = (obj: any): any => {
-  if (obj === null || obj === undefined) return undefined;
+  if (obj === undefined) return undefined;  // ← undefined만 제외, null은 허용
   if (typeof obj !== 'object') return obj;
   if (Array.isArray(obj)) {
     return obj
@@ -41,8 +41,8 @@ const sanitizeFirestoreData = (obj: any): any => {
   // 객체의 모든 필드를 정제
   const cleaned: any = {};
   for (const [key, value] of Object.entries(obj)) {
-    // undefined, null, 빈 문자열 제외
-    if (value === undefined || value === null || (typeof value === 'string' && value.trim() === '')) {
+    // undefined와 빈 문자열만 제외 (null은 허용)
+    if (value === undefined || (typeof value === 'string' && value.trim() === '')) {
       console.warn(`⚠️ 필드 제거됨: ${key} = ${value}`);
       continue;
     }
