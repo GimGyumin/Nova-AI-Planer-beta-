@@ -1025,6 +1025,8 @@ const App: React.FC = () => {
     const [dataActionStatus, setDataActionStatus] = useState<'idle' | 'importing' | 'exporting' | 'deleting'>('idle');
     const [isVersionInfoOpen, setIsVersionInfoOpen] = useState<boolean>(false);
     const [isUsageGuideOpen, setIsUsageGuideOpen] = useState<boolean>(false);
+    const [aiSortReason, setAiSortReason] = useState<string>('');
+    const [showAiSortReasonModal, setShowAiSortReasonModal] = useState<boolean>(false);
     
     // PWA 관련 상태
     const [showPWAPrompt, setShowPWAPrompt] = useState<boolean>(false);
@@ -1632,11 +1634,11 @@ const App: React.FC = () => {
                     return;
                 }
                 
-                const prompt = `Here is a list of goals with their details (wish, outcome, obstacle, plan, deadline). Prioritize them based on urgency (closer deadline), importance (based on outcome), and feasibility (based on plan). Return a JSON object with a single key "sorted_ids" which is an array of the goal IDs in the recommended order. Do not include any other text or explanations. Goals: ${JSON.stringify(todos.map(({ id, wish, outcome, obstacle, plan, deadline }) => ({ id, wish, outcome, obstacle, plan, deadline })))}`;
+                const prompt = `Here is a list of goals with their details (wish, outcome, obstacle, plan, deadline). Prioritize them based on urgency (closer deadline), importance (based on outcome), and feasibility (based on plan). Return a JSON object with "sorted_ids" array and "reasoning" string explaining your prioritization logic. Goals: ${JSON.stringify(todos.map(({ id, wish, outcome, obstacle, plan, deadline }) => ({ id, wish, outcome, obstacle, plan, deadline })))}`;
                 const response = await ai.models.generateContent({
                     model: 'gemini-2.5-flash',
                     contents: prompt,
-                    config: { responseMimeType: 'application/json', responseSchema: { type: Type.OBJECT, properties: { sorted_ids: { type: Type.ARRAY, items: { type: Type.NUMBER } } } } }
+                    config: { responseMimeType: 'application/json', responseSchema: { type: Type.OBJECT, properties: { sorted_ids: { type: Type.ARRAY, items: { type: Type.NUMBER } }, reasoning: { type: Type.STRING } } } }
                 });
                 
                 const resultJson = JSON.parse(response.text);
@@ -1648,6 +1650,8 @@ const App: React.FC = () => {
 
                 setTodos(finalSortedTodos);
                 setSortType('manual');
+                setAiSortReason(resultJson.reasoning || '');
+                setShowAiSortReasonModal(true);
             } catch (error) {
                 console.error("AI sort failed:", error);
                 setAlertConfig({ title: t('ai_sort_error_title'), message: t('ai_sort_error_message') });
@@ -1857,6 +1861,20 @@ const App: React.FC = () => {
             />}
             {isVersionInfoOpen && <VersionInfoModal onClose={() => setIsVersionInfoOpen(false)} t={t} />}
             {isUsageGuideOpen && <UsageGuideModal onClose={() => setIsUsageGuideOpen(false)} t={t} />}
+            {showAiSortReasonModal && (
+                <Modal onClose={() => setShowAiSortReasonModal(false)} isClosing={false} className="ai-sort-reason-modal">
+                    <div style={{ padding: '24px' }}>
+                        <h2 style={{ marginBottom: '16px', fontSize: '1.3rem', fontWeight: 600 }}>{t('ai_sort_reason_modal_title')}</h2>
+                        <div style={{ marginBottom: '24px', padding: '16px', backgroundColor: 'var(--card-bg-color)', borderRadius: '8px', border: '1px solid var(--border-color)', lineHeight: '1.6', color: 'var(--text-secondary-color)' }}>
+                            {aiSortReason}
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
+                            <button onClick={() => setShowAiSortReasonModal(false)} className="primary">{t('close_button')}</button>
+                        </div>
+                    </div>
+                </Modal>
+            )}
+            {isVersionInfoOpen && <VersionInfoModal onClose={() => setIsVersionInfoOpen(false)} t={t} />}
             {alertConfig && <AlertModal title={alertConfig.title} message={alertConfig.message} onConfirm={() => { alertConfig.onConfirm?.(); setAlertConfig(null); }} onCancel={alertConfig.onCancel ? () => { alertConfig.onCancel?.(); setAlertConfig(null); } : undefined} confirmText={alertConfig.confirmText} cancelText={alertConfig.cancelText} isDestructive={alertConfig.isDestructive} t={t} />}
             {toastMessage && <div className="toast-notification">{toastMessage}</div>}
             {showPWAPrompt && <PWAInstallPrompt onClose={() => setShowPWAPrompt(false)} />}
