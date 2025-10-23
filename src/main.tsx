@@ -1664,7 +1664,7 @@ const App: React.FC = () => {
         return () => {
             unsubscribers.forEach(unsub => unsub());
         };
-    }, [currentFolderId, googleUser, folders]);
+    }, [currentFolderId, googleUser]);
 
     
     // 시스템 다크모드 감지 및 적용
