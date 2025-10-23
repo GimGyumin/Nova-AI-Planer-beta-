@@ -1815,8 +1815,14 @@ const App: React.FC = () => {
                         const ownerUid = folder.ownerId;
                         const todosRef = collection(db, 'users', ownerUid, 'todos');
                         const todoDocRef = doc(todosRef, newTodo.id.toString());
-                        await setDoc(todoDocRef, newTodo);
-                        console.log('✅ 목표 소유자 Firestore 저장:', { ownerUid, newTodo });
+                        
+                        // undefined 필드 제거
+                        const sanitizedTodo = Object.fromEntries(
+                            Object.entries(newTodo).filter(([_, v]) => v !== undefined)
+                        );
+                        
+                        await setDoc(todoDocRef, sanitizedTodo);
+                        console.log('✅ 목표 소유자 Firestore 저장:', { ownerUid, newTodo: sanitizedTodo });
                     } catch (error) {
                         console.error('목표 Firestore 저장 실패:', error);
                     }
@@ -1848,7 +1854,13 @@ const App: React.FC = () => {
                         for (const todo of newTodos) {
                             const todosRef = collection(db, 'users', ownerUid, 'todos');
                             const todoDocRef = doc(todosRef, todo.id.toString());
-                            await setDoc(todoDocRef, todo);
+                            
+                            // undefined 필드 제거
+                            const sanitizedTodo = Object.fromEntries(
+                                Object.entries(todo).filter(([_, v]) => v !== undefined)
+                            );
+                            
+                            await setDoc(todoDocRef, sanitizedTodo);
                         }
                         console.log('✅ 여러 목표 소유자 Firestore 저장:', { ownerUid, count: newTodos.length });
                     } catch (error) {
@@ -1873,8 +1885,14 @@ const App: React.FC = () => {
                         const ownerUid = folder.ownerId;
                         const todosRef = collection(db, 'users', ownerUid, 'todos');
                         const todoDocRef = doc(todosRef, updatedTodo.id.toString());
-                        await setDoc(todoDocRef, updatedTodo);
-                        console.log('✅ 목표 업데이트 소유자 Firestore 저장:', { ownerUid, updatedTodo });
+                        
+                        // undefined 필드 제거
+                        const sanitizedTodo = Object.fromEntries(
+                            Object.entries(updatedTodo).filter(([_, v]) => v !== undefined)
+                        );
+                        
+                        await setDoc(todoDocRef, sanitizedTodo);
+                        console.log('✅ 목표 업데이트 소유자 Firestore 저장:', { ownerUid, updatedTodo: sanitizedTodo });
                     } catch (error) {
                         console.error('목표 업데이트 Firestore 저장 실패:', error);
                     }
