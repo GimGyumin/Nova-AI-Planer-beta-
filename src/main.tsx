@@ -1777,7 +1777,35 @@ const App: React.FC = () => {
                     {isViewModeCalendar ? (
                         <CalendarView todos={todos} t={t} onGoalClick={setInfoTodo} language={language} />
                     ) : (
-                        <TodoList todos={filteredTodos} onToggleComplete={handleToggleComplete} onDelete={handleDeleteTodo} onEdit={setEditingTodo} onInfo={setInfoTodo} t={t} filter={filter} randomEncouragement={randomEncouragement} isSelectionMode={isSelectionMode} selectedTodoIds={selectedTodoIds} onSelectTodo={handleSelectTodo} />
+                        <>
+                            {reminders.length > 0 && (
+                                <div style={{ marginBottom: '24px', paddingBottom: '16px', borderBottom: '1px solid var(--border-color)' }}>
+                                    <h2 style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: '12px', color: 'var(--text-color)' }}>🔔 {t('reminder_add_title')}</h2>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '12px' }}>
+                                        {reminders.filter(r => r.enabled).map((reminder) => (
+                                            <div key={reminder.id} style={{ 
+                                                padding: '12px', 
+                                                backgroundColor: 'var(--card-bg-color)', 
+                                                borderRadius: '8px', 
+                                                border: '1px solid var(--border-color)',
+                                                transition: 'all 0.2s'
+                                            }}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', gap: '8px', marginBottom: '8px' }}>
+                                                    <div style={{ fontWeight: 500, color: 'var(--text-color)', flex: 1 }}>{reminder.title}</div>
+                                                </div>
+                                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', fontSize: '0.85rem' }}>
+                                                    {reminder.dueDate && <span style={{ backgroundColor: 'rgba(0, 122, 255, 0.1)', color: 'var(--primary-color)', padding: '3px 8px', borderRadius: '4px' }}>📅 {reminder.dueDate}</span>}
+                                                    {reminder.time && <span style={{ backgroundColor: 'rgba(0, 122, 255, 0.1)', color: 'var(--primary-color)', padding: '3px 8px', borderRadius: '4px' }}>⏰ {reminder.time}</span>}
+                                                    {reminder.isRecurring && <span style={{ backgroundColor: 'rgba(52, 199, 89, 0.1)', color: 'var(--success-color)', padding: '3px 8px', borderRadius: '4px' }}>🔄 {reminder.recurringType === 'daily' ? t('recurring_type_daily') : reminder.recurringType === 'weekly' ? t('recurring_type_weekly') : t('recurring_type_monthly')}</span>}
+                                                </div>
+                                                {reminder.description && <div style={{ marginTop: '8px', fontSize: '0.8rem', color: 'var(--text-secondary-color)' }}>{reminder.description}</div>}
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                            <TodoList todos={filteredTodos} onToggleComplete={handleToggleComplete} onDelete={handleDeleteTodo} onEdit={setEditingTodo} onInfo={setInfoTodo} t={t} filter={filter} randomEncouragement={randomEncouragement} isSelectionMode={isSelectionMode} selectedTodoIds={selectedTodoIds} onSelectTodo={handleSelectTodo} />
+                        </>
                     )}
                 </div>
             </div>
