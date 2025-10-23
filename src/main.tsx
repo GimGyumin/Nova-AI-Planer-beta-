@@ -28,6 +28,37 @@ const isStandalone = () => {
     (window.navigator as any).standalone === true;
 };
 
+// --- Firestore 데이터 정제 함수 ---
+const sanitizeFirestoreData = (obj: any): any => {
+  if (obj === null || obj === undefined) return undefined;
+  if (typeof obj !== 'object') return obj;
+  if (Array.isArray(obj)) {
+    return obj
+      .map(item => sanitizeFirestoreData(item))
+      .filter(item => item !== undefined);
+  }
+  
+  // 객체의 모든 필드를 정제
+  const cleaned: any = {};
+  for (const [key, value] of Object.entries(obj)) {
+    // undefined, null, 빈 문자열 제외
+    if (value === undefined || value === null || (typeof value === 'string' && value.trim() === '')) {
+      console.warn(`⚠️ 필드 제거됨: ${key} = ${value}`);
+      continue;
+    }
+    // 중첩 객체도 재귀적으로 정제
+    if (typeof value === 'object') {
+      const sanitized = sanitizeFirestoreData(value);
+      if (sanitized !== undefined) {
+        cleaned[key] = sanitized;
+      }
+    } else {
+      cleaned[key] = value;
+    }
+  }
+  return Object.keys(cleaned).length > 0 ? cleaned : undefined;
+};
+
 // --- 다크모드 감지 ---
 const getSystemTheme = () => {
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
@@ -1504,13 +1535,20 @@ const App: React.FC = () => {
                                             collaborators = [...collaborators, newCollaborator];
                                             console.log('📝 새로운 협업자 목록:', collaborators);
                                             
-                                            // 소유자의 Firestore에 협업자 목록 저장 - 반드시 await
-                                            await setDoc(folderDocRef, {
-                                                collaborators: collaborators,
-                                                updatedAt: new Date().toISOString()
-                                            }, { merge: true });
+                                            // 데이터 정제
+                                            const sanitizedCollaborators = sanitizeFirestoreData(collaborators);
                                             
-                                            console.log('✅ 협업자 Firestore 저장 완료:', newCollaborator);
+                                            // 소유자의 Firestore에 협업자 목록 저장 - 반드시 await
+                                            if (sanitizedCollaborators) {
+                                                await setDoc(folderDocRef, {
+                                                    collaborators: sanitizedCollaborators,
+                                                    updatedAt: new Date().toISOString()
+                                                }, { merge: true });
+                                                
+                                                console.log('✅ 협업자 Firestore 저장 완료:', newCollaborator);
+                                            } else {
+                                                console.warn('⚠️ 협업자 정제 후 데이터가 없음');
+                                            }
                                         } else {
                                             console.log('ℹ️ 이미 협업자임');
                                         }
@@ -1832,13 +1870,15 @@ const App: React.FC = () => {
                 const todosRef = collection(db, 'users', targetOwnerUid, 'todos');
                 const todoDocRef = doc(todosRef, newTodo.id.toString());
                 
-                // undefined 필드 제거
-                const sanitizedTodo = Object.fromEntries(
-                    Object.entries(newTodo).filter(([_, v]) => v !== undefined)
-                );
+                // 강력한 데이터 정제
+                const sanitizedTodo = sanitizeFirestoreData(newTodo);
                 
-                await setDoc(todoDocRef, sanitizedTodo);
-                console.log('✅ 목표 Firestore 저장:', { targetOwnerUid, newTodo: sanitizedTodo });
+                if (sanitizedTodo) {
+                    await setDoc(todoDocRef, sanitizedTodo);
+                    console.log('✅ 목표 Firestore 저장:', { targetOwnerUid, newTodo: sanitizedTodo });
+                } else {
+                    console.warn('⚠️ 정제 후 저장할 데이터가 없음');
+                }
             } catch (error) {
                 console.error('❌ 목표 Firestore 저장 실패:', error);
             }
@@ -1869,12 +1909,14 @@ const App: React.FC = () => {
                     const todosRef = collection(db, 'users', targetOwnerUid, 'todos');
                     const todoDocRef = doc(todosRef, todo.id.toString());
                     
-                    // undefined 필드 제거
-                    const sanitizedTodo = Object.fromEntries(
-                        Object.entries(todo).filter(([_, v]) => v !== undefined)
-                    );
+                    // 강력한 데이터 정제
+                    const sanitizedTodo = sanitizeFirestoreData(todo);
                     
-                    await setDoc(todoDocRef, sanitizedTodo);
+                    if (sanitizedTodo) {
+                        await setDoc(todoDocRef, sanitizedTodo);
+                    } else {
+                        console.warn('⚠️ 정제 후 저장할 데이터가 없음:', todo.id);
+                    }
                 }
                 console.log('✅ 여러 목표 Firestore 저장:', { targetOwnerUid, count: newTodos.length });
             } catch (error) {
@@ -1899,13 +1941,15 @@ const App: React.FC = () => {
                 const todosRef = collection(db, 'users', targetOwnerUid, 'todos');
                 const todoDocRef = doc(todosRef, updatedTodo.id.toString());
                 
-                // undefined 필드 제거
-                const sanitizedTodo = Object.fromEntries(
-                    Object.entries(updatedTodo).filter(([_, v]) => v !== undefined)
-                );
+                // 강력한 데이터 정제
+                const sanitizedTodo = sanitizeFirestoreData(updatedTodo);
                 
-                await setDoc(todoDocRef, sanitizedTodo);
-                console.log('✅ 목표 업데이트 Firestore 저장:', { targetOwnerUid, updatedTodo: sanitizedTodo });
+                if (sanitizedTodo) {
+                    await setDoc(todoDocRef, sanitizedTodo);
+                    console.log('✅ 목표 업데이트 Firestore 저장:', { targetOwnerUid, updatedTodo: sanitizedTodo });
+                } else {
+                    console.warn('⚠️ 정제 후 저장할 데이터가 없음');
+                }
             } catch (error) {
                 console.error('❌ 목표 업데이트 Firestore 저장 실패:', error);
             }
@@ -2051,12 +2095,15 @@ const App: React.FC = () => {
                 const todosRef = collection(db, 'users', targetOwnerUid, 'todos');
                 const todoDocRef = doc(todosRef, goalId.toString());
                 
-                const sanitizedTodo = Object.fromEntries(
-                    Object.entries(updatedTodo).filter(([_, v]) => v !== undefined)
-                );
+                // 강력한 데이터 정제
+                const sanitizedTodo = sanitizeFirestoreData(updatedTodo);
                 
-                await setDoc(todoDocRef, sanitizedTodo);
-                console.log('✅ 목표 폴더 이동 Firestore 저장:', { targetOwnerUid, goalId, folderId });
+                if (sanitizedTodo) {
+                    await setDoc(todoDocRef, sanitizedTodo);
+                    console.log('✅ 목표 폴더 이동 Firestore 저장:', { targetOwnerUid, goalId, folderId });
+                } else {
+                    console.warn('⚠️ 정제 후 저장할 데이터가 없음');
+                }
             } catch (error) {
                 console.error('❌ 목표 폴더 이동 Firestore 저장 실패:', error);
             }
@@ -2113,12 +2160,15 @@ const App: React.FC = () => {
                 const todosRef = collection(db, 'users', targetOwnerUid, 'todos');
                 const todoDocRef = doc(todosRef, id.toString());
                 
-                const sanitizedTodo = Object.fromEntries(
-                    Object.entries(updatedTodo).filter(([_, v]) => v !== undefined)
-                );
+                // 강력한 데이터 정제
+                const sanitizedTodo = sanitizeFirestoreData(updatedTodo);
                 
-                await setDoc(todoDocRef, sanitizedTodo);
-                console.log('✅ 목표 완료 상태 Firestore 저장:', { targetOwnerUid, id, completed: updatedTodo.completed });
+                if (sanitizedTodo) {
+                    await setDoc(todoDocRef, sanitizedTodo);
+                    console.log('✅ 목표 완료 상태 Firestore 저장:', { targetOwnerUid, id, completed: updatedTodo.completed });
+                } else {
+                    console.warn('⚠️ 정제 후 저장할 데이터가 없음');
+                }
             } catch (error) {
                 console.error('❌ 목표 완료 상태 Firestore 저장 실패:', error);
             }
