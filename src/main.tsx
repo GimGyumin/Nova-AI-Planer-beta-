@@ -2319,14 +2319,18 @@ const TodoItem: React.FC<{ todo: Goal; onToggleComplete: (id: number) => void; o
     };
     
     const getCategoryLabel = (category?: string) => {
-        const cat = category || 'personal';
+        if (!category) return '';
+        
+        // 기본 카테고리인 경우
         const labels: Record<string, string> = {
             'school': t('category_school'),
             'work': t('category_work'),
             'personal': t('category_personal'),
             'other': t('category_other')
         };
-        return labels[cat] || labels['personal'];
+        
+        // 기본 카테고리에 있으면 반환, 없으면 그대로 사용자 정의 카테고리 이름 반환
+        return labels[category] || category;
     };
     
     return (
@@ -2338,7 +2342,7 @@ const TodoItem: React.FC<{ todo: Goal; onToggleComplete: (id: number) => void; o
                     <div className="todo-meta-badges">
                         {todo.category && (
                             <span style={{ backgroundColor: 'rgba(88, 86, 214, 0.1)', color: 'var(--icon-color-indigo)', padding: '4px 8px', borderRadius: '4px', fontSize: '0.8rem', marginRight: '4px', display: 'inline-flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}>
-                                {categoryEmoji[todo.category as keyof typeof categoryEmoji]} {getCategoryLabel(todo.category)}
+                                {categoryEmoji[todo.category as keyof typeof categoryEmoji] || '📌'} {getCategoryLabel(todo.category)}
                             </span>
                         )}
                         {todo.deadline && <span className="todo-deadline">{getRelativeTime(todo.deadline, t)}</span>}
