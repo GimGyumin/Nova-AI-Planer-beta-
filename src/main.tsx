@@ -2080,6 +2080,56 @@ const App: React.FC = () => {
         }
     };
 
+    // 공유 폴더 동기화 핸들러
+    const handleSyncSharedFolder = async () => {
+        if (!currentFolderId || !googleUser) {
+            setToastMessage('❌ 동기화할 폴더가 없습니다');
+            return;
+        }
+
+        const folder = folders.find(f => f.id === currentFolderId);
+        if (!folder || !folder.collaborators || folder.collaborators.length === 0) {
+            setToastMessage('❌ 이것은 공유 폴더가 아닙니다');
+            return;
+        }
+
+        const owner = folder.collaborators.find(c => c.role === 'owner');
+        if (!owner || !owner.userId || owner.userId.startsWith('owner_')) {
+            setToastMessage('❌ 폴더 소유자 정보가 없습니다');
+            return;
+        }
+
+        setIsSyncingData(true);
+        try {
+            console.log('🔄 폴더 동기화 시작:', { folderId: currentFolderId, ownerUid: owner.userId });
+            
+            const todosRef = collection(db, 'users', owner.userId, 'todos');
+            const q = query(todosRef, where('folderId', '==', currentFolderId));
+            const snapshot = await getDocs(q);
+            
+            const loadedTodos: Goal[] = [];
+            snapshot.forEach((doc) => {
+                loadedTodos.push({ id: parseInt(doc.id), ...doc.data() } as Goal);
+            });
+            
+            console.log('✅ 폴더 동기화 완료:', { count: loadedTodos.length });
+            
+            // 로드된 목표와 기존 목표를 병합
+            setTodos(prevTodos => {
+                const otherTodos = prevTodos.filter(t => t.folderId !== currentFolderId);
+                const merged = [...otherTodos, ...loadedTodos];
+                return merged;
+            });
+            
+            setToastMessage(`✅ 동기화 완료 (${loadedTodos.length}개 항목)`);
+        } catch (error) {
+            console.error('❌ 폴더 동기화 실패:', error);
+            setToastMessage('❌ 동기화 실패: ' + (error instanceof Error ? error.message : '알 수 없는 오류'));
+        } finally {
+            setIsSyncingData(false);
+        }
+    };
+
     const handleMoveToFolder = async (goalId: number, folderId: string | null) => {
         const todo = todos.find(t => t.id === goalId);
         if (!todo) return;
@@ -2355,6 +2405,10 @@ const App: React.FC = () => {
                         onSetSelectionMode={() => setIsSelectionMode(true)}
                         onOpenSettings={() => setIsSettingsOpen(true)}
                         onAddGoal={() => setIsGoalAssistantOpen(true)}
+                        currentFolderId={currentFolderId}
+                        folders={folders}
+                        onSyncSharedFolder={handleSyncSharedFolder}
+                        isSyncing={isSyncingData}
                     />
                     {isViewModeCalendar ? (
                         <CalendarView todos={todos} t={t} onGoalClick={setInfoTodo} language={language} />
@@ -2773,7 +2827,7 @@ const FolderNavigator: React.FC<{ folders: Folder[]; currentFolderId: string | n
     );
 };
 
-const Header: React.FC<{ t: (key: string) => any; isSelectionMode: boolean; selectedCount: number; onCancelSelection: () => void; onDeleteSelected: () => void; isViewModeCalendar: boolean; onToggleViewMode: () => void; isAiSorting: boolean; sortType: string; onSort: (type: string) => void; filter: string; onFilter: (type: string) => void; categoryFilter: string; onCategoryFilter: (category: string) => void; userCategories: string[]; onAddCategory: (cat: string) => void; onRemoveCategory: (cat: string) => void; onSetSelectionMode: () => void; onOpenSettings: () => void; onAddGoal: () => void; }> = ({ t, isSelectionMode, selectedCount, onCancelSelection, onDeleteSelected, isViewModeCalendar, onToggleViewMode, isAiSorting, sortType, onSort, filter, onFilter, categoryFilter, onCategoryFilter, userCategories, onAddCategory, onRemoveCategory, onSetSelectionMode, onOpenSettings, onAddGoal }) => {
+const Header: React.FC<{ t: (key: string) => any; isSelectionMode: boolean; selectedCount: number; onCancelSelection: () => void; onDeleteSelected: () => void; isViewModeCalendar: boolean; onToggleViewMode: () => void; isAiSorting: boolean; sortType: string; onSort: (type: string) => void; filter: string; onFilter: (type: string) => void; categoryFilter: string; onCategoryFilter: (category: string) => void; userCategories: string[]; onAddCategory: (cat: string) => void; onRemoveCategory: (cat: string) => void; onSetSelectionMode: () => void; onOpenSettings: () => void; onAddGoal: () => void; currentFolderId: string | null; folders: Folder[]; onSyncSharedFolder: () => void; isSyncing: boolean; }> = ({ t, isSelectionMode, selectedCount, onCancelSelection, onDeleteSelected, isViewModeCalendar, onToggleViewMode, isAiSorting, sortType, onSort, filter, onFilter, categoryFilter, onCategoryFilter, userCategories, onAddCategory, onRemoveCategory, onSetSelectionMode, onOpenSettings, onAddGoal, currentFolderId, folders, onSyncSharedFolder, isSyncing }) => {
     const [isFilterPopoverOpen, setIsFilterPopoverOpen] = useState(false);
 
     useEffect(() => {
@@ -2856,6 +2910,18 @@ const Header: React.FC<{ t: (key: string) => any; isSelectionMode: boolean; sele
                                 </div>
                             )}
                         </div>
+                        {/* 공유 폴더 동기화 버튼 */}
+                        {currentFolderId && folders.find(f => f.id === currentFolderId)?.collaborators && (
+                            <button 
+                                onClick={onSyncSharedFolder} 
+                                disabled={isSyncing}
+                                className="header-icon-button" 
+                                aria-label="동기화"
+                                title="공유 폴더 동기화"
+                            >
+                                {isSyncing ? <div className="spinner" style={{ width: '20px', height: '20px' }} /> : '🔄'}
+                            </button>
+                        )}
                         <button onClick={onOpenSettings} className="header-icon-button" aria-label={t('settings_title')}>{icons.settings}</button>
                     </div>
                 )}
