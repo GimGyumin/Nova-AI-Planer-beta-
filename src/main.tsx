@@ -1808,7 +1808,7 @@ const App: React.FC = () => {
         return sortedTodos;
     }, [todos, filter, sortType, categoryFilter, currentFolderId]);
     
-    const handleAddTodo = (newTodoData: Omit<Goal, 'id' | 'completed' | 'lastCompletedDate' | 'streak'>) => {
+    const handleAddTodo = async (newTodoData: Omit<Goal, 'id' | 'completed' | 'lastCompletedDate' | 'streak'>) => {
         const newTodo: Goal = { 
             ...newTodoData, 
             id: Date.now(), 
@@ -1818,36 +1818,35 @@ const App: React.FC = () => {
             folderId: currentFolderId || undefined  // 현재 폴더에 추가
         };
         
-        // Firestore에 저장 (공유 폴더인 경우 - 소유자의 Firestore에 저장)
-        if (currentFolderId && googleUser) {
-            const folder = folders.find(f => f.id === currentFolderId);
-            if (folder?.ownerId) {
-                (async () => {
-                    try {
-                        // 👉 중요: 소유자의 Firestore에 저장해야 모두가 볼 수 있음
-                        const ownerUid = folder.ownerId;
-                        const todosRef = collection(db, 'users', ownerUid, 'todos');
-                        const todoDocRef = doc(todosRef, newTodo.id.toString());
-                        
-                        // undefined 필드 제거
-                        const sanitizedTodo = Object.fromEntries(
-                            Object.entries(newTodo).filter(([_, v]) => v !== undefined)
-                        );
-                        
-                        await setDoc(todoDocRef, sanitizedTodo);
-                        console.log('✅ 목표 소유자 Firestore 저장:', { ownerUid, newTodo: sanitizedTodo });
-                    } catch (error) {
-                        console.error('목표 Firestore 저장 실패:', error);
-                    }
-                })();
+        // Firestore에 저장 - 무조건 저장
+        if (googleUser) {
+            try {
+                const folder = folders.find(f => f.id === currentFolderId);
+                // 소유자: 자신의 Firestore에 저장
+                // 협업자: 폴더 소유자의 Firestore에 저장 (동기화를 위해)
+                const targetOwnerUid = folder?.ownerId || googleUser.uid;
+                
+                const todosRef = collection(db, 'users', targetOwnerUid, 'todos');
+                const todoDocRef = doc(todosRef, newTodo.id.toString());
+                
+                // undefined 필드 제거
+                const sanitizedTodo = Object.fromEntries(
+                    Object.entries(newTodo).filter(([_, v]) => v !== undefined)
+                );
+                
+                await setDoc(todoDocRef, sanitizedTodo);
+                console.log('✅ 목표 Firestore 저장:', { targetOwnerUid, newTodo: sanitizedTodo });
+            } catch (error) {
+                console.error('❌ 목표 Firestore 저장 실패:', error);
             }
         }
         
+        // UI 업데이트
         setTodos(prev => [newTodo, ...prev]);
         setIsGoalAssistantOpen(false);
     };
     
-    const handleAddMultipleTodos = (newTodosData: Omit<Goal, 'id' | 'completed' | 'lastCompletedDate' | 'streak'>[]) => {
+    const handleAddMultipleTodos = async (newTodosData: Omit<Goal, 'id' | 'completed' | 'lastCompletedDate' | 'streak'>[]) => {
         const newTodos: Goal[] = newTodosData.map((goalData, index) => ({
             ...goalData,
             id: Date.now() + index,
@@ -1857,87 +1856,84 @@ const App: React.FC = () => {
             folderId: currentFolderId || undefined  // 현재 폴더에 추가
         })).reverse(); // So the first goal appears at the top
         
-        // Firestore에 저장 (공유 폴더인 경우 - 소유자의 Firestore에 저장)
-        if (currentFolderId && googleUser) {
-            const folder = folders.find(f => f.id === currentFolderId);
-            if (folder?.ownerId) {
-                (async () => {
-                    try {
-                        const ownerUid = folder.ownerId;
-                        for (const todo of newTodos) {
-                            const todosRef = collection(db, 'users', ownerUid, 'todos');
-                            const todoDocRef = doc(todosRef, todo.id.toString());
-                            
-                            // undefined 필드 제거
-                            const sanitizedTodo = Object.fromEntries(
-                                Object.entries(todo).filter(([_, v]) => v !== undefined)
-                            );
-                            
-                            await setDoc(todoDocRef, sanitizedTodo);
-                        }
-                        console.log('✅ 여러 목표 소유자 Firestore 저장:', { ownerUid, count: newTodos.length });
-                    } catch (error) {
-                        console.error('여러 목표 Firestore 저장 실패:', error);
-                    }
-                })();
+        // Firestore에 저장 - 무조건 저장
+        if (googleUser) {
+            try {
+                const folder = folders.find(f => f.id === currentFolderId);
+                const targetOwnerUid = folder?.ownerId || googleUser.uid;
+                
+                for (const todo of newTodos) {
+                    const todosRef = collection(db, 'users', targetOwnerUid, 'todos');
+                    const todoDocRef = doc(todosRef, todo.id.toString());
+                    
+                    // undefined 필드 제거
+                    const sanitizedTodo = Object.fromEntries(
+                        Object.entries(todo).filter(([_, v]) => v !== undefined)
+                    );
+                    
+                    await setDoc(todoDocRef, sanitizedTodo);
+                }
+                console.log('✅ 여러 목표 Firestore 저장:', { targetOwnerUid, count: newTodos.length });
+            } catch (error) {
+                console.error('❌ 여러 목표 Firestore 저장 실패:', error);
             }
         }
         
+        // UI 업데이트
         setTodos(prev => [...newTodos, ...prev]);
         setIsGoalAssistantOpen(false);
     };
 
-    const handleEditTodo = (updatedTodo: Goal) => {
-        // Firestore에 저장 (공유 폴더인 경우 - 소유자의 Firestore에 저장)
-        if (updatedTodo.folderId && googleUser) {
-            const folder = folders.find(f => f.id === updatedTodo.folderId);
-            if (folder?.ownerId) {
-                (async () => {
-                    try {
-                        // 👉 중요: 소유자의 Firestore에 저장
-                        const ownerUid = folder.ownerId;
-                        const todosRef = collection(db, 'users', ownerUid, 'todos');
-                        const todoDocRef = doc(todosRef, updatedTodo.id.toString());
-                        
-                        // undefined 필드 제거
-                        const sanitizedTodo = Object.fromEntries(
-                            Object.entries(updatedTodo).filter(([_, v]) => v !== undefined)
-                        );
-                        
-                        await setDoc(todoDocRef, sanitizedTodo);
-                        console.log('✅ 목표 업데이트 소유자 Firestore 저장:', { ownerUid, updatedTodo: sanitizedTodo });
-                    } catch (error) {
-                        console.error('목표 업데이트 Firestore 저장 실패:', error);
-                    }
-                })();
+    const handleEditTodo = async (updatedTodo: Goal) => {
+        // Firestore에 저장 - 무조건 저장
+        if (googleUser) {
+            try {
+                const folder = folders.find(f => f.id === updatedTodo.folderId);
+                // 소유자: 자신의 Firestore에 저장
+                // 협업자: 폴더 소유자의 Firestore에 저장 (동기화를 위해)
+                const targetOwnerUid = folder?.ownerId || googleUser.uid;
+                
+                const todosRef = collection(db, 'users', targetOwnerUid, 'todos');
+                const todoDocRef = doc(todosRef, updatedTodo.id.toString());
+                
+                // undefined 필드 제거
+                const sanitizedTodo = Object.fromEntries(
+                    Object.entries(updatedTodo).filter(([_, v]) => v !== undefined)
+                );
+                
+                await setDoc(todoDocRef, sanitizedTodo);
+                console.log('✅ 목표 업데이트 Firestore 저장:', { targetOwnerUid, updatedTodo: sanitizedTodo });
+            } catch (error) {
+                console.error('❌ 목표 업데이트 Firestore 저장 실패:', error);
             }
         }
         
+        // UI 업데이트
         setTodos(todos.map(todo => (todo.id === updatedTodo.id ? updatedTodo : todo)));
         setEditingTodo(null);
     };
 
-    const handleDeleteTodo = (id: number) => {
-        // Firestore에서 삭제 (공유 폴더인 경우 - 소유자의 Firestore에서 삭제)
+    const handleDeleteTodo = async (id: number) => {
         const todoToDelete = todos.find(t => t.id === id);
-        if (todoToDelete?.folderId && googleUser) {
-            const folder = folders.find(f => f.id === todoToDelete.folderId);
-            if (folder?.ownerId) {
-                (async () => {
-                    try {
-                        // 👉 중요: 소유자의 Firestore에서 삭제
-                        const ownerUid = folder.ownerId;
-                        const todosRef = collection(db, 'users', ownerUid, 'todos');
-                        const todoDocRef = doc(todosRef, id.toString());
-                        await deleteDoc(todoDocRef);
-                        console.log('✅ 목표 소유자 Firestore 삭제:', { ownerUid, id });
-                    } catch (error) {
-                        console.error('목표 Firestore 삭제 실패:', error);
-                    }
-                })();
+        
+        // Firestore에서 삭제 - 무조건 삭제
+        if (googleUser && todoToDelete) {
+            try {
+                const folder = folders.find(f => f.id === todoToDelete.folderId);
+                // 소유자: 자신의 Firestore에서 삭제
+                // 협업자: 폴더 소유자의 Firestore에서 삭제 (동기화를 위해)
+                const targetOwnerUid = folder?.ownerId || googleUser.uid;
+                
+                const todosRef = collection(db, 'users', targetOwnerUid, 'todos');
+                const todoDocRef = doc(todosRef, id.toString());
+                await deleteDoc(todoDocRef);
+                console.log('✅ 목표 Firestore 삭제:', { targetOwnerUid, id });
+            } catch (error) {
+                console.error('❌ 목표 Firestore 삭제 실패:', error);
             }
         }
         
+        // UI 업데이트
         setTodos(todos.filter(todo => todo.id !== id));
     };
 
@@ -2037,11 +2033,37 @@ const App: React.FC = () => {
         }
     };
 
-    const handleMoveToFolder = (goalId: number, folderId: string | null) => {
-        setTodos(todos.map(todo =>
-            todo.id === goalId
-                ? { ...todo, folderId: folderId || undefined }
-                : todo
+    const handleMoveToFolder = async (goalId: number, folderId: string | null) => {
+        const todo = todos.find(t => t.id === goalId);
+        if (!todo) return;
+        
+        const updatedTodo = { ...todo, folderId: folderId || undefined };
+        
+        // Firestore에 저장
+        if (googleUser) {
+            try {
+                const folder = folders.find(f => f.id === (folderId || todo.folderId));
+                const targetOwnerUid = folder?.ownerId || googleUser.uid;
+                
+                const todosRef = collection(db, 'users', targetOwnerUid, 'todos');
+                const todoDocRef = doc(todosRef, goalId.toString());
+                
+                const sanitizedTodo = Object.fromEntries(
+                    Object.entries(updatedTodo).filter(([_, v]) => v !== undefined)
+                );
+                
+                await setDoc(todoDocRef, sanitizedTodo);
+                console.log('✅ 목표 폴더 이동 Firestore 저장:', { targetOwnerUid, goalId, folderId });
+            } catch (error) {
+                console.error('❌ 목표 폴더 이동 Firestore 저장 실패:', error);
+            }
+        }
+        
+        // UI 업데이트
+        setTodos(todos.map(t =>
+            t.id === goalId
+                ? updatedTodo
+                : t
         ));
         setToastMessage('✅ 목표가 폴더로 이동되었습니다');
         setTimeout(() => setToastMessage(''), 3000);
@@ -2055,27 +2077,52 @@ const App: React.FC = () => {
         ));
     };
 
-    const handleToggleComplete = (id: number) => {
+    const handleToggleComplete = async (id: number) => {
         const today = new Date().toISOString();
-        setTodos(todos.map(todo => {
-            if (todo.id === id) {
-                const isCompleted = !todo.completed;
-                let newStreak = todo.streak;
-                if (todo.isRecurring) {
-                    if (isCompleted) {
-                        if (!todo.lastCompletedDate || !isSameDay(today, todo.lastCompletedDate)) {
-                            newStreak = (todo.streak || 0) + 1;
-                        }
-                    } else {
-                        if (todo.lastCompletedDate && isSameDay(today, todo.lastCompletedDate)) {
-                            newStreak = Math.max(0, (todo.streak || 1) - 1);
-                        }
+        const updatedTodo = (() => {
+            const todo = todos.find(t => t.id === id);
+            if (!todo) return null;
+            
+            const isCompleted = !todo.completed;
+            let newStreak = todo.streak;
+            if (todo.isRecurring) {
+                if (isCompleted) {
+                    if (!todo.lastCompletedDate || !isSameDay(today, todo.lastCompletedDate)) {
+                        newStreak = (todo.streak || 0) + 1;
+                    }
+                } else {
+                    if (todo.lastCompletedDate && isSameDay(today, todo.lastCompletedDate)) {
+                        newStreak = Math.max(0, (todo.streak || 1) - 1);
                     }
                 }
-                return { ...todo, completed: isCompleted, lastCompletedDate: isCompleted ? today : todo.lastCompletedDate, streak: newStreak };
             }
-            return todo;
-        }));
+            return { ...todo, completed: isCompleted, lastCompletedDate: isCompleted ? today : todo.lastCompletedDate, streak: newStreak };
+        })();
+        
+        if (!updatedTodo) return;
+        
+        // Firestore에 저장
+        if (googleUser) {
+            try {
+                const folder = folders.find(f => f.id === updatedTodo.folderId);
+                const targetOwnerUid = folder?.ownerId || googleUser.uid;
+                
+                const todosRef = collection(db, 'users', targetOwnerUid, 'todos');
+                const todoDocRef = doc(todosRef, id.toString());
+                
+                const sanitizedTodo = Object.fromEntries(
+                    Object.entries(updatedTodo).filter(([_, v]) => v !== undefined)
+                );
+                
+                await setDoc(todoDocRef, sanitizedTodo);
+                console.log('✅ 목표 완료 상태 Firestore 저장:', { targetOwnerUid, id, completed: updatedTodo.completed });
+            } catch (error) {
+                console.error('❌ 목표 완료 상태 Firestore 저장 실패:', error);
+            }
+        }
+        
+        // UI 업데이트
+        setTodos(todos.map(todo => (todo.id === id ? updatedTodo : todo)));
     };
     
     const handleSort = async (type: string) => {
