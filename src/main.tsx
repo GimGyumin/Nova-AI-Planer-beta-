@@ -1606,7 +1606,8 @@ const App: React.FC = () => {
                 }
             }
         }, (error) => {
-            console.error('공유 폴더 메타데이터 동기화 실패:', error);
+            // 폴더 메타데이터 오류는 로깅만 하고 계속 진행 (목표 동기화는 해야 함)
+            console.warn('⚠️ 공유 폴더 메타데이터 접근 오류 (협업자 목록 업데이트 안 됨):', error.code);
         });
         unsubscribers.push(folderUnsubscribe);
 

@@ -1,14 +1,9 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // 사용자의 폴더 (소유자만 쓰기, 협업자 읽기)
-    match /users/{userId}/folders/{folderId} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null && request.auth.uid == userId;
-    }
-    
-    // 사용자의 목표 (누구나 읽고 쓸 수 있음 - 클라이언트에서 권한 검증)
-    match /users/{userId}/todos/{todoId} {
+    // 인증된 모든 사용자에게 데이터 접근 허용
+    // (실제 협업자 검증은 클라이언트에서 수행)
+    match /users/{userId}/{document=**} {
       allow read, write: if request.auth != null;
     }
   }
