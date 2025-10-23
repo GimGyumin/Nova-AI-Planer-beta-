@@ -1475,6 +1475,7 @@ const App: React.FC = () => {
                             };
 
                             // Firestore에서 최신 협업자 목록 조회 및 자동 추가
+                            let finalFolderData = newFolder;
                             if (ownerUserId && googleUser) {
                                 try {
                                     console.log('🔍 협업자 추가 시작:', { ownerUserId, googleUserUid: googleUser.uid });
@@ -1503,7 +1504,7 @@ const App: React.FC = () => {
                                             collaborators = [...collaborators, newCollaborator];
                                             console.log('📝 새로운 협업자 목록:', collaborators);
                                             
-                                            // 소유자의 Firestore에 협업자 목록 저장
+                                            // 소유자의 Firestore에 협업자 목록 저장 - 반드시 await
                                             await setDoc(folderDocRef, {
                                                 collaborators: collaborators,
                                                 updatedAt: new Date().toISOString()
@@ -1514,8 +1515,8 @@ const App: React.FC = () => {
                                             console.log('ℹ️ 이미 협업자임');
                                         }
                                         
-                                        // 협업자 목록 업데이트
-                                        newFolder.collaborators = collaborators;
+                                        // 협업자 목록 업데이트 - Firestore 저장 후에 UI 업데이트
+                                        finalFolderData = { ...newFolder, collaborators: collaborators };
                                     } else {
                                         console.warn('⚠️ 폴더가 존재하지 않음:', shareInfo.folderId);
                                     }
@@ -1526,12 +1527,14 @@ const App: React.FC = () => {
                                 console.warn('⚠️ 협업자 추가 조건 미충족:', { ownerUserId, hasGoogleUser: !!googleUser });
                             }
 
-                            setFolders([...folders, newFolder]);
-                            setCurrentFolderId(newFolder.id);
+                            // Firestore 저장 완료 후 폴더 추가 및 현재 폴더 설정
+                            setFolders([...folders, finalFolderData]);
+                            // setCurrentFolderId를 설정하면 useEffect가 자동으로 handleSetCurrentFolder를 호출함
+                            setCurrentFolderId(finalFolderData.id);
 
                             setAlertConfig({
                                 title: '공유 폴더 추가됨',
-                                message: `"${shareInfo.folderName}" 폴더가 추가되었습니다.`,
+                                message: `"${shareInfo.folderName}" 폴더가 추가되었습니다. 잠시 후 목표들이 로드됩니다.`,
                                 confirmText: '확인',
                                 onConfirm: () => {
                                     window.history.replaceState({}, document.title, window.location.pathname);
