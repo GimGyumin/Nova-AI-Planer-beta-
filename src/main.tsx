@@ -4,7 +4,7 @@ import { GoogleOAuthProvider, useGoogleLogin } from '@react-oauth/google';
 import { GoogleGenAI, Type } from "@google/genai";
 import { auth, googleProvider, db } from './firebase-config';
 import { signInWithPopup, signOut, onAuthStateChanged, User } from 'firebase/auth';
-import { collection, doc, updateDoc, setDoc, onSnapshot } from 'firebase/firestore';
+import { collection, doc, updateDoc, setDoc, onSnapshot, getDoc } from 'firebase/firestore';
 import { httpsCallable, getFunctions } from 'firebase/functions';
 import './index.css';
 
@@ -1380,126 +1380,187 @@ const App: React.FC = () => {
     }, []);
 
     useEffect(() => {
-        const urlParams = new URLSearchParams(window.location.search);
-        const dataFromUrl = urlParams.get('data');
-        const folderShareData = urlParams.get('folder_share');
-        
-        // 폴더 공유 링크 처리
-        if (folderShareData) {
-            try {
-                const decodedJson = base64ToUtf8(folderShareData);
-                const shareInfo = JSON.parse(decodedJson);
-                
-                if (shareInfo.type === 'folder_share' && shareInfo.folderId) {
-                    // 암호가 설정되어 있는 경우 검증
-                    if (shareInfo.password) {
-                        const savedPassword = sessionStorage.getItem(`folder_${shareInfo.folderId}_password`);
-                        
-                        if (!savedPassword || savedPassword !== shareInfo.password) {
-                            // 암호 입력 받기
-                            setAlertConfig({
-                                title: '암호 입력',
-                                message: '이 폴더는 암호로 보호되어 있습니다. 암호를 입력하세요.',
-                                confirmText: '확인',
-                                cancelText: '취소',
-                                onConfirm: () => {
-                                    // 암호 입력 프롬프트 (커스텀)
-                                    const password = prompt('폴더 암호를 입력하세요:');
-                                    if (password === shareInfo.password) {
-                                        sessionStorage.setItem(`folder_${shareInfo.folderId}_password`, password);
-                                        // 재시도
-                                        window.location.reload();
-                                    } else if (password !== null) {
-                                        setAlertConfig({
-                                            title: '암호 오류',
-                                            message: '암호가 일치하지 않습니다.',
-                                            confirmText: '확인',
-                                            onConfirm: () => {
-                                                window.history.replaceState({}, document.title, window.location.pathname);
-                                            }
-                                        });
+        const handleFolderShare = async () => {
+            const urlParams = new URLSearchParams(window.location.search);
+            const dataFromUrl = urlParams.get('data');
+            const folderShareData = urlParams.get('folder_share');
+            
+            // 폴더 공유 링크 처리
+            if (folderShareData) {
+                try {
+                    const decodedJson = base64ToUtf8(folderShareData);
+                    const shareInfo = JSON.parse(decodedJson);
+                    
+                    if (shareInfo.type === 'folder_share' && shareInfo.folderId) {
+                        // 암호가 설정되어 있는 경우 검증
+                        if (shareInfo.password) {
+                            const savedPassword = sessionStorage.getItem(`folder_${shareInfo.folderId}_password`);
+                            
+                            if (!savedPassword || savedPassword !== shareInfo.password) {
+                                // 암호 입력 받기
+                                setAlertConfig({
+                                    title: '암호 입력',
+                                    message: '이 폴더는 암호로 보호되어 있습니다. 암호를 입력하세요.',
+                                    confirmText: '확인',
+                                    cancelText: '취소',
+                                    onConfirm: () => {
+                                        // 암호 입력 프롬프트 (커스텀)
+                                        const password = prompt('폴더 암호를 입력하세요:');
+                                        if (password === shareInfo.password) {
+                                            sessionStorage.setItem(`folder_${shareInfo.folderId}_password`, password);
+                                            // 재시도
+                                            window.location.reload();
+                                        } else if (password !== null) {
+                                            setAlertConfig({
+                                                title: '암호 오류',
+                                                message: '암호가 일치하지 않습니다.',
+                                                confirmText: '확인',
+                                                onConfirm: () => {
+                                                    window.history.replaceState({}, document.title, window.location.pathname);
+                                                }
+                                            });
+                                        }
+                                    },
+                                    onCancel: () => {
+                                        window.history.replaceState({}, document.title, window.location.pathname);
                                     }
-                                },
-                                onCancel: () => {
+                                });
+                                return;
+                            }
+                        }
+                        
+                        // 이미 폴더가 있는지 확인
+                        const folderExists = folders.some(f => f.id === shareInfo.folderId);
+
+                        if (!folderExists) {
+                            // 만약 소유자 UID가 포함되어 있고 사용자가 로그인하지 않았다면 로그인 요구
+                            if (shareInfo.ownerId && !googleUser) {
+                                setAlertConfig({
+                                    title: '로그인 필요',
+                                    message: '이 공유 폴더는 소유자 기반 동기화를 위해 로그인이 필요합니다. 계속하려면 로그인하세요.',
+                                    confirmText: '로그인',
+                                    cancelText: '취소',
+                                    onConfirm: async () => {
+                                        // 로그인 흐름을 호출하고 URL 재처리를 위해 페이지를 다시 불러옵니다.
+                                        try {
+                                            await handleFirebaseGoogleLogin();
+                                        } catch (e) {
+                                            console.error('로그인 중 오류:', e);
+                                        }
+                                    },
+                                    onCancel: () => {
+                                        window.history.replaceState({}, document.title, window.location.pathname);
+                                    }
+                                });
+                                return;
+                            }
+
+                            // 새 폴더 추가 (소유자 UID가 있으면 userId에 UID를 저장)
+                            const ownerUserId = shareInfo.ownerId || null;
+                            const newFolder: Folder = {
+                                id: shareInfo.folderId,
+                                name: shareInfo.folderName,
+                                color: shareInfo.folderColor || '#007AFF',
+                                ownerId: ownerUserId || shareInfo.sharedBy,
+                                collaborators: [
+                                    {
+                                        userId: ownerUserId || `owner_${Date.now()}`,
+                                        email: shareInfo.sharedBy || '',
+                                        role: 'owner',
+                                        addedAt: shareInfo.sharedAt
+                                    }
+                                ],
+                                createdAt: shareInfo.sharedAt,
+                                updatedAt: shareInfo.sharedAt
+                            };
+
+                            // Firestore에서 최신 협업자 목록 조회 (권한 검증)
+                            if (ownerUserId && googleUser) {
+                                try {
+                                    const foldersRef = collection(db, 'users', ownerUserId, 'folders');
+                                    const folderDocRef = doc(foldersRef, shareInfo.folderId);
+                                    const folderDoc = await getDoc(folderDocRef);
+                                    
+                                    if (folderDoc.exists()) {
+                                        const folderData = folderDoc.data();
+                                        const collaborators = folderData.collaborators || [];
+                                        
+                                        // 현재 사용자가 협업자 목록에 있는지 확인
+                                        const isCollaborator = collaborators.some((c: any) => c.userId === googleUser.uid);
+                                        
+                                        if (!isCollaborator) {
+                                            setAlertConfig({
+                                                title: '접근 권한 없음',
+                                                message: '이 폴더에 접근할 권한이 없습니다. 폴더 소유자에게 협업자로 추가되어야 합니다.',
+                                                confirmText: '확인',
+                                                onConfirm: () => {
+                                                    window.history.replaceState({}, document.title, window.location.pathname);
+                                                }
+                                            });
+                                            return;
+                                        }
+                                        
+                                        // 협업자 목록 업데이트
+                                        newFolder.collaborators = collaborators;
+                                    }
+                                } catch (error) {
+                                    console.error('협업자 목록 조회 실패:', error);
+                                }
+                            }
+
+                            setFolders([...folders, newFolder]);
+                            setCurrentFolderId(newFolder.id);
+
+                            setAlertConfig({
+                                title: '공유 폴더 추가됨',
+                                message: `"${shareInfo.folderName}" 폴더가 추가되었습니다.`,
+                                confirmText: '확인',
+                                onConfirm: () => {
                                     window.history.replaceState({}, document.title, window.location.pathname);
                                 }
                             });
-                            return;
+                        } else {
+                            window.history.replaceState({}, document.title, window.location.pathname);
                         }
                     }
-                    
-                    // 이미 폴더가 있는지 확인
-                    const folderExists = folders.some(f => f.id === shareInfo.folderId);
-                    
-                    if (!folderExists) {
-                        // 새 폴더 추가
-                        const newFolder: Folder = {
-                            id: shareInfo.folderId,
-                            name: shareInfo.folderName,
-                            color: shareInfo.folderColor || '#007AFF',
-                            ownerId: shareInfo.sharedBy,
-                            collaborators: [
-                                {
-                                    userId: `owner_${Date.now()}`,
-                                    email: shareInfo.sharedBy,
-                                    role: 'owner',
-                                    addedAt: shareInfo.sharedAt
-                                }
-                            ],
-                            createdAt: shareInfo.sharedAt,
-                            updatedAt: shareInfo.sharedAt
-                        };
-                        
-                        setFolders([...folders, newFolder]);
-                        setCurrentFolderId(newFolder.id);
-                        
+                } catch (e) {
+                    console.error("폴더 공유 데이터 파싱 실패:", e);
+                    window.history.replaceState({}, document.title, window.location.pathname);
+                }
+                return; // folder_share가 있으면 data 파라미터는 무시
+            }
+        
+            // 기존 데이터 공유 링크 처리
+            if (dataFromUrl) {
+                try {
+                    const decodedJson = base64ToUtf8(dataFromUrl);
+                    const importedTodos = JSON.parse(decodedJson);
+                    if (Array.isArray(importedTodos) && (importedTodos.length === 0 || ('wish' in importedTodos[0] && 'id' in importedTodos[0]))) {
                         setAlertConfig({
-                            title: '공유 폴더 추가됨',
-                            message: `"${shareInfo.folderName}" 폴더가 추가되었습니다.`,
-                            confirmText: '확인',
+                            title: t('url_import_title'),
+                            message: t('url_import_message'),
+                            confirmText: t('url_import_confirm'),
+                            cancelText: t('cancel_button'),
                             onConfirm: () => {
+                                setTodos(importedTodos);
+                                setToastMessage(t('url_import_success'));
                                 window.history.replaceState({}, document.title, window.location.pathname);
+                            },
+                            onCancel: () => {
+                                 window.history.replaceState({}, document.title, window.location.pathname);
                             }
                         });
-                    } else {
-                        window.history.replaceState({}, document.title, window.location.pathname);
-                    }
+                    } else { throw new Error("Invalid data format"); }
+                } catch (e) {
+                    console.error("Failed to parse data from URL", e);
+                    setAlertConfig({ title: t('import_error_alert_title'), message: t('url_import_error') });
+                     window.history.replaceState({}, document.title, window.location.pathname);
                 }
-            } catch (e) {
-                console.error("폴더 공유 데이터 파싱 실패:", e);
-                window.history.replaceState({}, document.title, window.location.pathname);
             }
-            return; // folder_share가 있으면 data 파라미터는 무시
-        }
+        };;
         
-        // 기존 데이터 공유 링크 처리
-        if (dataFromUrl) {
-            try {
-                const decodedJson = base64ToUtf8(dataFromUrl);
-                const importedTodos = JSON.parse(decodedJson);
-                if (Array.isArray(importedTodos) && (importedTodos.length === 0 || ('wish' in importedTodos[0] && 'id' in importedTodos[0]))) {
-                    setAlertConfig({
-                        title: t('url_import_title'),
-                        message: t('url_import_message'),
-                        confirmText: t('url_import_confirm'),
-                        cancelText: t('cancel_button'),
-                        onConfirm: () => {
-                            setTodos(importedTodos);
-                            setToastMessage(t('url_import_success'));
-                            window.history.replaceState({}, document.title, window.location.pathname);
-                        },
-                        onCancel: () => {
-                             window.history.replaceState({}, document.title, window.location.pathname);
-                        }
-                    });
-                } else { throw new Error("Invalid data format"); }
-            } catch (e) {
-                console.error("Failed to parse data from URL", e);
-                setAlertConfig({ title: t('import_error_alert_title'), message: t('url_import_error') });
-                 window.history.replaceState({}, document.title, window.location.pathname);
-            }
-        }
-    }, [t, folders]);
+        handleFolderShare();
+    }, [t, folders, googleUser, handleFirebaseGoogleLogin]);
 
     // 공유 폴더의 목표를 Firestore에서 실시간으로 동기화
     useEffect(() => {
@@ -1509,38 +1570,72 @@ const App: React.FC = () => {
         const folder = folders.find(f => f.id === currentFolderId);
         if (!folder || !folder.collaborators || folder.collaborators.length === 0) return;
         
-        // 공유 폴더의 소유자 이메일 찾기
+        // 공유 폴더의 소유자 정보 찾기 (userId 우선)
         const owner = folder.collaborators.find(c => c.role === 'owner');
         if (!owner) return;
-        
+
         // 소유자의 Firestore에서 이 폴더의 목표를 감시
-        // 주의: 보안 규칙에서 다른 사용자의 폴더를 읽을 수 있도록 설정해야 함
-        const folderRef = doc(db, 'users', owner.email.split('@')[0], 'folders', currentFolderId);
-        
-        const unsubscribe = onSnapshot(folderRef, (folderSnapshot) => {
+        const ownerDocId = owner.userId && owner.userId.startsWith('owner_') ? null : owner.userId;
+        const ownerKey = ownerDocId || (owner.email ? owner.email.split('@')[0] : null);
+        if (!ownerKey) return;
+
+        const unsubscribers: (() => void)[] = [];
+
+        // 1. 폴더 메타데이터 감시
+        const folderRef = doc(db, 'users', ownerKey, 'folders', currentFolderId);
+        const folderUnsubscribe = onSnapshot(folderRef, (folderSnapshot) => {
             if (folderSnapshot.exists()) {
                 const sharedFolderData = folderSnapshot.data();
                 
                 // 폴더의 협업자 목록 업데이트
                 if (sharedFolderData.collaborators) {
-                    setFolders(folders.map(f => 
+                    setFolders(prevFolders => prevFolders.map(f => 
                         f.id === currentFolderId 
                             ? { ...f, collaborators: sharedFolderData.collaborators }
                             : f
                     ));
                 }
-                
-                // 이 폴더의 목표 가져오기
-                const folderTodos = todos.filter(t => t.folderId === currentFolderId);
-                // 실시간 업데이트된 목표 동기화
-                // (목표는 별도의 컬렉션이므로 여기서는 폴더 정보만 동기화)
             }
         }, (error) => {
-            console.error('공유 폴더 실시간 동기화 실패:', error);
+            console.error('공유 폴더 메타데이터 동기화 실패:', error);
         });
-        
-        return () => unsubscribe();
-    }, [currentFolderId, googleUser, folders, todos]);
+        unsubscribers.push(folderUnsubscribe);
+
+        // 2. 소유자의 목표 컬렉션 감시
+        const todosRef = collection(db, 'users', ownerKey, 'todos');
+        const todosUnsubscribe = onSnapshot(todosRef, (todosSnapshot) => {
+            const ownerTodos: Goal[] = [];
+            todosSnapshot.forEach((doc) => {
+                const data = doc.data();
+                if (data.folderId === currentFolderId) {
+                    ownerTodos.push({ id: parseInt(doc.id), ...data } as Goal);
+                }
+            });
+            
+            // 소유자의 목표와 현재 사용자의 목표를 병합
+            setTodos(prevTodos => {
+                // 현재 사용자의 다른 폴더 목표 유지
+                const otherFolderTodos = prevTodos.filter(t => t.folderId !== currentFolderId);
+                // 소유자의 목표와 병합
+                const merged = [...otherFolderTodos, ...ownerTodos];
+                // 중복 제거 (id가 같으면 ownerTodos 우선)
+                const seen = new Set<number>();
+                const deduped = merged.reverse().filter(t => {
+                    if (seen.has(t.id)) return false;
+                    seen.add(t.id);
+                    return true;
+                }).reverse();
+                return deduped;
+            });
+        }, (error) => {
+            console.error('소유자 목표 동기화 실패:', error);
+        });
+        unsubscribers.push(todosUnsubscribe);
+
+        return () => {
+            unsubscribers.forEach(unsub => unsub());
+        };
+    }, [currentFolderId, googleUser, folders]);
 
     
     // 시스템 다크모드 감지 및 적용
@@ -3097,34 +3192,60 @@ const FolderCollaborationModal: React.FC<{
     const [showPasswordInput, setShowPasswordInput] = useState(false);
 
     const handleCreateShareLink = async () => {
-        if (!folder) return;
+        if (!folder || !googleUser) return;
         
         setIsGeneratingLink(true);
         
         try {
-            // 폴더 정보와 협업자 정보를 포함한 공유 데이터 생성
+            // 암호 필수 입력
+            if (!linkPassword || linkPassword.trim().length === 0) {
+                setAlertConfig({
+                    title: '암호 설정 필수',
+                    message: '보안을 위해 공유 링크에 반드시 암호를 설정해주세요.',
+                    confirmText: '확인',
+                    onConfirm: () => {}
+                });
+                setIsGeneratingLink(false);
+                return;
+            }
+
             const shareData = {
                 type: 'folder_share',
                 folderId: folder.id,
                 folderName: folder.name,
                 folderColor: folder.color,
-                goals: [], // 비움 - 폴더만 공유
+                goals: [],
                 sharedBy: googleUser?.email,
+                ownerId: googleUser?.uid,
                 sharedAt: new Date().toISOString(),
-                password: linkPassword || undefined, // 암호 포함
+                password: linkPassword,
             };
             
-            // 데이터 압축 및 인코딩
+            // Firestore에 협업자 정보 저장
+            const foldersRef = collection(db, 'users', googleUser.uid, 'folders');
+            const folderDocRef = doc(foldersRef, folder.id);
+            
+            // 현재 협업자 목록 가져오기
+            const currentCollaborators = folder.collaborators || [];
+            
+            // Firestore 업데이트
+            await setDoc(folderDocRef, {
+                collaborators: currentCollaborators,
+                shareInfo: {
+                    password: linkPassword,
+                    createdAt: new Date().toISOString(),
+                },
+                updatedAt: new Date().toISOString()
+            }, { merge: true });
+            
             const encodedData = utf8ToBase64(JSON.stringify(shareData));
             const longUrl = `${window.location.origin}${window.location.pathname}?folder_share=${encodeURIComponent(encodedData)}`;
-            
-            // 단축 URL 생성 시도
             const finalUrl = await createShortUrl(longUrl);
             setShareableLink(finalUrl);
             
             setAlertConfig({
                 title: '공유 링크 생성 완료',
-                message: `${linkPassword ? '암호가 설정되었습니다. ' : ''}클립보드에 복사되었습니다. 협업자에게 공유해주세요!`,
+                message: '클립보드에 복사되었습니다. 협업자에게 공유해주세요!',
                 confirmText: '확인',
                 onConfirm: () => {
                     navigator.clipboard.writeText(finalUrl);
@@ -3164,8 +3285,6 @@ const FolderCollaborationModal: React.FC<{
             const folderDocRef = doc(foldersRef, folder.id);
             
             const updatedCollaborators = (folder.collaborators || []).filter(c => c.userId !== userId);
-            
-            // Firestore 업데이트 (문서가 없으면 생성하도록 merge 사용)
             await setDoc(folderDocRef, {
                 collaborators: updatedCollaborators,
                 updatedAt: new Date().toISOString()
@@ -3183,7 +3302,7 @@ const FolderCollaborationModal: React.FC<{
             console.error('협업자 제거 실패:', error);
             setAlertConfig({
                 title: '제거 실패',
-                message: `협업자 제거에 실패했습니다. ${error instanceof Error ? error.message : ''}`,
+                message: `협업자 제거에 실패했습니다.`,
                 confirmText: '확인',
                 onConfirm: () => {}
             });
@@ -3201,7 +3320,6 @@ const FolderCollaborationModal: React.FC<{
                 c.userId === userId ? { ...c, role: newRole } : c
             );
             
-            // Firestore 업데이트
             await setDoc(folderDocRef, {
                 collaborators: updatedCollaborators,
                 updatedAt: new Date().toISOString()
@@ -3217,206 +3335,191 @@ const FolderCollaborationModal: React.FC<{
             });
         } catch (error) {
             console.error('권한 변경 실패:', error);
-            setAlertConfig({
-                title: '권한 변경 실패',
-                message: `협업자 권한 변경에 실패했습니다.`,
-                confirmText: '확인',
-                onConfirm: () => {}
-            });
         }
     };
 
     if (!folder) return null;
 
     return (
-        <Modal onClose={handleClose} isClosing={isClosing} className="collaboration-modal">
-            <div style={{ padding: '24px' }}>
-                <h2 style={{ marginBottom: '20px', fontSize: '1.2rem', fontWeight: 600 }}>📁 {folder.name} 폴더 공유</h2>
-                
-                {/* 현재 협업자 목록 */}
-                <div style={{ marginBottom: '24px', paddingBottom: '16px', borderBottom: '1px solid var(--border-color)' }}>
-                    <h3 style={{ fontSize: '0.95rem', fontWeight: 500, marginBottom: '12px' }}>현재 협업자</h3>
-                    {folder.collaborators && folder.collaborators.length > 0 ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                            {folder.collaborators.map((collab) => (
-                                <div key={collab.userId} style={{ 
-                                    display: 'flex', 
-                                    justifyContent: 'space-between', 
-                                    alignItems: 'center', 
-                                    padding: '10px', 
-                                    backgroundColor: 'var(--card-bg-color)', 
-                                    borderRadius: '6px',
-                                    border: '1px solid var(--border-color)'
-                                }}>
-                                    <div style={{ flex: 1 }}>
-                                        <div style={{ fontWeight: 500, fontSize: '0.9rem' }}>{collab.email}</div>
-                                        {collab.role === 'owner' ? (
-                                            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary-color)', fontWeight: 500 }}>
-                                                소유자
-                                            </div>
-                                        ) : (
-                                            <select 
-                                                value={collab.role}
-                                                onChange={(e) => handleChangeCollaboratorRole(collab.userId, e.target.value as 'editor' | 'viewer')}
+        <Modal onClose={handleClose} isClosing={isClosing} className="goal-assistant-modal">
+            <div className="goal-assistant-header">
+                <div className="goal-assistant-header-left" />
+                <h2>{folder.name} 폴더 공유</h2>
+                <div className="goal-assistant-header-right"><button onClick={handleClose} className="close-button">{icons.close}</button></div>
+            </div>
+
+            <div className="goal-assistant-body">
+                <div style={{ padding: '24px 16px' }}>
+                    {/* 현재 협업자 목록 */}
+                    <div style={{ marginBottom: '20px' }}>
+                        <h3 style={{ fontSize: '1rem', fontWeight: '600', marginBottom: '12px' }}>현재 협업자</h3>
+                        {folder.collaborators && folder.collaborators.length > 0 ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                {folder.collaborators.map((collab) => (
+                                    <div key={collab.userId} className="settings-item" style={{ padding: '12px', backgroundColor: 'var(--card-bg-color)', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <div style={{ flex: 1 }}>
+                                            <div style={{ fontWeight: '500', fontSize: '0.95rem' }}>{collab.email}</div>
+                                            {collab.role === 'owner' ? (
+                                                <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary-color)', marginTop: '2px' }}>소유자</div>
+                                            ) : (
+                                                <select 
+                                                    value={collab.role}
+                                                    onChange={(e) => handleChangeCollaboratorRole(collab.userId, e.target.value as 'editor' | 'viewer')}
+                                                    style={{ 
+                                                        fontSize: '0.85rem', 
+                                                        padding: '4px 8px',
+                                                        marginTop: '4px',
+                                                        borderRadius: '4px',
+                                                        border: '1px solid var(--border-color)',
+                                                        backgroundColor: 'var(--input-bg-color)',
+                                                        color: 'var(--text-color)',
+                                                        cursor: 'pointer'
+                                                    }}
+                                                >
+                                                    <option value="editor">편집자</option>
+                                                    <option value="viewer">뷰어</option>
+                                                </select>
+                                            )}
+                                        </div>
+                                        {collab.role !== 'owner' && (
+                                            <button 
+                                                onClick={() => handleRemoveCollaborator(collab.userId)}
                                                 style={{ 
-                                                    fontSize: '0.8rem', 
-                                                    padding: '2px 4px',
-                                                    borderRadius: '4px',
-                                                    border: '1px solid var(--border-color)',
-                                                    backgroundColor: 'var(--input-bg-color)',
-                                                    color: 'var(--text-color)',
-                                                    cursor: 'pointer'
+                                                    padding: '4px 12px', 
+                                                    backgroundColor: 'var(--danger-color)', 
+                                                    color: 'white', 
+                                                    border: 'none', 
+                                                    borderRadius: '4px', 
+                                                    cursor: 'pointer',
+                                                    fontSize: '0.8rem',
+                                                    marginLeft: '12px',
+                                                    whiteSpace: 'nowrap'
                                                 }}
                                             >
-                                                <option value="editor">편집자</option>
-                                                <option value="viewer">뷰어</option>
-                                            </select>
+                                                제거
+                                            </button>
                                         )}
                                     </div>
-                                    {collab.role !== 'owner' && (
-                                        <button 
-                                            onClick={() => handleRemoveCollaborator(collab.userId)}
-                                            style={{ 
-                                                padding: '4px 12px', 
-                                                backgroundColor: 'var(--danger-color)', 
-                                                color: 'white', 
-                                                border: 'none', 
-                                                borderRadius: '4px', 
-                                                cursor: 'pointer',
-                                                fontSize: '0.8rem',
-                                                marginLeft: '8px'
-                                            }}
-                                        >
-                                            제거
-                                        </button>
-                                    )}
-                                </div>
-                            ))}
-                        </div>
-                    ) : (
-                        <p style={{ color: 'var(--text-secondary-color)', fontSize: '0.9rem' }}>협업자가 없습니다.</p>
-                    )}
-                </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="step-guidance"><p className="tip">협업자가 없습니다. 공유 링크로 협업자를 추가하세요.</p></div>
+                        )}
+                    </div>
 
-                {/* 공유 링크 섹션 */}
-                <div>
-                    <h3 style={{ fontSize: '0.95rem', fontWeight: 500, marginBottom: '12px' }}>공유 링크로 협업자 추가</h3>
-                    <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary-color)', marginBottom: '12px' }}>
-                        공유 링크를 생성하고 협업자에게 전달하면, 그들이 해당 폴더에 접근할 수 있습니다.
-                    </p>
-                    
-                    {!shareableLink ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                            {/* 암호 설정 옵션 */}
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <input 
-                                    type="checkbox" 
-                                    id="password-toggle"
-                                    checked={showPasswordInput}
-                                    onChange={(e) => setShowPasswordInput(e.target.checked)}
-                                    style={{ cursor: 'pointer' }}
-                                />
-                                <label htmlFor="password-toggle" style={{ fontSize: '0.9rem', cursor: 'pointer' }}>
-                                    링크에 암호 설정
+                    <hr style={{ margin: '20px 0', border: 'none', borderTop: '1px solid var(--border-color)' }} />
+
+                    {/* 공유 링크 섹션 */}
+                    <div style={{ marginBottom: '20px' }}>
+                        <h3 style={{ fontSize: '1rem', fontWeight: '600', marginBottom: '12px' }}>공유 링크로 협업자 추가</h3>
+                        <div className="step-guidance"><p className="tip">공유 링크를 생성하고 협업자에게 전달하면, 그들이 해당 폴더에 접근할 수 있습니다.</p></div>
+                        
+                        {!shareableLink ? (
+                            <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                {/* 암호 설정 옵션 */}
+                                <label className="settings-item standalone-toggle">
+                                    <span style={{ fontWeight: '500' }}>링크에 암호 설정</span>
+                                    <label className="theme-toggle-switch">
+                                        <input 
+                                            type="checkbox" 
+                                            checked={showPasswordInput}
+                                            onChange={(e) => {
+                                                setShowPasswordInput(e.target.checked);
+                                                if (!e.target.checked) setLinkPassword('');
+                                            }}
+                                        />
+                                        <span className="slider round"></span>
+                                    </label>
                                 </label>
-                            </div>
-                            
-                            {showPasswordInput && (
-                                <input 
-                                    type="password" 
-                                    placeholder="암호 입력 (선택사항)" 
-                                    value={linkPassword}
-                                    onChange={(e) => setLinkPassword(e.target.value)}
-                                    style={{ 
-                                        width: '100%', 
-                                        padding: '10px', 
-                                        borderRadius: '6px', 
-                                        border: '1px solid var(--border-color)', 
-                                        backgroundColor: 'var(--input-bg-color)', 
-                                        color: 'var(--text-color)',
-                                        fontFamily: 'inherit'
-                                    }}
-                                />
-                            )}
-                            
-                            <button 
-                                onClick={handleCreateShareLink}
-                                disabled={isGeneratingLink}
-                                style={{ 
-                                    width: '100%',
-                                    padding: '10px', 
-                                    backgroundColor: 'var(--primary-color)', 
-                                    color: 'white', 
-                                    border: 'none', 
-                                    borderRadius: '6px', 
-                                    cursor: isGeneratingLink ? 'not-allowed' : 'pointer',
-                                    fontWeight: 500,
-                                    opacity: isGeneratingLink ? 0.6 : 1
-                                }}
-                            >
-                                {isGeneratingLink ? '링크 생성 중...' : '공유 링크 생성'}
-                            </button>
-                        </div>
-                    ) : (
-                        <div>
-                            <div style={{ marginBottom: '12px', padding: '12px', backgroundColor: 'var(--card-bg-color)', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
-                                <input 
-                                    type="text" 
-                                    readOnly 
-                                    value={shareableLink} 
-                                    onClick={(e) => (e.target as HTMLInputElement).select()}
-                                    style={{
-                                        width: '100%',
-                                        padding: '8px',
-                                        border: '1px solid var(--border-color)',
-                                        borderRadius: '4px',
-                                        backgroundColor: 'var(--input-bg-color)',
-                                        color: 'var(--text-color)',
-                                        fontSize: '0.85rem',
-                                        boxSizing: 'border-box',
-                                        fontFamily: 'monospace'
-                                    }}
-                                />
-                            </div>
-                            <div style={{ display: 'flex', gap: '8px' }}>
+                                
+                                {showPasswordInput && (
+                                    <input 
+                                        type="password" 
+                                        placeholder="암호 입력" 
+                                        value={linkPassword}
+                                        onChange={(e) => setLinkPassword(e.target.value)}
+                                        style={{ 
+                                            width: '100%', 
+                                            padding: '12px', 
+                                            borderRadius: '8px', 
+                                            border: '1px solid var(--border-color)', 
+                                            backgroundColor: 'var(--input-bg-color)', 
+                                            color: 'var(--text-color)',
+                                            fontFamily: 'inherit',
+                                            fontSize: '14px',
+                                            boxSizing: 'border-box'
+                                        }}
+                                    />
+                                )}
+                                
                                 <button 
-                                    onClick={handleCopyLink}
+                                    onClick={handleCreateShareLink}
+                                    disabled={isGeneratingLink || !linkPassword.trim()}
                                     style={{ 
-                                        flex: 1,
-                                        padding: '10px', 
-                                        backgroundColor: 'var(--primary-color)', 
+                                        width: '100%',
+                                        padding: '12px', 
+                                        backgroundColor: isGeneratingLink || !linkPassword.trim() ? 'var(--primary-color)' : 'var(--primary-color)', 
                                         color: 'white', 
                                         border: 'none', 
-                                        borderRadius: '6px', 
-                                        cursor: 'pointer',
-                                        fontWeight: 500
+                                        borderRadius: '8px', 
+                                        cursor: isGeneratingLink || !linkPassword.trim() ? 'not-allowed' : 'pointer',
+                                        fontWeight: '600',
+                                        opacity: isGeneratingLink || !linkPassword.trim() ? 0.6 : 1,
+                                        fontSize: '15px',
+                                        transition: 'all 0.2s'
                                     }}
                                 >
-                                    클립보드 복사
-                                </button>
-                                <button 
-                                    onClick={() => setShareableLink('')}
-                                    style={{ 
-                                        flex: 1,
-                                        padding: '10px', 
-                                        backgroundColor: 'transparent', 
-                                        color: 'var(--primary-color)', 
-                                        border: '1px solid var(--primary-color)', 
-                                        borderRadius: '6px', 
-                                        cursor: 'pointer',
-                                        fontWeight: 500
-                                    }}
-                                >
-                                    새로 생성
+                                    {isGeneratingLink ? '링크 생성 중...' : '공유 링크 생성'}
                                 </button>
                             </div>
-                        </div>
-                    )}
+                        ) : (
+                            <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                <div style={{ padding: '12px', backgroundColor: 'var(--card-bg-color)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                                    <input 
+                                        type="text" 
+                                        readOnly 
+                                        value={shareableLink} 
+                                        onClick={(e) => (e.target as HTMLInputElement).select()}
+                                        style={{
+                                            width: '100%',
+                                            padding: '10px',
+                                            border: '1px solid var(--border-color)',
+                                            borderRadius: '6px',
+                                            backgroundColor: 'var(--input-bg-color)',
+                                            color: 'var(--text-color)',
+                                            fontSize: '0.85rem',
+                                            boxSizing: 'border-box',
+                                            fontFamily: 'monospace'
+                                        }}
+                                    />
+                                </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                                    <button 
+                                        onClick={handleCopyLink}
+                                        className="primary"
+                                    >
+                                        클립보드 복사
+                                    </button>
+                                    <button 
+                                        onClick={() => {
+                                            setShareableLink('');
+                                            setLinkPassword('');
+                                            setShowPasswordInput(false);
+                                        }}
+                                        className="secondary"
+                                    >
+                                        새로 생성
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
                 </div>
+            </div>
 
-                <div style={{ marginTop: '24px', display: 'flex', justifyContent: 'flex-end' }}>
-                    <button onClick={handleClose} className="primary">닫기</button>
-                </div>
+            <div className="goal-assistant-nav">
+                <div />
+                <button onClick={handleClose} className="primary">닫기</button>
             </div>
         </Modal>
     );
