@@ -1327,7 +1327,7 @@ const App: React.FC = () => {
             
             // 2. 설정값도 저장 (language, theme, colorMode, apiKey, notifications 등)
             const settingsRef = doc(db, 'users', googleUser.uid, 'data', 'settings');
-            await setDoc(settingsRef, {
+            const settingsData: any = {
                 language: language,
                 themeMode: themeMode,
                 isDarkMode: isDarkMode,
@@ -1335,10 +1335,14 @@ const App: React.FC = () => {
                 apiKey: apiKey,
                 isNotificationsEnabled: isNotificationsEnabled,
                 notificationSettings: notificationSettings,
-                reminderTimeSettings: reminderTimeSettings,
-                reminders: reminders,
                 updatedAt: serverTimestamp()
-            });
+            };
+            
+            // undefined 필드 제거
+            if (reminderTimeSettings) settingsData.reminderTimeSettings = reminderTimeSettings;
+            if (reminders && reminders.length > 0) settingsData.reminders = reminders;
+            
+            await setDoc(settingsRef, settingsData);
             
             setToastMessage('✅ 데이터 동기화 완료! (목표: ' + sanitizedTodos.length + '개, 설정 저장)');
             setTimeout(() => setToastMessage(''), 3000);
@@ -2045,6 +2049,7 @@ const Header: React.FC<{ t: (key: string) => any; isSelectionMode: boolean; sele
                                         <button onClick={() => { onSort('newest'); }} className={`popover-action-button ${sortType === 'newest' ? 'active' : ''}`}><span>{t('sort_label_newest')}</span>{sortType === 'newest' && icons.check}</button>
                                         <button onClick={() => { onSort('alphabetical'); }} className={`popover-action-button ${sortType === 'alphabetical' ? 'active' : ''}`}><span>{t('sort_label_alphabetical')}</span>{sortType === 'alphabetical' && icons.check}</button>
                                         <button onClick={() => { onSort('ai'); }} className="popover-action-button with-icon"><span className="popover-button-icon">{icons.ai}</span><span>{isAiSorting ? t('ai_sorting_button') : t('sort_label_ai')}</span></button>
+                                        <button onClick={() => { onSort('ai'); setIsFilterPopoverOpen(false); }} className="popover-action-button" style={{ backgroundColor: 'rgba(88, 86, 214, 0.1)', marginTop: '8px', color: 'var(--icon-color-indigo)' }}><span>💡 정렬 제안 보기</span></button>
                                     </div>
                                 </div>
                             )}
@@ -2125,11 +2130,19 @@ const TodoItem: React.FC<{ todo: Goal; onToggleComplete: (id: number) => void; o
     );
 });
 
-const Modal: React.FC<{ onClose: () => void; children: React.ReactNode; className?: string; isClosing: boolean }> = ({ onClose, children, className = '', isClosing }) => (
-    <div className={`modal-backdrop ${isClosing ? 'is-closing' : ''}`} onClick={onClose}>
-        <div className={`modal-content ${className} ${isClosing ? 'is-closing' : ''}`} onClick={e => e.stopPropagation()}>{children}</div>
-    </div>
-);
+const Modal: React.FC<{ onClose: () => void; children: React.ReactNode; className?: string; isClosing: boolean; size?: 'small' | 'medium' | 'large' }> = ({ onClose, children, className = '', isClosing, size = 'large' }) => {
+    const sizeClass = {
+        'small': 'modal-content-small',
+        'medium': 'modal-content-medium',
+        'large': 'modal-content-large'
+    }[size];
+    
+    return (
+        <div className={`modal-backdrop ${isClosing ? 'is-closing' : ''}`} onClick={onClose}>
+            <div className={`modal-content ${sizeClass} ${className} ${isClosing ? 'is-closing' : ''}`} onClick={e => e.stopPropagation()}>{children}</div>
+        </div>
+    );
+};
 
 const useModalAnimation = (onClose: () => void): [boolean, () => void] => {
     const [isClosing, setIsClosing] = useState(false);
@@ -2957,6 +2970,7 @@ const SettingsModal: React.FC<{
     const [activeTab, setActiveTab] = useState('appearance');
     const [shareableLink, setShareableLink] = useState('');
     const [isGeneratingLink, setIsGeneratingLink] = useState(false);
+    const [modalSize, setModalSize] = useState<'small' | 'medium' | 'large'>('medium');
     const fileInputRef = useRef<HTMLInputElement>(null);
     
     const tabs = [
@@ -3395,9 +3409,13 @@ const SettingsModal: React.FC<{
     }
     
     return (
-        <Modal onClose={handleClose} isClosing={isClosing} className="settings-modal">
+        <Modal onClose={handleClose} isClosing={isClosing} className="settings-modal" size={modalSize}>
             <div className="settings-modal-header">
-                <div />
+                <div style={{ display: 'flex', gap: '8px' }}>
+                    <button onClick={() => setModalSize('small')} className={`header-icon-button ${modalSize === 'small' ? 'active' : ''}`} title="작게" style={{ padding: '6px 10px', fontSize: '0.8rem', backgroundColor: modalSize === 'small' ? 'var(--primary-color)' : 'transparent', color: modalSize === 'small' ? 'white' : 'var(--text-color)' }}>−</button>
+                    <button onClick={() => setModalSize('medium')} className={`header-icon-button ${modalSize === 'medium' ? 'active' : ''}`} title="중간" style={{ padding: '6px 10px', fontSize: '0.8rem', backgroundColor: modalSize === 'medium' ? 'var(--primary-color)' : 'transparent', color: modalSize === 'medium' ? 'white' : 'var(--text-color)' }}>◻</button>
+                    <button onClick={() => setModalSize('large')} className={`header-icon-button ${modalSize === 'large' ? 'active' : ''}`} title="크게" style={{ padding: '6px 10px', fontSize: '0.8rem', backgroundColor: modalSize === 'large' ? 'var(--primary-color)' : 'transparent', color: modalSize === 'large' ? 'white' : 'var(--text-color)' }}>+</button>
+                </div>
                 <h2>{t('settings_title')}</h2>
                 <div className="settings-modal-header-right">
                     <button onClick={handleClose} className="close-button">{icons.close}</button>

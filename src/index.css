@@ -944,6 +944,20 @@ li.selection-mode.selected .checkbox-container .checkmark:after {
   animation: modal-in 0.5s ease-out;
   transform-origin: bottom center;
 }
+
+.modal-content-small {
+  max-width: 320px !important;
+}
+
+.modal-content-medium {
+  max-width: 500px !important;
+}
+
+.modal-content-large {
+  max-width: 90vw !important;
+  width: 95% !important;
+}
+
 .modal-content.is-closing {
     animation: modal-out 0.5s ease-out forwards;
 }
