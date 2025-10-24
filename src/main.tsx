@@ -2629,8 +2629,21 @@ const App: React.FC = () => {
         
         // 현재 폴더에 속한 목표만 필터링
         if (currentFolderId === null) {
-            // "나의 목표"를 선택한 경우, 같은 계정의 개인 목표만 표시 (공유 목표 제외)
-            sortedTodos = sortedTodos.filter(todo => !todo.isSharedTodo);
+            // "나의 목표": 개인 전용 영역 - 공유되지 않은 목표들만 표시
+            sortedTodos = sortedTodos.filter(todo => {
+                // 1. 공유 목표가 아닌 것 (isSharedTodo가 true가 아님)
+                // 2. 공유 폴더에 속하지 않은 목표 (폴더가 없거나 개인 폴더)
+                // 3. folderId가 undefined이거나 개인 폴더인 목표들
+                if (todo.isSharedTodo === true) return false; // 공유 목표 제외
+                
+                const folder = folders.find(f => f.id === todo.folderId);
+                if (!folder) return true; // 폴더에 속하지 않은 목표는 개인 목표
+                
+                return folder.isShared !== true; // 공유 폴더가 아닌 폴더의 목표만 포함
+            });
+        } else if (currentFolderId === 'all') {
+            // "전체": 모든 목표 표시 (필터링 없음)
+            sortedTodos = sortedTodos;
         } else {
             // 특정 폴더를 선택한 경우, 해당 폴더의 목표만 표시
             sortedTodos = sortedTodos.filter(todo => todo.folderId === currentFolderId);
@@ -2668,7 +2681,7 @@ const App: React.FC = () => {
             completed: false, 
             lastCompletedDate: null, 
             streak: 0,
-            folderId: currentFolderId || undefined  // 현재 폴더에 추가
+            folderId: (currentFolderId === 'all' || currentFolderId === null) ? undefined : currentFolderId  // "전체"나 "나의 목표" 선택 시 폴더 없음
         };
         
         // Firestore에 저장 - 무조건 저장
@@ -3428,7 +3441,16 @@ const App: React.FC = () => {
         const todo = todos.find(t => t.id === goalId);
         if (!todo) return;
         
-        const updatedTodo = { ...todo, folderId: folderId || undefined };
+        // 대상 폴더 확인
+        const targetFolder = folders.find(f => f.id === folderId);
+        const isMovingToSharedFolder = targetFolder?.isShared === true;
+        
+        const updatedTodo = { 
+            ...todo, 
+            folderId: folderId || undefined,
+            // 공유 폴더로 이동하면 isSharedTodo = true, 개인 영역으로 이동하면 false
+            isSharedTodo: isMovingToSharedFolder
+        };
         
         // Firestore에 저장
         if (googleUser) {
@@ -3444,7 +3466,12 @@ const App: React.FC = () => {
                 
                 if (sanitizedTodo) {
                     await setDoc(todoDocRef, sanitizedTodo);
-                    console.log('✅ 목표 폴더 이동 Firestore 저장:', { targetOwnerUid, goalId, folderId });
+                    console.log('✅ 목표 폴더 이동 Firestore 저장:', { 
+                        targetOwnerUid, 
+                        goalId, 
+                        folderId, 
+                        isSharedTodo: updatedTodo.isSharedTodo 
+                    });
                 } else {
                     console.warn('⚠️ 정제 후 저장할 데이터가 없음');
                 }
@@ -3969,6 +3996,7 @@ const App: React.FC = () => {
                         setManagingFolderId(folderId);
                         setIsFolderManageOpen(true);
                     }}
+                    currentUserId={googleUser?.uid}
                 />
 
                 <div className="container">
@@ -4301,6 +4329,7 @@ const FolderNavigator: React.FC<{
     todos: Goal[]; 
     t: (key: string) => any;
     onManageFolder: (folderId: string) => void;
+    currentUserId?: string; // 현재 사용자 ID 추가
 }> = ({ 
     folders, 
     currentFolderId, 
@@ -4311,7 +4340,8 @@ const FolderNavigator: React.FC<{
     onSetCollaboratingFolder, 
     todos, 
     t,
-    onManageFolder
+    onManageFolder,
+    currentUserId // 현재 사용자 ID
 }) => {
     const [isAddingFolder, setIsAddingFolder] = useState(false);
     const [newFolderName, setNewFolderName] = useState('');
@@ -4350,8 +4380,38 @@ const FolderNavigator: React.FC<{
                 📁 {t('all_goals_label') || 'All'}
             </button>
             
+            {/* 전체 버튼 */}
+            <button 
+                onClick={() => onSetCurrentFolder('all')}
+                style={{
+                    padding: '6px 12px',
+                    borderRadius: '8px',
+                    border: 'none',
+                    backgroundColor: currentFolderId === 'all' ? '#ff6b6b' : 'transparent',
+                    color: currentFolderId === 'all' ? 'white' : 'var(--text-color)',
+                    cursor: 'pointer',
+                    fontSize: '0.9rem',
+                    fontWeight: 500,
+                    whiteSpace: 'nowrap',
+                    transition: 'all 0.2s',
+                    minWidth: '80px',
+                    textAlign: 'center'
+                }}
+            >
+                🌐 전체
+            </button>
+            
             {/* Folder list */}
-            {folders.length > 0 && folders.map(folder => {
+            {folders.length > 0 && folders
+                .filter(folder => {
+                    // "나의 목표" 선택 시 공유 폴더 숨김 (자신이 소유한 공유 폴더는 표시)
+                    if (currentFolderId === null) {
+                        return !folder.isShared || (folder.isShared && folder.ownerId === currentUserId);
+                    }
+                    // "전체" 선택 시 모든 폴더 표시
+                    return true;
+                })
+                .map(folder => {
                 const folderGoalsCount = todos.filter(t => t.folderId === folder.id).length;
                 return (
                     <div 
@@ -4373,9 +4433,9 @@ const FolderNavigator: React.FC<{
                                 transition: 'all 0.2s',
                                 position: 'relative'
                             }}
-                            title="폴더 선택"
+                            title={folder.isShared ? "공유 폴더" : "개인 폴더"}
                         >
-                            {folder.name} ({folderGoalsCount})
+                            {folder.isShared ? '👥' : '📁'} {folder.name} ({folderGoalsCount})
                         </button>
                         {currentFolderId === folder.id && (
                             <div style={{ display: 'flex', gap: '2px' }}>
