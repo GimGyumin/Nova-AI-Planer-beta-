@@ -1174,8 +1174,11 @@ const App: React.FC = () => {
     const [isSyncingData, setIsSyncingData] = useState<boolean>(false);
     const [isLoadingData, setIsLoadingData] = useState<boolean>(false);
 
-    // Firebase 로그인 상태 감시 및 데이터 자동 로드
+    // Firebase 로그인 상태 감시 및 데이터 자동 로드 + 실시간 리스너
     useEffect(() => {
+        let todosUnsubscribe: (() => void) | null = null;
+        let foldersUnsubscribe: (() => void) | null = null;
+        
         const unsubscribe = onAuthStateChanged(auth, async (user) => {
             setGoogleUser(user);
             
@@ -1183,9 +1186,69 @@ const App: React.FC = () => {
                 // 로그인 성공 시 Firebase에서 모든 데이터 자동 로드
                 console.log('🔑 사용자 로그인 감지 - Firebase 데이터 로드 시작');
                 await loadAllDataFromFirebase(user);
+                
+                // 🔥 실시간 데이터 동기화 리스너 설정
+                console.log('📡 실시간 데이터 동기화 리스너 설정 중...');
+                
+                // 목표 데이터 실시간 감시
+                const todosRef = doc(db, 'users', user.uid, 'data', 'todos');
+                todosUnsubscribe = onSnapshot(todosRef, (docSnap) => {
+                    if (docSnap.exists()) {
+                        const todosData = docSnap.data();
+                        const firestoreTodos = todosData.todos || [];
+                        
+                        // 현재 로컬 데이터와 다른 경우에만 업데이트
+                        setTodos(prevTodos => {
+                            const isDataDifferent = JSON.stringify(prevTodos) !== JSON.stringify(firestoreTodos);
+                            if (isDataDifferent) {
+                                console.log('🔄 목표 데이터 실시간 업데이트:', firestoreTodos.length);
+                                return firestoreTodos;
+                            }
+                            return prevTodos;
+                        });
+                    }
+                });
+                
+                // 폴더 데이터 실시간 감시
+                const foldersRef = collection(db, 'users', user.uid, 'folders');
+                foldersUnsubscribe = onSnapshot(foldersRef, (querySnap) => {
+                    const firestoreFolders: Folder[] = [];
+                    querySnap.forEach((doc) => {
+                        const folderData = doc.data();
+                        const folder = { 
+                            id: doc.id, 
+                            ...folderData,
+                            collaborators: folderData.collaborators || [],
+                            ownerId: folderData.ownerId || user.uid
+                        } as Folder;
+                        firestoreFolders.push(folder);
+                    });
+                    
+                    // 현재 로컬 데이터와 다른 경우에만 업데이트
+                    setFolders(prevFolders => {
+                        const isDataDifferent = JSON.stringify(prevFolders) !== JSON.stringify(firestoreFolders);
+                        if (isDataDifferent) {
+                            console.log('🔄 폴더 데이터 실시간 업데이트:', firestoreFolders.length);
+                            return firestoreFolders;
+                        }
+                        return prevFolders;
+                    });
+                });
+                
             } else {
-                // 로그아웃 시 모든 데이터 초기화
+                // 로그아웃 시 모든 데이터 초기화 + 리스너 해제
                 console.log('🚪 사용자 로그아웃 감지 - 데이터 초기화');
+                
+                // 실시간 리스너 해제
+                if (todosUnsubscribe) {
+                    todosUnsubscribe();
+                    todosUnsubscribe = null;
+                }
+                if (foldersUnsubscribe) {
+                    foldersUnsubscribe();
+                    foldersUnsubscribe = null;
+                }
+                
                 setTodos([]);
                 setFolders([]);
                 setLanguage('ko');
@@ -1195,7 +1258,13 @@ const App: React.FC = () => {
                 setUserCategories(['school', 'work', 'personal', 'other']);
             }
         });
-        return () => unsubscribe();
+        
+        // 컴포넌트 언마운트 시 리스너 해제
+        return () => {
+            unsubscribe();
+            if (todosUnsubscribe) todosUnsubscribe();
+            if (foldersUnsubscribe) foldersUnsubscribe();
+        };
     }, []);
 
     // Firebase 설정 진단 함수
@@ -1529,13 +1598,29 @@ const App: React.FC = () => {
         try {
             const { doc, getDoc, collection, getDocs } = await import('firebase/firestore');
             
-            // 1. 목표 데이터 불러오기
+            // 1. 목표 데이터 불러오기 (중복 방지 로직 추가)
             const todosRef = doc(db, 'users', user.uid, 'data', 'todos');
             const todosSnap = await getDoc(todosRef);
             
             if (todosSnap.exists()) {
                 const todosData = todosSnap.data();
-                setTodos(todosData.todos || []);
+                const loadedTodos = todosData.todos || [];
+                
+                // 🔥 중복 방지: 기존 목표와 새로 로드된 목표를 ID 기준으로 병합
+                setTodos(prevTodos => {
+                    const existingIds = new Set(prevTodos.map(t => t.id));
+                    const newTodos = loadedTodos.filter(t => !existingIds.has(t.id));
+                    const merged = [...prevTodos, ...newTodos];
+                    
+                    console.log('🔄 목표 데이터 병합:', { 
+                        기존: prevTodos.length, 
+                        로드됨: loadedTodos.length, 
+                        새로추가: newTodos.length, 
+                        전체: merged.length 
+                    });
+                    
+                    return merged;
+                });
             }
             
             // 2. 설정값 불러오기
@@ -1552,7 +1637,7 @@ const App: React.FC = () => {
                 if (settingsData.userCategories) setUserCategories(settingsData.userCategories);
             }
             
-            // 3. 폴더 데이터 불러오기 (더 안전한 로딩)
+            // 3. 폴더 데이터 불러오기 (더 안전한 로딩 + 중복 방지)
             try {
                 const foldersRef = collection(db, 'users', user.uid, 'folders');
                 const foldersSnap = await getDocs(foldersRef);
@@ -1569,11 +1654,27 @@ const App: React.FC = () => {
                     } as Folder;
                     loadedFolders.push(folder);
                 });
-                setFolders(loadedFolders);
+                
+                // 🔥 중복 방지: 기존 폴더와 새로 로드된 폴더를 ID 기준으로 병합
+                setFolders(prevFolders => {
+                    const existingIds = new Set(prevFolders.map(f => f.id));
+                    const newFolders = loadedFolders.filter(f => !existingIds.has(f.id));
+                    const merged = [...prevFolders, ...newFolders];
+                    
+                    console.log('🔄 폴더 데이터 병합:', { 
+                        기존: prevFolders.length, 
+                        로드됨: loadedFolders.length, 
+                        새로추가: newFolders.length, 
+                        전체: merged.length 
+                    });
+                    
+                    return merged;
+                });
+                
                 console.log('✅ 폴더 로드 완료:', { count: loadedFolders.length });
             } catch (folderError) {
                 console.warn('⚠️ 폴더 로드 실패, 빈 배열로 설정:', folderError);
-                setFolders([]);
+                // 실패 시에도 기존 폴더는 유지
             }
             
             console.log('✅ 클라우드 데이터 로드 완료:', {
@@ -2518,6 +2619,9 @@ const App: React.FC = () => {
     const handleDeleteTodo = async (id: number) => {
         const todoToDelete = todos.find(t => t.id === id);
         
+        // 🔥 먼저 로컬 상태를 즉시 업데이트 (사용자 경험 개선)
+        setTodos(prevTodos => prevTodos.filter(todo => todo.id !== id));
+        
         // Firestore에서 삭제 - 무조건 삭제
         if (googleUser && todoToDelete) {
             try {
@@ -2530,13 +2634,21 @@ const App: React.FC = () => {
                 const todoDocRef = doc(todosRef, id.toString());
                 await deleteDoc(todoDocRef);
                 console.log('✅ 목표 Firestore 삭제:', { targetOwnerUid, id });
+                
+                // 삭제 성공 시 전체 데이터 동기화도 업데이트
+                if (isAutoSyncEnabled) {
+                    setTimeout(() => {
+                        handleSyncDataToFirebase();
+                    }, 1000);
+                }
             } catch (error) {
                 console.error('❌ 목표 Firestore 삭제 실패:', error);
+                // Firebase 삭제 실패 시 로컬 상태 복원
+                if (todoToDelete) {
+                    setTodos(prevTodos => [...prevTodos, todoToDelete]);
+                }
             }
         }
-        
-        // UI 업데이트
-        setTodos(todos.filter(todo => todo.id !== id));
     };
 
     // Folder Management Functions
@@ -2674,6 +2786,17 @@ const App: React.FC = () => {
             } catch (error) {
                 console.error('❌ 폴더 삭제 시 목표 이동 실패:', error);
                 // Firebase 업데이트가 실패해도 로컬 상태는 계속 업데이트
+            }
+        }
+
+        // 🔥 중요: Firestore에서 폴더 자체도 삭제해야 함
+        if (googleUser) {
+            try {
+                const folderRef = doc(db, 'users', googleUser.uid, 'folders', folderId);
+                await deleteDoc(folderRef);
+                console.log('✅ 폴더 Firebase 삭제 완료:', folderId);
+            } catch (error) {
+                console.error('❌ 폴더 Firebase 삭제 실패:', error);
             }
         }
 
@@ -2922,10 +3045,23 @@ const App: React.FC = () => {
                         
                         console.log('✅ 폴더 목표 로드 완료:', { count: loadedTodos.length, todos: loadedTodos });
                         
-                        // 로드된 목표와 기존 목표를 병합
+                        // 🔥 중요: 중복 방지 로직 강화 - ID 기반으로 중복 제거
                         setTodos(prevTodos => {
+                            // 1. 현재 폴더가 아닌 다른 목표들만 유지
                             const otherTodos = prevTodos.filter(t => t.folderId !== folderId);
-                            const merged = [...otherTodos, ...loadedTodos];
+                            
+                            // 2. 로드된 목표 중에서 이미 존재하는 목표는 제외 (ID 중복 방지)
+                            const existingIds = new Set(otherTodos.map(t => t.id));
+                            const newTodos = loadedTodos.filter(t => !existingIds.has(t.id));
+                            
+                            // 3. 병합하여 반환
+                            const merged = [...otherTodos, ...newTodos];
+                            console.log('🔄 목표 병합 완료:', { 
+                                기존목표: otherTodos.length, 
+                                새로운목표: newTodos.length, 
+                                전체목표: merged.length,
+                                중복제거됨: loadedTodos.length - newTodos.length
+                            });
                             return merged;
                         });
                     } catch (error) {
