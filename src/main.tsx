@@ -1195,7 +1195,7 @@ const App: React.FC = () => {
                 // 🔥 실시간 데이터 동기화 리스너 설정
                 console.log('📡 실시간 데이터 동기화 리스너 설정 중...');
                 
-                // 목표 데이터 실시간 감시
+                // 목표 데이터 실시간 감시 (개인 목표만)
                 const todosRef = doc(db, 'users', user.uid, 'data', 'todos');
                 todosUnsubscribe = onSnapshot(todosRef, (docSnap) => {
                     if (docSnap.exists()) {
@@ -1204,10 +1204,16 @@ const App: React.FC = () => {
                         
                         // 현재 로컬 데이터와 다른 경우에만 업데이트
                         setTodos(prevTodos => {
-                            const isDataDifferent = JSON.stringify(prevTodos) !== JSON.stringify(firestoreTodos);
+                            // 기존 공유 폴더 목표들을 보존 (isSharedTodo 플래그로 구분)
+                            const sharedTodos = prevTodos.filter(todo => todo.isSharedTodo === true);
+                            
+                            // 개인 목표들만 업데이트 (공유 목표가 아닌 것들)
+                            const personalTodos = firestoreTodos.map(todo => ({ ...todo, isSharedTodo: false }));
+                            
+                            const isDataDifferent = JSON.stringify(prevTodos.filter(t => !t.isSharedTodo)) !== JSON.stringify(personalTodos);
                             if (isDataDifferent) {
-                                console.log('🔄 목표 데이터 실시간 업데이트:', firestoreTodos.length);
-                                return firestoreTodos;
+                                console.log('🔄 개인 목표 데이터 실시간 업데이트:', personalTodos.length, '공유 목표 보존:', sharedTodos.length);
+                                return [...personalTodos, ...sharedTodos];
                             }
                             return prevTodos;
                         });
@@ -1286,15 +1292,31 @@ const App: React.FC = () => {
                                         const sharedTodos: Goal[] = [];
                                         sharedSnapshot.forEach((doc) => {
                                             const data = doc.data();
-                                            sharedTodos.push({ id: parseInt(doc.id), ...data } as Goal);
+                                            // 공유 목표임을 표시하는 플래그 추가
+                                            sharedTodos.push({ 
+                                                id: parseInt(doc.id), 
+                                                ...data, 
+                                                isSharedTodo: true 
+                                            } as Goal);
                                         });
                                         
                                         console.log('🔄 공유 폴더 목표 실시간 업데이트:', { folderId: sharedFolder.id, count: sharedTodos.length });
                                         
-                                        // 공유 폴더 목표 병합
+                                        // 공유 폴더 목표 병합 (기존 공유 폴더 목표 제거 후 새로운 목표 추가)
                                         setTodos(prevTodos => {
+                                            // 해당 공유 폴더의 기존 목표들 제거
                                             const otherTodos = prevTodos.filter(t => t.folderId !== sharedFolder.id);
-                                            return [...otherTodos, ...sharedTodos];
+                                            // 새로운 공유 폴더 목표들 추가
+                                            const updatedTodos = [...otherTodos, ...sharedTodos];
+                                            
+                                            console.log('📊 목표 병합 결과:', { 
+                                                기존총개수: prevTodos.length, 
+                                                제외된공유목표: prevTodos.length - otherTodos.length,
+                                                새로운공유목표: sharedTodos.length,
+                                                최종총개수: updatedTodos.length 
+                                            });
+                                            
+                                            return updatedTodos;
                                         });
                                     }, (error) => {
                                         console.warn('⚠️ 공유 폴더 실시간 동기화 오류:', { folderId: sharedFolder.id, error: error.code });
