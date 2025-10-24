@@ -3583,6 +3583,65 @@ const App: React.FC = () => {
                 } catch (editingError) {
                     console.warn('⚠️ editing states 삭제 중 일부 오류:', editingError);
                 }
+
+                // 사용자 프로필 데이터 삭제 (users/{uid} 문서)
+                try {
+                    const userDocRef = doc(db, 'users', googleUser.uid);
+                    await deleteDoc(userDocRef);
+                    console.log('✅ 사용자 프로필 문서 삭제 완료');
+                } catch (userDocError) {
+                    console.warn('⚠️ 사용자 프로필 문서 삭제 실패:', userDocError);
+                }
+
+                // 알림 데이터 삭제 (notifications/{uid})
+                try {
+                    const notificationsRef = collection(db, 'notifications', googleUser.uid, 'items');
+                    const notificationsSnapshot = await getDocs(notificationsRef);
+                    const deleteNotificationPromises = notificationsSnapshot.docs.map(doc => deleteDoc(doc.ref));
+                    await Promise.all(deleteNotificationPromises);
+                    
+                    // 알림 컬렉션 루트 문서도 삭제
+                    const notificationRootRef = doc(db, 'notifications', googleUser.uid);
+                    await deleteDoc(notificationRootRef);
+                    console.log('✅ 알림 데이터 삭제 완료');
+                } catch (notificationError) {
+                    console.warn('⚠️ 알림 데이터 삭제 중 일부 오류:', notificationError);
+                }
+
+                // 사용자 활동 로그 삭제 (userActivity/{uid})
+                try {
+                    const activityRef = collection(db, 'userActivity', googleUser.uid, 'logs');
+                    const activitySnapshot = await getDocs(activityRef);
+                    const deleteActivityPromises = activitySnapshot.docs.map(doc => deleteDoc(doc.ref));
+                    await Promise.all(deleteActivityPromises);
+                    
+                    // 활동 로그 루트 문서도 삭제
+                    const activityRootRef = doc(db, 'userActivity', googleUser.uid);
+                    await deleteDoc(activityRootRef);
+                    console.log('✅ 사용자 활동 로그 삭제 완료');
+                } catch (activityError) {
+                    console.warn('⚠️ 사용자 활동 로그 삭제 중 일부 오류:', activityError);
+                }
+
+                // 사용자 메타데이터 삭제 (userMetadata/{uid})
+                try {
+                    const metadataRef = doc(db, 'userMetadata', googleUser.uid);
+                    await deleteDoc(metadataRef);
+                    console.log('✅ 사용자 메타데이터 삭제 완료');
+                } catch (metadataError) {
+                    console.warn('⚠️ 사용자 메타데이터 삭제 중 일부 오류:', metadataError);
+                }
+
+                // 사용자 세션 데이터 삭제 (userSessions/{uid})
+                try {
+                    const sessionRef = doc(db, 'userSessions', googleUser.uid);
+                    await deleteDoc(sessionRef);
+                    console.log('✅ 사용자 세션 데이터 삭제 완료');
+                } catch (sessionError) {
+                    console.warn('⚠️ 사용자 세션 데이터 삭제 중 일부 오류:', sessionError);
+                }
+
+                console.log('🔥 모든 클라우드 데이터 삭제 완료 - 사용자 데이터가 완전히 제거되었습니다');
             }
 
             // 2. 로컬 상태 초기화
