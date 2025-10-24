@@ -971,10 +971,12 @@ li.selection-mode.selected .checkbox-container .checkmark:after {
 }
 
 /* Alert Modal */
-.alert-backdrop { z-index: 1100; align-items: center; padding: 0; } /* Re-center alert modals */
+.alert-backdrop { z-index: 1100; align-items: center; padding: 16px; } /* 패딩 추가로 화면 가장자리 여백 확보 */
 .alert-modal {
   width: 90%;
-  max-width: 320px;
+  max-width: 400px; /* 최대 너비 약간 증가 */
+  min-height: auto; /* 최소 높이 자동 */
+  max-height: 80vh; /* 최대 높이 화면의 80%로 제한 */
   padding: 0;
   border-radius: 28px;
   background: var(--alert-bg-color);
@@ -982,6 +984,9 @@ li.selection-mode.selected .checkbox-container .checkmark:after {
   -webkit-backdrop-filter: blur(20px);
   border: none;
   animation: alert-in 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+  overflow: hidden; /* 내용 넘침 방지 */
+  display: flex;
+  flex-direction: column;
 }
 
 @keyframes alert-in {
@@ -991,21 +996,32 @@ li.selection-mode.selected .checkbox-container .checkmark:after {
 .alert-content {
   text-align: center;
   padding: 24px 20px 20px 20px;
+  flex: 1; /* 사용 가능한 공간 차지 */
+  overflow-y: auto; /* 내용이 길면 스크롤 가능 */
+  max-height: calc(80vh - 80px); /* 버튼 영역 제외한 최대 높이 */
 }
 .alert-content h2 {
   font-size: 1.2rem;
-  margin-bottom: 8px;
+  margin-bottom: 12px; /* 여백 약간 증가 */
   font-weight: 600;
+  line-height: 1.4; /* 줄 높이 추가 */
 }
 .alert-content p {
   font-size: 0.95rem;
   color: var(--text-secondary-color);
+  line-height: 1.5; /* 가독성을 위한 줄 높이 */
+  white-space: pre-wrap; /* 줄바꿈 문자 인식 */
+  word-break: break-word; /* 긴 단어 자동 줄바꿈 */
+  margin: 0; /* 기본 마진 제거 */
 }
 .alert-modal .modal-buttons {
   margin-top: 0;
   display: flex;
   gap: 12px;
   padding: 12px;
+  flex-shrink: 0; /* 버튼 영역 크기 고정 */
+  border-top: 1px solid var(--border-color); /* 구분선 추가 */
+  background: var(--alert-bg-color); /* 배경색 일치 */
 }
 .alert-modal .modal-buttons button {
   flex: 1;

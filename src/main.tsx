@@ -30,7 +30,7 @@ const isStandalone = () => {
 
 // --- Firestore 데이터 정제 함수 ---
 const sanitizeFirestoreData = (obj: any): any => {
-  if (obj === undefined) return undefined;  // ← undefined만 제외, null은 허용
+  if (obj === undefined || obj === null) return undefined;  // null과 undefined 모두 차단
   if (typeof obj !== 'object') return obj;
   if (Array.isArray(obj)) {
     return obj
@@ -38,16 +38,28 @@ const sanitizeFirestoreData = (obj: any): any => {
       .filter(item => item !== undefined);
   }
   
+  // 객체가 null인지 추가 확인
+  if (obj === null) return undefined;
+  
+  // Object.entries 호출 전에 객체 유효성 검사
+  let entries;
+  try {
+    entries = Object.entries(obj);
+  } catch (error) {
+    console.error('❌ Object.entries 실패:', error, obj);
+    return undefined;
+  }
+  
   // 객체의 모든 필드를 정제
   const cleaned: any = {};
-  for (const [key, value] of Object.entries(obj)) {
+  for (const [key, value] of entries) {
     // undefined와 빈 문자열만 제외 (null은 허용)
     if (value === undefined || (typeof value === 'string' && value.trim() === '')) {
       console.warn(`⚠️ 필드 제거됨: ${key} = ${value}`);
       continue;
     }
     // 중첩 객체도 재귀적으로 정제
-    if (typeof value === 'object') {
+    if (typeof value === 'object' && value !== null) {
       const sanitized = sanitizeFirestoreData(value);
       if (sanitized !== undefined) {
         cleaned[key] = sanitized;
@@ -559,6 +571,8 @@ const translations = {
     settings_bg_purple: '퍼플',
     settings_bg_royal_purple: '딥 퍼플',
     settings_version: '버전',
+    test_long_alert: '긴 알림 테스트',
+    test_long_alert_desc: '긴 내용의 알림 팝업 테스트',
     settings_developer: '개발자',
     developer_name: 'Kim Kyumin',
     settings_copyright: '저작권',
@@ -834,6 +848,8 @@ const translations = {
     delete_account_header_desc: 'This action is irreversible and will permanently delete all your goals and data.',
     data_deleting: 'Deleting...',
     settings_version: 'Version',
+    test_long_alert: 'Test Long Alert',
+    test_long_alert_desc: 'Test alert popup with long content',
     settings_developer: 'Developer',
     developer_name: 'GimGyuMin',
     settings_copyright: 'Copyright',
@@ -2466,30 +2482,40 @@ const App: React.FC = () => {
         if (googleUser && folderTodos.length > 0) {
             try {
                 for (const todo of folderTodos) {
-                    const updatedTodo = { ...todo, folderId: undefined };
+                    // folderId를 완전히 제거하여 루트로 이동
+                    const updatedTodo = { ...todo };
+                    delete updatedTodo.folderId; // undefined 대신 속성 자체를 삭제
                     
                     // 폴더 소유자의 Firestore에서 업데이트
                     const targetOwnerUid = folder.ownerId || googleUser.uid;
                     const todosRef = collection(db, 'users', targetOwnerUid, 'todos');
                     const todoDocRef = doc(todosRef, todo.id.toString());
                     
+                    // undefined 값이 있는지 확인하고 제거
                     const sanitizedTodo = sanitizeFirestoreData(updatedTodo);
                     if (sanitizedTodo) {
                         await setDoc(todoDocRef, sanitizedTodo);
+                        console.log(`✅ 목표 ${todo.id} Firebase 루트로 이동 완료`);
+                    } else {
+                        console.warn(`⚠️ 목표 ${todo.id} 데이터 정제 실패`);
                     }
                 }
                 console.log('✅ 폴더 삭제 시 목표들 Firebase 이동 완료:', { count: folderTodos.length });
             } catch (error) {
                 console.error('❌ 폴더 삭제 시 목표 이동 실패:', error);
+                // Firebase 업데이트가 실패해도 로컬 상태는 계속 업데이트
             }
         }
 
         // Move all goals in this folder to root (folderId = undefined)
-        setTodos(todos.map(todo =>
-            todo.folderId === folderId
-                ? { ...todo, folderId: undefined }
-                : todo
-        ));
+        setTodos(todos.map(todo => {
+            if (todo.folderId === folderId) {
+                const updatedTodo = { ...todo };
+                delete updatedTodo.folderId; // undefined 대신 속성 삭제
+                return updatedTodo;
+            }
+            return todo;
+        }));
 
         // Delete the folder
         setFolders(folders.filter(f => f.id !== folderId));
@@ -2685,7 +2711,13 @@ const App: React.FC = () => {
         const todo = todos.find(t => t.id === goalId);
         if (!todo) return;
         
-        const updatedTodo = { ...todo, folderId: targetFolderId || undefined };
+        // folderId 처리: null이면 속성을 삭제, 값이 있으면 설정
+        const updatedTodo = { ...todo };
+        if (targetFolderId) {
+            updatedTodo.folderId = targetFolderId;
+        } else {
+            delete updatedTodo.folderId; // undefined 대신 속성 삭제
+        }
         
         // 🔥 Firebase에 저장 (중요!)
         if (googleUser) {
@@ -2711,18 +2743,27 @@ const App: React.FC = () => {
                 if (sanitizedTodo) {
                     await setDoc(todoDocRef, sanitizedTodo);
                     console.log('✅ 새 폴더에 목표 저장:', { targetOwner: targetOwnerUid, goalId, targetFolderId });
+                } else {
+                    console.warn('⚠️ 목표 데이터 정제 실패:', updatedTodo);
                 }
             } catch (error) {
                 console.error('❌ 폴더 이동 Firebase 저장 실패:', error);
             }
         }
         
-        // UI 업데이트
-        setTodos(todos.map(todo =>
-            todo.id === goalId
-                ? { ...todo, folderId: targetFolderId || undefined }
-                : todo
-        ));
+        // UI 업데이트 - 로컬 상태도 동일하게 처리
+        setTodos(todos.map(todo => {
+            if (todo.id === goalId) {
+                const localUpdatedTodo = { ...todo };
+                if (targetFolderId) {
+                    localUpdatedTodo.folderId = targetFolderId;
+                } else {
+                    delete localUpdatedTodo.folderId;
+                }
+                return localUpdatedTodo;
+            }
+            return todo;
+        }));
         
         setToastMessage('✅ 목표가 폴더로 이동되었습니다');
         setTimeout(() => setToastMessage(''), 3000);
@@ -5102,6 +5143,15 @@ const SettingsModal: React.FC<{
                                     {icons.forward}
                                 </div>
                             </div>
+                            <div className="settings-item nav-indicator" onClick={() => {
+                                setAlertMessage(`이것은 매우 긴 알림 메시지입니다.\n\n이 메시지는 여러 줄에 걸쳐 작성되었으며, 알림 팝업이 내용에 맞게 세로로 확장되는지 테스트하기 위한 목적으로 만들어졌습니다.\n\n줄바꿈 문자도 포함되어 있고,\n여러 문단으로 구성되어 있습니다.\n\n이런 식으로 긴 에러 메시지나 안내 메시지가 표시될 때도 팝업이 적절하게 크기 조정이 되어야 합니다.\n\n스크롤이 필요할 정도로 매우 긴 내용일 때는 스크롤바가 나타나야 하고, 버튼 영역은 항상 하단에 고정되어 있어야 합니다.`);
+                            }}>
+                                <span>{t('test_long_alert')}</span>
+                                <div className="settings-item-value-with-icon">
+                                    <span>{t('test_long_alert_desc')}</span>
+                                    {icons.forward}
+                                </div>
+                            </div>
                             <div className="settings-item">
                                 <span>{t('settings_developer')}</span>
                                 <span className="settings-item-value">{t('developer_name')}</span>
@@ -5197,6 +5247,9 @@ const SettingsModal: React.FC<{
                                     <div className="settings-item-value-with-icon"><span>1.5</span>{icons.forward}</div>
                                 </div>
                                 <div className="settings-item nav-indicator" onClick={onOpenUsageGuide}><span>{t('usage_guide_title')}</span><div className="settings-item-value-with-icon">{icons.forward}</div></div>
+                                <div className="settings-item nav-indicator" onClick={() => {
+                                    setAlertMessage(`This is a very long alert message.\n\nThis message spans multiple lines and is designed to test whether the alert popup properly expands vertically to accommodate longer content.\n\nIt includes line breaks,\nand multiple paragraphs.\n\nWhen long error messages or guidance messages like this are displayed, the popup should adjust its size appropriately.\n\nFor extremely long content that requires scrolling, a scrollbar should appear, and the button area should always remain fixed at the bottom.`);
+                                }}><span>{t('test_long_alert')}</span><div className="settings-item-value-with-icon"><span>{t('test_long_alert_desc')}</span>{icons.forward}</div></div>
                                 <div className="settings-item"><span>{t('settings_developer')}</span><span className="settings-item-value">{t('developer_name')}</span></div>
                                 <div className="settings-item"><span>{t('settings_copyright')}</span><span className="settings-item-value">{t('copyright_notice')}</span></div>
                             </div>
