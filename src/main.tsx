@@ -1060,34 +1060,20 @@ const backgroundOptions = [
 
 // --- 메인 앱 컴포넌트 ---
 const App: React.FC = () => {
-    const [language, setLanguage] = useState<string>(() => localStorage.getItem('nova-lang') || 'ko');
-    const [todos, setTodos] = useState<Goal[]>([]);
-    const [folders, setFolders] = useState<Folder[]>(() => {
-        const saved = localStorage.getItem('nova-folders');
-        return saved ? JSON.parse(saved) : [];
-    });
+    const [language, setLanguage] = useState<string>('ko'); // localStorage 제거
+    const [todos, setTodos] = useState<Goal[]>([]); // localStorage 제거
+    const [folders, setFolders] = useState<Folder[]>([]); // localStorage 제거
     const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);  // 현재 폴더
     const [filter, setFilter] = useState<string>('all');
     const [categoryFilter, setCategoryFilter] = useState<string>('all');  // 카테고리 필터
     const [sortType, setSortType] = useState<string>('manual');
-    const [userCategories, setUserCategories] = useState<string[]>(() => {
-        const saved = localStorage.getItem('nova-user-categories');
-        return saved ? JSON.parse(saved) : ['school', 'work', 'personal', 'other'];
-    });
+    const [userCategories, setUserCategories] = useState<string[]>(['school', 'work', 'personal', 'other']); // localStorage 제거
     
-    // 다크모드 시스템 설정 따라가기
-    const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
-        const savedTheme = localStorage.getItem('nova-theme');
-        if (savedTheme === 'system' || !savedTheme) {
-            return getSystemTheme() === 'dark';
-        }
-        return savedTheme === 'dark';
-    });
-    const [themeMode, setThemeMode] = useState<'light' | 'dark' | 'system'>(() => {
-        return localStorage.getItem('nova-theme') as 'light' | 'dark' | 'system' || 'system';
-    });
+    // 다크모드 시스템 설정 따라가기 (localStorage 제거)
+    const [isDarkMode, setIsDarkMode] = useState<boolean>(() => getSystemTheme() === 'dark');
+    const [themeMode, setThemeMode] = useState<'light' | 'dark' | 'system'>('system'); // localStorage 제거
     
-    const [backgroundTheme, setBackgroundTheme] = useState<string>('default');
+    const [backgroundTheme, setBackgroundTheme] = useState<string>('default'); // localStorage 제거
     
     // 실시간 협업 상태
     const [activeUsers, setActiveUsers] = useState<UserPresence[]>([]);  // 현재 접속 중인 사용자들
@@ -1114,13 +1100,10 @@ const App: React.FC = () => {
     // PWA 관련 상태
     const [showPWAPrompt, setShowPWAPrompt] = useState<boolean>(false);
     
-    // API 키 및 오프라인 모드 상태 추가
-    const [apiKey, setApiKey] = useState<string>(() => localStorage.getItem('nova-api-key') || '');
-    const [isOfflineMode, setIsOfflineMode] = useState<boolean>(() => localStorage.getItem('nova-offline-mode') === 'true');
-    const [isAutoSyncEnabled, setIsAutoSyncEnabled] = useState<boolean>(() => {
-        const saved = localStorage.getItem('nova-auto-sync-enabled');
-        return saved !== null ? saved === 'true' : true; // 기본값: true
-    });
+    // API 키 및 오프라인 모드 상태 추가 (localStorage 제거)
+    const [apiKey, setApiKey] = useState<string>('');
+    const [isOfflineMode, setIsOfflineMode] = useState<boolean>(false);
+    const [isAutoSyncEnabled, setIsAutoSyncEnabled] = useState<boolean>(true); // 기본값: true
     const [googleUser, setGoogleUser] = useState<User | null>(null);
     const [shareableLink, setShareableLink] = useState<string>('');
     const [isGeneratingLink, setIsGeneratingLink] = useState<boolean>(false);
@@ -1131,16 +1114,25 @@ const App: React.FC = () => {
     const [isSyncingData, setIsSyncingData] = useState<boolean>(false);
     const [isLoadingData, setIsLoadingData] = useState<boolean>(false);
 
-    // Firebase 로그인 상태 감시
+    // Firebase 로그인 상태 감시 및 데이터 자동 로드
     useEffect(() => {
-        const unsubscribe = onAuthStateChanged(auth, (user) => {
+        const unsubscribe = onAuthStateChanged(auth, async (user) => {
             setGoogleUser(user);
+            
             if (user) {
-                localStorage.setItem('nova-user-email', user.email || '');
-                localStorage.setItem('nova-user-name', user.displayName || '');
+                // 로그인 성공 시 Firebase에서 모든 데이터 자동 로드
+                console.log('🔑 사용자 로그인 감지 - Firebase 데이터 로드 시작');
+                await loadAllDataFromFirebase(user);
             } else {
-                localStorage.removeItem('nova-user-email');
-                localStorage.removeItem('nova-user-name');
+                // 로그아웃 시 모든 데이터 초기화
+                console.log('🚪 사용자 로그아웃 감지 - 데이터 초기화');
+                setTodos([]);
+                setFolders([]);
+                setLanguage('ko');
+                setThemeMode('system');
+                setBackgroundTheme('default');
+                setApiKey('');
+                setUserCategories(['school', 'work', 'personal', 'other']);
             }
         });
         return () => unsubscribe();
@@ -1322,7 +1314,7 @@ const App: React.FC = () => {
                 syncedAt: new Date().toISOString()
             });
             
-            // 2. 설정값도 저장 (language, theme, colorMode, apiKey, notifications 등)
+            // 2. 설정값도 저장 (language, theme, colorMode, apiKey, userCategories 등)
             const settingsRef = doc(db, 'users', googleUser.uid, 'data', 'settings');
             const settingsData: any = {
                 language: language,
@@ -1330,12 +1322,22 @@ const App: React.FC = () => {
                 isDarkMode: isDarkMode,
                 backgroundTheme: backgroundTheme,
                 apiKey: apiKey,
+                userCategories: userCategories,
                 updatedAt: serverTimestamp()
             };
             
             await setDoc(settingsRef, settingsData);
             
-            setToastMessage('✅ 데이터 동기화 완료! (목표: ' + sanitizedTodos.length + '개, 설정 저장)');
+            // 3. 폴더 데이터도 동기화 (개별 문서로 저장)
+            for (const folder of folders) {
+                const folderRef = doc(db, 'users', googleUser.uid, 'folders', folder.id);
+                await setDoc(folderRef, {
+                    ...folder,
+                    updatedAt: serverTimestamp()
+                });
+            }
+            
+            setToastMessage('✅ 전체 데이터 동기화 완료! (목표: ' + sanitizedTodos.length + '개, 폴더: ' + folders.length + '개)');
             setTimeout(() => setToastMessage(''), 3000);
             setIsSyncingData(false);
         } catch (error: any) {
@@ -1350,7 +1352,56 @@ const App: React.FC = () => {
         }
     }, [googleUser, todos, language, themeMode, isDarkMode, backgroundTheme, apiKey]);
 
-    // Firebase에서 목표 + 설정 데이터 불러오기
+    // 로그인 시 자동으로 모든 데이터 로드 (조용히)
+    const loadAllDataFromFirebase = useCallback(async (user: any) => {
+        try {
+            const { doc, getDoc, collection, getDocs } = await import('firebase/firestore');
+            
+            // 1. 목표 데이터 불러오기
+            const todosRef = doc(db, 'users', user.uid, 'data', 'todos');
+            const todosSnap = await getDoc(todosRef);
+            
+            if (todosSnap.exists()) {
+                const todosData = todosSnap.data();
+                setTodos(todosData.todos || []);
+            }
+            
+            // 2. 설정값 불러오기
+            const settingsRef = doc(db, 'users', user.uid, 'data', 'settings');
+            const settingsSnap = await getDoc(settingsRef);
+            
+            if (settingsSnap.exists()) {
+                const settingsData = settingsSnap.data();
+                if (settingsData.language) setLanguage(settingsData.language);
+                if (settingsData.themeMode) setThemeMode(settingsData.themeMode);
+                if (settingsData.isDarkMode !== undefined) setIsDarkMode(settingsData.isDarkMode);
+                if (settingsData.backgroundTheme) setBackgroundTheme(settingsData.backgroundTheme);
+                if (settingsData.apiKey) setApiKey(settingsData.apiKey);
+                if (settingsData.userCategories) setUserCategories(settingsData.userCategories);
+            }
+            
+            // 3. 폴더 데이터 불러오기
+            const foldersRef = collection(db, 'users', user.uid, 'folders');
+            const foldersSnap = await getDocs(foldersRef);
+            
+            const loadedFolders: Folder[] = [];
+            foldersSnap.forEach((doc) => {
+                loadedFolders.push({ id: doc.id, ...doc.data() } as Folder);
+            });
+            setFolders(loadedFolders);
+            
+            console.log('✅ 클라우드 데이터 로드 완료:', {
+                todos: todosSnap.exists() ? (todosSnap.data().todos?.length || 0) : 0,
+                folders: loadedFolders.length,
+                settings: settingsSnap.exists() ? '로드됨' : '없음'
+            });
+        } catch (error: any) {
+            console.error('❌ 클라우드 데이터 로드 실패:', error);
+            // 자동 로드이므로 에러 팝업 표시 안 함 (콘솔로만)
+        }
+    }, []);
+
+    // Firebase에서 목표 + 설정 데이터 불러오기 (수동)
     const handleLoadDataFromFirebase = useCallback(async () => {
         if (!googleUser) {
             setAlertConfig({
@@ -1364,34 +1415,8 @@ const App: React.FC = () => {
 
         setIsLoadingData(true);
         try {
-            const { doc, getDoc } = await import('firebase/firestore');
-            
-            // 1. 목표 데이터 불러오기
-            const todosRef = doc(db, 'users', googleUser.uid, 'data', 'todos');
-            const todosSnap = await getDoc(todosRef);
-            
-            if (todosSnap.exists()) {
-                const todosData = todosSnap.data();
-                setTodos(todosData.todos || []);
-            }
-            
-            // 2. 설정값 불러오기 (language, theme, colorMode, apiKey, notifications 등)
-            const settingsRef = doc(db, 'users', googleUser.uid, 'data', 'settings');
-            const settingsSnap = await getDoc(settingsRef);
-            
-            if (settingsSnap.exists()) {
-                const settingsData = settingsSnap.data();
-                if (settingsData.language) setLanguage(settingsData.language);
-                if (settingsData.themeMode) setThemeMode(settingsData.themeMode);
-                if (settingsData.isDarkMode !== undefined) setIsDarkMode(settingsData.isDarkMode);
-                if (settingsData.backgroundTheme) setBackgroundTheme(settingsData.backgroundTheme);
-                if (settingsData.apiKey) setApiKey(settingsData.apiKey);
-            }
-            
-            const todosCount = todosSnap.exists() ? (todosSnap.data().todos?.length || 0) : 0;
-            setToastMessage('✅ 데이터 로드 완료! (목표: ' + todosCount + '개, 설정 로드됨)');
-            setTimeout(() => setToastMessage(''), 3000);
-            setIsLoadingData(false);
+            await loadAllDataFromFirebase(googleUser);
+            setToastMessage('✅ 클라우드 데이터 로드 완료!');
         } catch (error: any) {
             console.error('로드 오류:', error);
             setAlertConfig({
@@ -1400,9 +1425,10 @@ const App: React.FC = () => {
                 confirmText: '확인',
                 onConfirm: () => setAlertConfig(null),
             });
+        } finally {
             setIsLoadingData(false);
         }
-    }, [googleUser]);
+    }, [googleUser, loadAllDataFromFirebase]);
 
 
     const t = useCallback((key: string): any => {
@@ -1438,25 +1464,42 @@ const App: React.FC = () => {
     const randomEncouragement = useMemo(() => encouragementMessages[Math.floor(Math.random() * encouragementMessages.length)], [encouragementMessages]);
 
     useEffect(() => {
-        const savedTodos = localStorage.getItem('nova-todos');
-        const savedDarkMode = localStorage.getItem('nova-dark-mode');
-        const savedBackground = localStorage.getItem('nova-background');
-        const savedSortType = localStorage.getItem('nova-sort-type');
+        // localStorage 로드 제거 - 이제 Firebase에서만 데이터 로드
+        console.log('🚀 클라우드 기반 앱 시작 - localStorage 사용 안 함');
+    }, []);
 
-        if (savedTodos) {
-            const parsedTodos: Goal[] = JSON.parse(savedTodos);
-            const today = new Date().toISOString();
-            const updatedTodos = parsedTodos.map(todo => {
-                if (todo.isRecurring && todo.lastCompletedDate && !isSameDay(today, todo.lastCompletedDate)) {
-                    return { ...todo, completed: false };
+    // 잘못된 폴더 정리 (임시 owner ID를 가진 폴더 제거)
+    useEffect(() => {
+        const cleanupInvalidFolders = () => {
+            setFolders(prevFolders => {
+                const validFolders = prevFolders.filter(folder => {
+                    // 공유 폴더가 아니거나, 올바른 소유자 정보를 가진 폴더만 유지
+                    if (!folder.collaborators || folder.collaborators.length === 0) {
+                        return true; // 일반 폴더는 유지
+                    }
+                    
+                    const owner = folder.collaborators.find(c => c.role === 'owner');
+                    if (!owner || !owner.userId || owner.userId.startsWith('owner_')) {
+                        console.warn('🗑️ 잘못된 공유 폴더 제거:', folder.name, owner?.userId);
+                        return false; // 잘못된 공유 폴더는 제거
+                    }
+                    
+                    return true; // 올바른 공유 폴더는 유지
+                });
+                
+                if (validFolders.length !== prevFolders.length) {
+                    console.log('✅ 잘못된 공유 폴더 정리 완료:', {
+                        제거됨: prevFolders.length - validFolders.length,
+                        남은폴더: validFolders.length
+                    });
                 }
-                return todo;
+                
+                return validFolders;
             });
-            setTodos(updatedTodos);
-        }
-        if (savedDarkMode) setIsDarkMode(JSON.parse(savedDarkMode));
-        if (savedBackground) setBackgroundTheme(savedBackground);
-        if (savedSortType) setSortType(savedSortType);
+        };
+        
+        // 앱 시작 시 한 번만 정리
+        cleanupInvalidFolders();
     }, []);
 
     useEffect(() => {
@@ -1537,21 +1580,38 @@ const App: React.FC = () => {
 
                             // 새 폴더 추가 (소유자 UID가 있으면 userId에 UID를 저장)
                             const ownerUserId = shareInfo.ownerId || null;
+                            
+                            // 소유자 정보가 없으면 오류 처리
+                            if (!ownerUserId) {
+                                console.error('❌ 공유 링크에 소유자 정보가 없습니다:', shareInfo);
+                                setAlertConfig({
+                                    title: '❌ 공유 링크 오류',
+                                    message: '공유 링크에 소유자 정보가 없습니다.\n폴더 소유자에게 다시 공유 링크를 요청해주세요.',
+                                    confirmText: '확인',
+                                    onConfirm: () => {
+                                        setAlertConfig(null);
+                                        window.history.replaceState({}, document.title, window.location.pathname);
+                                    }
+                                });
+                                return;
+                            }
+                            
                             const newFolder: Folder = {
                                 id: shareInfo.folderId,
                                 name: shareInfo.folderName,
                                 color: shareInfo.folderColor || '#007AFF',
-                                ownerId: ownerUserId || shareInfo.sharedBy,
+                                ownerId: ownerUserId, // 실제 소유자 UID 사용
                                 collaborators: [
                                     {
-                                        userId: ownerUserId || `owner_${Date.now()}`,
+                                        userId: ownerUserId, // 실제 소유자 UID 사용
                                         email: shareInfo.sharedBy || '',
                                         role: 'owner',
                                         addedAt: shareInfo.sharedAt
                                     }
                                 ],
                                 createdAt: shareInfo.sharedAt,
-                                updatedAt: shareInfo.sharedAt
+                                updatedAt: shareInfo.sharedAt,
+                                isShared: true // 공유 폴더임을 명시
                             };
 
                             // Firestore에서 최신 협업자 목록 조회 및 자동 추가
@@ -1728,20 +1788,33 @@ const App: React.FC = () => {
             
             console.log('🎯 Owner todos received:', { count: ownerTodos.length, ownerTodos });
             
-            // 소유자의 목표와 현재 사용자의 목표를 병합
+            // 소유자의 목표와 현재 사용자의 목표를 병합 (더 안전하게 처리)
             setTodos(prevTodos => {
                 // 현재 사용자의 다른 폴더 목표 유지
                 const otherFolderTodos = prevTodos.filter(t => t.folderId !== currentFolderId);
-                // 소유자의 목표와 병합
-                const merged = [...otherFolderTodos, ...ownerTodos];
-                // 중복 제거 (id가 같으면 ownerTodos 우선)
-                const seen = new Set<number>();
-                const deduped = merged.reverse().filter(t => {
-                    if (seen.has(t.id)) return false;
-                    seen.add(t.id);
-                    return true;
-                }).reverse();
-                return deduped;
+                
+                // 공유 폴더의 현재 로컬 목표
+                const currentLocalTodos = prevTodos.filter(t => t.folderId === currentFolderId);
+                
+                // 소유자 목표와 로컬 목표를 병합 (시간 기준으로 최신 선택)
+                const mergedTodos: Goal[] = [];
+                const processedIds = new Set<number>();
+                
+                // 소유자 목표 추가
+                ownerTodos.forEach(ownerTodo => {
+                    mergedTodos.push(ownerTodo);
+                    processedIds.add(ownerTodo.id);
+                });
+                
+                // 로컬에만 있는 목표 추가 (서버에 없는 새로운 목표)
+                currentLocalTodos.forEach(localTodo => {
+                    if (!processedIds.has(localTodo.id)) {
+                        mergedTodos.push(localTodo);
+                    }
+                });
+                
+                // 최종 결과: 다른 폴더 목표 + 병합된 현재 폴더 목표
+                return [...otherFolderTodos, ...mergedTodos];
             });
         }, (error) => {
             console.error('❌ 실시간 동기화 실패:', error);
@@ -2003,6 +2076,34 @@ const App: React.FC = () => {
         return () => mediaQuery.removeEventListener('change', handleThemeChange);
     }, [themeMode]);
 
+    // 네트워크 상태 감지 및 오프라인 모드 처리
+    useEffect(() => {
+        const handleOnline = () => {
+            console.log('🌐 인터넷 연결됨');
+            setToastMessage('✅ 인터넷에 다시 연결되었습니다');
+            setTimeout(() => setToastMessage(''), 3000);
+        };
+
+        const handleOffline = () => {
+            console.log('📡 인터넷 연결 끊김');
+            setToastMessage('⚠️ 오프라인 모드 - 클라우드 동기화 불가');
+            setTimeout(() => setToastMessage(''), 5000);
+        };
+
+        // 현재 상태 확인
+        if (!navigator.onLine) {
+            console.log('📡 현재 오프라인 상태');
+        }
+
+        window.addEventListener('online', handleOnline);
+        window.addEventListener('offline', handleOffline);
+
+        return () => {
+            window.removeEventListener('online', handleOnline);
+            window.removeEventListener('offline', handleOffline);
+        };
+    }, []);
+
     // PWA 설치 프롬프트 표시 로직 (모바일에서 자동 표시)
     useEffect(() => {
         const isDismissed = localStorage.getItem('pwa-prompt-dismissed');
@@ -2047,14 +2148,12 @@ const App: React.FC = () => {
     }, []);
 
     // 테마 설정 저장 및 다크모드 상태 저장 수정
+    // localStorage 저장 로직 모두 제거 - 클라우드 기반으로 전환
+    // 테마 변경 시 클래스만 적용
     useEffect(() => { 
-        localStorage.setItem('nova-theme', themeMode); 
-        localStorage.setItem('nova-dark-mode', JSON.stringify(isDarkMode)); 
+        // 클래스만 적용하고 localStorage 저장 안 함
     }, [themeMode, isDarkMode]);
 
-    useEffect(() => { localStorage.setItem('nova-lang', language); }, [language]);
-    useEffect(() => { localStorage.setItem('nova-todos', JSON.stringify(todos)); }, [todos]);
-    
     // 자동동기화: todos 변경 시 Firebase에 자동 저장
     useEffect(() => {
         if (isAutoSyncEnabled && googleUser && todos.length > 0) {
@@ -2064,11 +2163,6 @@ const App: React.FC = () => {
             return () => clearTimeout(timer);
         }
     }, [todos, isAutoSyncEnabled, googleUser]);
-    useEffect(() => { localStorage.setItem('nova-api-key', apiKey); }, [apiKey]);
-    useEffect(() => { localStorage.setItem('nova-offline-mode', String(isOfflineMode)); }, [isOfflineMode]);
-    useEffect(() => { localStorage.setItem('nova-auto-sync-enabled', String(isAutoSyncEnabled)); }, [isAutoSyncEnabled]);
-    useEffect(() => { localStorage.setItem('nova-user-categories', JSON.stringify(userCategories)); }, [userCategories]);
-    useEffect(() => { localStorage.setItem('nova-folders', JSON.stringify(folders)); }, [folders]);
 
     useEffect(() => {
         const selectedTheme = backgroundOptions.find(opt => opt.id === backgroundTheme) || backgroundOptions[0];
@@ -2078,10 +2172,8 @@ const App: React.FC = () => {
         if (isDarkMode) document.body.classList.add('dark-mode');
         if (themeClass) document.body.classList.add(themeClass);
         
-        localStorage.setItem('nova-background', backgroundTheme);
+        // localStorage 저장 제거
     }, [backgroundTheme, isDarkMode]);
-
-    useEffect(() => { localStorage.setItem('nova-sort-type', sortType); }, [sortType]);
     useEffect(() => {
         if (toastMessage) {
             const timer = setTimeout(() => setToastMessage(''), 3000);
@@ -2441,8 +2533,27 @@ const App: React.FC = () => {
         }
 
         const owner = folder.collaborators.find(c => c.role === 'owner');
-        if (!owner || !owner.userId || owner.userId.startsWith('owner_')) {
-            setToastMessage('❌ 폴더 소유자 정보가 없습니다');
+        if (!owner || !owner.userId) {
+            setAlertConfig({
+                title: '❌ 소유자 정보 오류',
+                message: '폴더 소유자 정보가 없습니다.\n폴더를 다시 공유받아주세요.',
+                confirmText: '확인',
+                onConfirm: () => setAlertConfig(null)
+            });
+            setIsSyncingData(false);
+            return;
+        }
+
+        // 임시 owner ID 확인 및 수정
+        if (owner.userId.startsWith('owner_')) {
+            console.warn('⚠️ 임시 소유자 ID 발견:', owner.userId);
+            setAlertConfig({
+                title: '⚠️ 소유자 정보 오류',
+                message: '폴더 소유자 정보에 문제가 있습니다.\n폴더 소유자에게 새로운 공유 링크를 요청해주세요.',
+                confirmText: '확인',
+                onConfirm: () => setAlertConfig(null)
+            });
+            setIsSyncingData(false);
             return;
         }
 
