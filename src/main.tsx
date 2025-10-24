@@ -3513,14 +3513,31 @@ const App: React.FC = () => {
             if (googleUser) {
                 console.log('🗑️ Firebase 데이터 삭제 시작...');
                 
-                // 모든 todos 삭제
+                // 백업 데이터 삭제 (users/{uid}/data/)
+                try {
+                    const userDataRef = doc(db, 'users', googleUser.uid, 'data', 'todos');
+                    await deleteDoc(userDataRef);
+                    console.log('✅ 백업 todos 데이터 삭제 완료');
+                } catch (dataError) {
+                    console.warn('⚠️ 백업 todos 데이터 삭제 실패:', dataError);
+                }
+
+                try {
+                    const userSettingsRef = doc(db, 'users', googleUser.uid, 'data', 'settings');
+                    await deleteDoc(userSettingsRef);
+                    console.log('✅ 백업 settings 데이터 삭제 완료');
+                } catch (settingsError) {
+                    console.warn('⚠️ 백업 settings 데이터 삭제 실패:', settingsError);
+                }
+                
+                // 개별 목표 컬렉션 삭제 (users/{uid}/todos/)
                 const todosRef = collection(db, 'users', googleUser.uid, 'todos');
                 const todosSnapshot = await getDocs(todosRef);
                 const deletePromises = todosSnapshot.docs.map(doc => deleteDoc(doc.ref));
                 await Promise.all(deletePromises);
-                console.log('✅ todos 삭제 완료:', todosSnapshot.size, '개');
+                console.log('✅ 개별 todos 삭제 완료:', todosSnapshot.size, '개');
 
-                // 모든 folders 삭제
+                // 개별 폴더 컬렉션 삭제 (users/{uid}/folders/)
                 const foldersRef = collection(db, 'users', googleUser.uid, 'folders');
                 const foldersSnapshot = await getDocs(foldersRef);
                 const deleteFolderPromises = foldersSnapshot.docs.map(doc => deleteDoc(doc.ref));
