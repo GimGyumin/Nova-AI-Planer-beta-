@@ -1623,3 +1623,127 @@ input:checked + .slider:before { -webkit-transform: translateX(20px); -ms-transf
         box-shadow: none;
     }
 }
+
+/* 공동작업 관련 스타일 */
+.collaboration-settings {
+    position: relative;
+    display: inline-block;
+}
+
+.collaboration-active {
+    background: rgba(52, 199, 89, 0.1) !important;
+    color: #34c759 !important;
+    border: 1px solid rgba(52, 199, 89, 0.3) !important;
+}
+
+.collaboration-popover {
+    min-width: 280px !important;
+    max-width: 320px !important;
+    z-index: 1001;
+}
+
+.collaboration-popover h4 {
+    margin: 0 0 8px 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-color);
+}
+
+.collaboration-popover h5 {
+    margin: 0 0 4px 0;
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: var(--text-secondary-color);
+}
+
+/* 편집 상태 표시 */
+.todo-item.being-edited {
+    border-left: 3px solid #ff9500;
+    background: rgba(255, 149, 0, 0.05);
+}
+
+.editing-indicator {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background: #ff9500;
+    color: white;
+    font-size: 0.7rem;
+    padding: 2px 6px;
+    border-radius: 8px;
+    pointer-events: none;
+    z-index: 10;
+}
+
+/* 접속자 아바타 */
+.user-avatar {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    border: 2px solid var(--main-bg-color);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.user-avatar.online {
+    border-color: #34c759;
+}
+
+/* 온라인 상태 표시 */
+.online-indicator {
+    width: 8px;
+    height: 8px;
+    background: #34c759;
+    border-radius: 50%;
+    border: 2px solid var(--main-bg-color);
+    position: absolute;
+    bottom: -2px;
+    right: -2px;
+}
+
+/* 충돌 알림 */
+.conflict-notification {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: #ff453a;
+    color: white;
+    padding: 12px 16px;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(255, 69, 58, 0.3);
+    z-index: 1000;
+    font-size: 0.9rem;
+    max-width: 300px;
+}
+
+/* 공동작업 토글 스위치 스타일 개선 */
+.collaboration-toggle {
+    position: relative;
+    display: inline-block;
+    width: 44px;
+    height: 24px;
+    background: #ccc;
+    border-radius: 12px;
+    border: none;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+.collaboration-toggle.active {
+    background: var(--primary-color);
+}
+
+.collaboration-toggle-knob {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 20px;
+    height: 20px;
+    background: white;
+    border-radius: 50%;
+    transition: transform 0.2s ease;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.collaboration-toggle.active .collaboration-toggle-knob {
+    transform: translateX(20px);
+}

@@ -295,6 +295,16 @@ interface Folder {
   collaborators?: Collaborator[];  // 폴더 단위 협업자
   sharedWith?: { [userId: string]: 'viewer' | 'editor' };  // 폴더 권한
   color?: string;  // 폴더 색상 (선택사항)
+  // 공동작업 설정
+  collaborationSettings?: {
+    enabled: boolean;  // 공동작업 활성화 여부
+    showPresence: boolean;  // 실시간 접속자 표시
+    showEditingState: boolean;  // 편집 중 상태 표시
+    enableConflictDetection: boolean;  // 충돌 감지 활성화
+    allowGuestView: boolean;  // 게스트 보기 허용
+    requireApproval: boolean;  // 협업자 승인 필요
+  };
+  isShared?: boolean;  // 공유 상태 (기존 호환성)
 }
 
 interface Goal {
@@ -317,6 +327,10 @@ interface Goal {
   sharedWith?: { [userId: string]: 'viewer' | 'editor' };  // 권한 설정
   // 섹션/카테고리 필드
   category?: string;  // 사용자 정의 카테고리
+  // 충돌 감지 필드
+  lastModified?: Date;  // 마지막 수정 시간
+  lastModifiedBy?: string;  // 마지막 수정자 ID
+  version?: number;  // 버전 번호 (충돌 감지용)
 }
 
 
@@ -327,6 +341,35 @@ interface Collaborator {
   photoURL?: string;
   role: 'owner' | 'editor' | 'viewer';
   addedAt: string;
+}
+
+// 실시간 사용자 접속 상태
+interface UserPresence {
+  userId: string;
+  displayName: string;
+  photoURL?: string;
+  isOnline: boolean;
+  lastSeen: Date;
+  currentFolder?: string;
+}
+
+// 편집 상태 추적
+interface EditingState {
+  todoId: number;
+  userId: string;
+  userName: string;
+  startTime: Date;
+  folderId: string;
+}
+
+// 충돌 정보
+interface ConflictInfo {
+  todoId: number;
+  conflictType: 'concurrent_edit' | 'version_mismatch';
+  localVersion: Goal;
+  serverVersion: Goal;
+  lastModifiedBy: string;
+  lastModifiedAt: Date;
 }
 
 interface SharedLink {
@@ -1045,6 +1088,12 @@ const App: React.FC = () => {
     });
     
     const [backgroundTheme, setBackgroundTheme] = useState<string>('default');
+    
+    // 실시간 협업 상태
+    const [activeUsers, setActiveUsers] = useState<UserPresence[]>([]);  // 현재 접속 중인 사용자들
+    const [editingStates, setEditingStates] = useState<{ [todoId: number]: EditingState }>({});  // 편집 중인 할일들
+    const [conflicts, setConflicts] = useState<ConflictInfo[]>([]);  // 충돌 목록
+    const [isSyncing, setIsSyncing] = useState<boolean>(false);  // 동기화 중 상태
     const [isGoalAssistantOpen, setIsGoalAssistantOpen] = useState<boolean>(false);
     const [editingTodo, setEditingTodo] = useState<Goal | null>(null);
     const [infoTodo, setInfoTodo] = useState<Goal | null>(null);
@@ -1704,6 +1753,222 @@ const App: React.FC = () => {
         };
     }, [currentFolderId, googleUser]);
 
+    // --- 실시간 접속 상태(presence) 및 편집 상태(editing state) 관리 ---
+    useEffect(() => {
+        if (!currentFolderId || !googleUser) return;
+
+        // 현재 폴더의 공동작업 설정 확인
+        const currentFolder = folders.find(f => f.id === currentFolderId);
+        const isCollaborationEnabled = currentFolder?.collaborationSettings?.enabled || currentFolder?.isShared || false;
+        const showPresence = currentFolder?.collaborationSettings?.showPresence ?? true;
+        
+        if (!isCollaborationEnabled || !showPresence) {
+            // 공동작업이 비활성화되어 있으면 상태 초기화
+            setActiveUsers([]);
+            return;
+        }
+
+        console.log('👥 실시간 접속 상태 추적 시작:', { folderId: currentFolderId, showPresence });
+
+        const presenceCollectionRef = collection(db, 'folderPresence', currentFolderId, 'users');
+        const myPresenceRef = doc(presenceCollectionRef, googleUser.uid);
+
+        // 내 상태 등록: 온라인, 마지막 접속 시간, 현재 폴더
+        const setMyPresence = async () => {
+            try {
+                await setDoc(myPresenceRef, {
+                    userId: googleUser.uid,
+                    displayName: googleUser.displayName || 'Anonymous',
+                    photoURL: googleUser.photoURL || null,
+                    isOnline: true,
+                    lastSeen: new Date(),
+                    currentFolder: currentFolderId
+                }, { merge: true });
+                console.log('✅ 내 접속 상태 등록:', googleUser.displayName);
+            } catch (err) {
+                console.warn('presence set failed', err);
+            }
+        };
+
+        setMyPresence();
+
+        // 주기적으로 lastSeen 갱신 (30초마다)
+        const heartbeat = setInterval(() => {
+            setDoc(myPresenceRef, { lastSeen: new Date(), isOnline: true }, { merge: true }).catch(() => {});
+        }, 30_000);
+
+        // 다른 사용자들의 presence를 구독
+        const unsubscribePresence = onSnapshot(presenceCollectionRef, (snap) => {
+            const users: UserPresence[] = snap.docs.map(d => {
+                const data: any = d.data();
+                return {
+                    userId: data.userId || d.id,
+                    displayName: data.displayName || 'Anonymous',
+                    photoURL: data.photoURL || undefined,
+                    isOnline: !!data.isOnline,
+                    lastSeen: data.lastSeen ? (data.lastSeen.toDate ? data.lastSeen.toDate() : new Date(data.lastSeen)) : new Date(),
+                    currentFolder: data.currentFolder
+                };
+            });
+            const onlineUsers = users.filter(u => !!u.userId && u.isOnline);
+            setActiveUsers(onlineUsers);
+            console.log('👥 활성 사용자 업데이트:', onlineUsers.map(u => u.displayName));
+        }, (err) => console.warn('presence listen failed', err));
+
+        // 언마운트 시 내 상태 offline으로 표기
+        return () => {
+            clearInterval(heartbeat);
+            // set offline (best-effort)
+            setDoc(myPresenceRef, { isOnline: false, lastSeen: new Date() }, { merge: true }).catch(() => {});
+            unsubscribePresence();
+        };
+    }, [currentFolderId, googleUser, folders]);
+
+    // 편집 상태(start/stop) 기록 함수
+    const handleStartEditing = useCallback(async (todoId: number) => {
+        if (!currentFolderId || !googleUser) return;
+        
+        // 현재 폴더의 편집 상태 표시 설정 확인
+        const currentFolder = folders.find(f => f.id === currentFolderId);
+        const showEditingState = currentFolder?.collaborationSettings?.showEditingState ?? true;
+        const isCollaborationEnabled = currentFolder?.collaborationSettings?.enabled || currentFolder?.isShared || false;
+        
+        if (!isCollaborationEnabled || !showEditingState) return;
+        
+        try {
+            const editRef = doc(db, 'folderEditing', `${currentFolderId}_${todoId}`);
+            await setDoc(editRef, {
+                todoId,
+                userId: googleUser.uid,
+                userName: googleUser.displayName || 'Anonymous',
+                startTime: new Date(),
+                folderId: currentFolderId
+            });
+            console.log('✏️ 편집 시작:', { todoId, user: googleUser.displayName });
+        } catch (err) {
+            console.warn('start editing failed', err);
+        }
+    }, [currentFolderId, googleUser, folders]);
+
+    const handleStopEditing = useCallback(async (todoId: number) => {
+        if (!currentFolderId || !googleUser) return;
+        
+        // 현재 폴더의 편집 상태 표시 설정 확인
+        const currentFolder = folders.find(f => f.id === currentFolderId);
+        const showEditingState = currentFolder?.collaborationSettings?.showEditingState ?? true;
+        const isCollaborationEnabled = currentFolder?.collaborationSettings?.enabled || currentFolder?.isShared || false;
+        
+        if (!isCollaborationEnabled || !showEditingState) return;
+        
+        try {
+            const editRef = doc(db, 'folderEditing', `${currentFolderId}_${todoId}`);
+            await deleteDoc(editRef);
+            console.log('✅ 편집 종료:', { todoId, user: googleUser.displayName });
+        } catch (err) {
+            console.warn('stop editing failed', err);
+        }
+    }, [currentFolderId, googleUser, folders]);
+
+    // 편집 상태 실시간 수신
+    useEffect(() => {
+        if (!currentFolderId) return;
+        
+        // 현재 폴더의 편집 상태 표시 설정 확인
+        const currentFolder = folders.find(f => f.id === currentFolderId);
+        const showEditingState = currentFolder?.collaborationSettings?.showEditingState ?? true;
+        const isCollaborationEnabled = currentFolder?.collaborationSettings?.enabled || currentFolder?.isShared || false;
+        
+        if (!isCollaborationEnabled || !showEditingState) {
+            setEditingStates({});
+            return;
+        }
+        
+        console.log('✏️ 편집 상태 추적 시작:', { folderId: currentFolderId });
+        
+        const editsQuery = query(collection(db, 'folderEditing'), where('folderId', '==', currentFolderId));
+        const unsub = onSnapshot(editsQuery, (snap) => {
+            const states: { [todoId: number]: EditingState } = {};
+            snap.docs.forEach(d => {
+                const data: any = d.data();
+                if (data && data.todoId) {
+                    states[data.todoId] = {
+                        todoId: data.todoId,
+                        userId: data.userId,
+                        userName: data.userName,
+                        startTime: data.startTime ? (data.startTime.toDate ? data.startTime.toDate() : new Date(data.startTime)) : new Date(),
+                        folderId: data.folderId
+                    };
+                }
+            });
+            setEditingStates(states);
+            console.log('✏️ 편집 상태 업데이트:', Object.keys(states).length + '개 항목');
+        }, (err) => console.warn('editing states listen failed', err));
+
+        return () => unsub();
+    }, [currentFolderId, folders]);
+
+    // 충돌 검사 및 저장 헬퍼: version 기반 간단한 충돌 감지
+    const attemptSaveTodo = useCallback(async (updatedTodo: Goal) => {
+        try {
+            const targetOwner = updatedTodo.ownerId || googleUser?.uid;
+            if (!targetOwner) throw new Error('No owner UID');
+            
+            // 현재 폴더의 충돌 감지 설정 확인
+            const currentFolder = folders.find(f => f.id === currentFolderId);
+            const enableConflictDetection = currentFolder?.collaborationSettings?.enableConflictDetection ?? true;
+            const isCollaborationEnabled = currentFolder?.collaborationSettings?.enabled || currentFolder?.isShared || false;
+            
+            const todoRef = doc(db, 'users', targetOwner, 'todos', updatedTodo.id.toString());
+
+            // 충돌 감지가 활성화되어 있고 공동작업이 활성화된 경우에만 충돌 검사
+            if (isCollaborationEnabled && enableConflictDetection) {
+                const serverSnap = await getDoc(todoRef);
+                const serverData: any = serverSnap.exists() ? serverSnap.data() : null;
+
+                const serverVersion = serverData?.version || 0;
+                const localVersion = updatedTodo.version || 0;
+
+                if (serverData && serverVersion > localVersion) {
+                    // 충돌 감지
+                    setConflicts(prev => ([...prev, {
+                        todoId: updatedTodo.id,
+                        conflictType: 'version_mismatch',
+                        localVersion: updatedTodo,
+                        serverVersion: serverData,
+                        lastModifiedBy: serverData.lastModifiedBy || 'unknown',
+                        lastModifiedAt: serverData.lastModified ? (serverData.lastModified.toDate ? serverData.lastModified.toDate() : new Date(serverData.lastModified)) : new Date()
+                    }]));
+
+                    console.warn('⚠️ 충돌 감지:', {
+                        todoId: updatedTodo.id,
+                        localVersion,
+                        serverVersion,
+                        lastModifiedBy: serverData.lastModifiedBy
+                    });
+
+                    const shouldOverwrite = window.confirm('다른 사용자가 이 항목을 수정했습니다. 덮어쓰시겠습니까? (취소하면 변경이 중단됩니다)');
+                    if (!shouldOverwrite) return false;
+                }
+            }
+
+            const toSave = sanitizeFirestoreData({
+                ...updatedTodo,
+                version: (updatedTodo.version || 0) + 1,
+                lastModified: new Date(),
+                lastModifiedBy: googleUser?.uid || 'unknown'
+            });
+
+            if (toSave) {
+                await setDoc(todoRef, toSave);
+                console.log('✅ Todo 저장 완료:', { todoId: updatedTodo.id, version: toSave.version });
+            }
+            return true;
+        } catch (err) {
+            console.error('attemptSaveTodo failed', err);
+            return false;
+        }
+    }, [googleUser, currentFolderId, folders]);
+
     
     // 시스템 다크모드 감지 및 적용
     useEffect(() => {
@@ -1998,11 +2263,81 @@ const App: React.FC = () => {
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
             color: '#3b82f6', // Default blue color
+            // 기본 공동작업 설정
+            collaborationSettings: {
+                enabled: false,  // 기본적으로 개인 폴더로 생성
+                showPresence: true,
+                showEditingState: true,
+                enableConflictDetection: true,
+                allowGuestView: false,
+                requireApproval: true
+            },
+            isShared: false
         };
 
         setFolders([...folders, newFolder]);
+        console.log('📁 새 폴더 생성:', { name: folderName, collaborationEnabled: false });
         return newFolder;
     };
+
+    // 폴더별 공동작업 설정 관리 함수들
+    const handleUpdateCollaborationSettings = useCallback(async (folderId: string, settings: Partial<Folder['collaborationSettings']>) => {
+        try {
+            setFolders(prevFolders => prevFolders.map(folder => {
+                if (folder.id === folderId) {
+                    const updatedSettings = {
+                        ...folder.collaborationSettings,
+                        ...settings
+                    };
+                    console.log('⚙️ 공동작업 설정 업데이트:', { folderId, settings: updatedSettings });
+                    return {
+                        ...folder,
+                        collaborationSettings: updatedSettings,
+                        updatedAt: new Date().toISOString()
+                    };
+                }
+                return folder;
+            }));
+
+            // Firebase에도 저장 (폴더 소유자인 경우)
+            if (googleUser) {
+                const folderRef = doc(db, 'users', googleUser.uid, 'folders', folderId);
+                await updateDoc(folderRef, {
+                    collaborationSettings: {
+                        ...settings
+                    },
+                    updatedAt: new Date().toISOString()
+                });
+            }
+        } catch (error) {
+            console.error('공동작업 설정 업데이트 실패:', error);
+        }
+    }, [googleUser]);
+
+    // 폴더 공동작업 활성화/비활성화
+    const handleToggleCollaboration = useCallback(async (folderId: string, enabled: boolean) => {
+        await handleUpdateCollaborationSettings(folderId, { enabled });
+        
+        if (enabled) {
+            // 공동작업 활성화 시 isShared도 true로 설정
+            setFolders(prevFolders => prevFolders.map(folder => 
+                folder.id === folderId ? { ...folder, isShared: true } : folder
+            ));
+            console.log('🤝 폴더 공동작업 활성화:', folderId);
+        } else {
+            // 공동작업 비활성화 시 접속자/편집 상태 초기화
+            setActiveUsers([]);
+            setEditingStates({});
+            console.log('🔒 폴더 공동작업 비활성화:', folderId);
+        }
+    }, [handleUpdateCollaborationSettings]);
+
+    // 현재 폴더의 공동작업 설정 가져오기
+    const getCurrentFolderCollaborationSettings = useCallback(() => {
+        if (!currentFolderId) return null;
+        const folder = folders.find(f => f.id === currentFolderId);
+        return folder?.collaborationSettings || null;
+    }, [currentFolderId, folders]);
 
     const handleRenameFolder = (folderId: string, newName: string) => {
         if (!newName.trim()) {
@@ -2409,6 +2744,11 @@ const App: React.FC = () => {
                         folders={folders}
                         onSyncSharedFolder={handleSyncSharedFolder}
                         isSyncing={isSyncingData}
+                        // 공동작업 관련 props
+                        activeUsers={activeUsers}
+                        editingStates={editingStates}
+                        onToggleCollaboration={handleToggleCollaboration}
+                        onUpdateCollaborationSettings={handleUpdateCollaborationSettings}
                     />
                     {isViewModeCalendar ? (
                         <CalendarView todos={todos} t={t} onGoalClick={setInfoTodo} language={language} />
@@ -2827,12 +3167,55 @@ const FolderNavigator: React.FC<{ folders: Folder[]; currentFolderId: string | n
     );
 };
 
-const Header: React.FC<{ t: (key: string) => any; isSelectionMode: boolean; selectedCount: number; onCancelSelection: () => void; onDeleteSelected: () => void; isViewModeCalendar: boolean; onToggleViewMode: () => void; isAiSorting: boolean; sortType: string; onSort: (type: string) => void; filter: string; onFilter: (type: string) => void; categoryFilter: string; onCategoryFilter: (category: string) => void; userCategories: string[]; onAddCategory: (cat: string) => void; onRemoveCategory: (cat: string) => void; onSetSelectionMode: () => void; onOpenSettings: () => void; onAddGoal: () => void; currentFolderId: string | null; folders: Folder[]; onSyncSharedFolder: () => void; isSyncing: boolean; }> = ({ t, isSelectionMode, selectedCount, onCancelSelection, onDeleteSelected, isViewModeCalendar, onToggleViewMode, isAiSorting, sortType, onSort, filter, onFilter, categoryFilter, onCategoryFilter, userCategories, onAddCategory, onRemoveCategory, onSetSelectionMode, onOpenSettings, onAddGoal, currentFolderId, folders, onSyncSharedFolder, isSyncing }) => {
+const Header: React.FC<{ 
+    t: (key: string) => any; 
+    isSelectionMode: boolean; 
+    selectedCount: number; 
+    onCancelSelection: () => void; 
+    onDeleteSelected: () => void; 
+    isViewModeCalendar: boolean; 
+    onToggleViewMode: () => void; 
+    isAiSorting: boolean; 
+    sortType: string; 
+    onSort: (type: string) => void; 
+    filter: string; 
+    onFilter: (type: string) => void; 
+    categoryFilter: string; 
+    onCategoryFilter: (category: string) => void; 
+    userCategories: string[]; 
+    onAddCategory: (cat: string) => void; 
+    onRemoveCategory: (cat: string) => void; 
+    onSetSelectionMode: () => void; 
+    onOpenSettings: () => void; 
+    onAddGoal: () => void; 
+    currentFolderId: string | null; 
+    folders: Folder[]; 
+    onSyncSharedFolder: () => void; 
+    isSyncing: boolean;
+    // 공동작업 관련 props
+    activeUsers: UserPresence[];
+    editingStates: { [todoId: number]: EditingState };
+    onToggleCollaboration: (folderId: string, enabled: boolean) => void;
+    onUpdateCollaborationSettings: (folderId: string, settings: any) => void;
+}> = ({ 
+    t, isSelectionMode, selectedCount, onCancelSelection, onDeleteSelected, 
+    isViewModeCalendar, onToggleViewMode, isAiSorting, sortType, onSort, 
+    filter, onFilter, categoryFilter, onCategoryFilter, userCategories, 
+    onAddCategory, onRemoveCategory, onSetSelectionMode, onOpenSettings, 
+    onAddGoal, currentFolderId, folders, onSyncSharedFolder, isSyncing,
+    activeUsers, editingStates, onToggleCollaboration, onUpdateCollaborationSettings
+}) => {
     const [isFilterPopoverOpen, setIsFilterPopoverOpen] = useState(false);
+    const [isCollaborationPopoverOpen, setIsCollaborationPopoverOpen] = useState(false);
+
+    const currentFolder = currentFolderId ? folders.find(f => f.id === currentFolderId) : null;
+    const collaborationSettings = currentFolder?.collaborationSettings;
+    const isCollaborationEnabled = collaborationSettings?.enabled || currentFolder?.isShared || false;
 
     useEffect(() => {
         const closePopovers = () => {
             setIsFilterPopoverOpen(false);
+            setIsCollaborationPopoverOpen(false);
         };
         document.addEventListener('click', closePopovers);
         document.addEventListener('touchstart', closePopovers);
@@ -2910,6 +3293,129 @@ const Header: React.FC<{ t: (key: string) => any; isSelectionMode: boolean; sele
                                 </div>
                             )}
                         </div>
+                        
+                        {/* 공동작업 설정 버튼 (폴더 선택시에만) */}
+                        {currentFolderId && (
+                            <div className="collaboration-settings">
+                                <button 
+                                    onClick={() => setIsCollaborationPopoverOpen(!isCollaborationPopoverOpen)}
+                                    className={`header-icon-button ${isCollaborationEnabled ? 'collaboration-active' : ''}`}
+                                    aria-label="공동작업 설정"
+                                    title="공동작업 설정"
+                                >
+                                    {isCollaborationEnabled ? '👥' : '👤'}
+                                </button>
+                                
+                                {isCollaborationPopoverOpen && (
+                                    <div className="profile-popover collaboration-popover" style={{ right: '60px', top: '50px' }}>
+                                        <div className="popover-section">
+                                            <h4 style={{ marginBottom: '12px' }}>공동작업 설정</h4>
+                                            
+                                            {/* 공동작업 활성화/비활성화 */}
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                                                <span>공동작업 활성화</span>
+                                                <button 
+                                                    onClick={() => onToggleCollaboration(currentFolderId, !isCollaborationEnabled)}
+                                                    style={{
+                                                        background: isCollaborationEnabled ? 'var(--primary-color)' : '#ccc',
+                                                        border: 'none',
+                                                        borderRadius: '12px',
+                                                        width: '44px',
+                                                        height: '24px',
+                                                        position: 'relative',
+                                                        cursor: 'pointer',
+                                                        transition: 'background 0.2s'
+                                                    }}
+                                                >
+                                                    <div style={{
+                                                        background: 'white',
+                                                        borderRadius: '50%',
+                                                        width: '20px',
+                                                        height: '20px',
+                                                        position: 'absolute',
+                                                        top: '2px',
+                                                        left: isCollaborationEnabled ? '22px' : '2px',
+                                                        transition: 'left 0.2s'
+                                                    }} />
+                                                </button>
+                                            </div>
+                                            
+                                            {/* 현재 접속자 표시 */}
+                                            {isCollaborationEnabled && activeUsers.length > 0 && (
+                                                <div style={{ marginBottom: '16px' }}>
+                                                    <h5 style={{ marginBottom: '8px', fontSize: '0.9rem' }}>현재 접속자 ({activeUsers.length}명)</h5>
+                                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                                                        {activeUsers.map(user => (
+                                                            <div key={user.userId} style={{
+                                                                display: 'flex',
+                                                                alignItems: 'center',
+                                                                gap: '6px',
+                                                                background: 'rgba(var(--primary-color-rgb), 0.1)',
+                                                                padding: '4px 8px',
+                                                                borderRadius: '12px',
+                                                                fontSize: '0.8rem'
+                                                            }}>
+                                                                {user.photoURL && (
+                                                                    <img src={user.photoURL} alt="" style={{
+                                                                        width: '16px',
+                                                                        height: '16px',
+                                                                        borderRadius: '50%'
+                                                                    }} />
+                                                                )}
+                                                                <span>{user.displayName}</span>
+                                                                <div style={{
+                                                                    width: '6px',
+                                                                    height: '6px',
+                                                                    background: user.isOnline ? '#34C759' : '#ccc',
+                                                                    borderRadius: '50%'
+                                                                }} />
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+                                            
+                                            {/* 세부 설정 (공동작업 활성화시에만) */}
+                                            {isCollaborationEnabled && (
+                                                <>
+                                                    <div style={{ borderTop: '1px solid #eee', paddingTop: '16px' }}>
+                                                        <h5 style={{ marginBottom: '8px', fontSize: '0.9rem' }}>세부 설정</h5>
+                                                        
+                                                        <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', cursor: 'pointer' }}>
+                                                            <span style={{ fontSize: '0.8rem' }}>접속자 표시</span>
+                                                            <input 
+                                                                type="checkbox" 
+                                                                checked={collaborationSettings?.showPresence ?? true}
+                                                                onChange={(e) => onUpdateCollaborationSettings(currentFolderId, { showPresence: e.target.checked })}
+                                                            />
+                                                        </label>
+                                                        
+                                                        <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', cursor: 'pointer' }}>
+                                                            <span style={{ fontSize: '0.8rem' }}>편집 상태 표시</span>
+                                                            <input 
+                                                                type="checkbox" 
+                                                                checked={collaborationSettings?.showEditingState ?? true}
+                                                                onChange={(e) => onUpdateCollaborationSettings(currentFolderId, { showEditingState: e.target.checked })}
+                                                            />
+                                                        </label>
+                                                        
+                                                        <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', cursor: 'pointer' }}>
+                                                            <span style={{ fontSize: '0.8rem' }}>충돌 감지</span>
+                                                            <input 
+                                                                type="checkbox" 
+                                                                checked={collaborationSettings?.enableConflictDetection ?? true}
+                                                                onChange={(e) => onUpdateCollaborationSettings(currentFolderId, { enableConflictDetection: e.target.checked })}
+                                                            />
+                                                        </label>
+                                                    </div>
+                                                </>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                        
                         {/* 공유 폴더 동기화 버튼 */}
                         {currentFolderId && folders.find(f => f.id === currentFolderId)?.collaborators && (
                             <button 
