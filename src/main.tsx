@@ -2813,8 +2813,20 @@ const App: React.FC = () => {
             // 4. localStorage 완전 삭제
             localStorage.clear();
             
+            // 5. Firebase 로그아웃
+            if (googleUser) {
+                console.log('🚪 Firebase 로그아웃 처리...');
+                await signOut(auth);
+                console.log('✅ 로그아웃 완료');
+            }
+            
             console.log('✅ 모든 데이터 삭제 완료');
-            setToastMessage('✅ 모든 데이터가 완전히 삭제되었습니다');
+            setToastMessage('✅ 모든 데이터가 완전히 삭제되었습니다. 로그아웃됩니다.');
+            
+            // 6. 완전한 초기화를 위해 페이지 새로고침
+            setTimeout(() => {
+                window.location.reload();
+            }, 2000);
             
         } catch (error) {
             console.error('❌ 데이터 삭제 중 오류:', error);
