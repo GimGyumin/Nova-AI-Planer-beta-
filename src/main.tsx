@@ -1178,6 +1178,7 @@ const App: React.FC = () => {
     useEffect(() => {
         let todosUnsubscribe: (() => void) | null = null;
         let foldersUnsubscribe: (() => void) | null = null;
+        let sharedFoldersUnsubscribe: (() => void) | null = null;
         
         const unsubscribe = onAuthStateChanged(auth, async (user) => {
             setGoogleUser(user);
@@ -1208,15 +1209,17 @@ const App: React.FC = () => {
                         });
                     }
                 });
-                
-                // 폴더 데이터 실시간 감시
+
+                // 폴더 데이터 실시간 감시 + 공유 폴더 동기화
                 const foldersRef = collection(db, 'users', user.uid, 'folders');
-                foldersUnsubscribe = onSnapshot(foldersRef, (querySnap) => {
+                foldersUnsubscribe = onSnapshot(foldersRef, async (querySnap) => {
                     const firestoreFolders: Folder[] = [];
                     querySnap.forEach((doc) => {
                         const folderData = doc.data();
                         const folder = { 
                             id: doc.id, 
+                            name: folderData.name || '', // 폴더 이름 명시적 보존
+                            color: folderData.color || '#007AFF',
                             ...folderData,
                             collaborators: folderData.collaborators || [],
                             ownerId: folderData.ownerId || user.uid
@@ -1224,11 +1227,61 @@ const App: React.FC = () => {
                         firestoreFolders.push(folder);
                     });
                     
+                    // 공유 폴더의 실시간 목표 동기화 설정
+                    const sharedFolders = firestoreFolders.filter(f => f.isShared && f.ownerId && f.ownerId !== user.uid);
+                    if (sharedFolders.length > 0) {
+                        console.log('📡 공유 폴더 실시간 동기화 설정:', sharedFolders.map(f => ({ id: f.id, name: f.name, ownerId: f.ownerId })));
+                        
+                        // 기존 공유 폴더 리스너 정리
+                        if (sharedFoldersUnsubscribe) {
+                            sharedFoldersUnsubscribe();
+                        }
+                        
+                        // 새로운 공유 폴더 리스너 설정
+                        const sharedUnsubscribers: (() => void)[] = [];
+                        
+                        for (const sharedFolder of sharedFolders) {
+                            if (sharedFolder.ownerId) {
+                                try {
+                                    const sharedTodosRef = collection(db, 'users', sharedFolder.ownerId, 'todos');
+                                    const sharedQuery = query(sharedTodosRef, where('folderId', '==', sharedFolder.id));
+                                    
+                                    const unsubscribe = onSnapshot(sharedQuery, (sharedSnapshot) => {
+                                        const sharedTodos: Goal[] = [];
+                                        sharedSnapshot.forEach((doc) => {
+                                            const data = doc.data();
+                                            sharedTodos.push({ id: parseInt(doc.id), ...data } as Goal);
+                                        });
+                                        
+                                        console.log('🔄 공유 폴더 목표 실시간 업데이트:', { folderId: sharedFolder.id, count: sharedTodos.length });
+                                        
+                                        // 공유 폴더 목표 병합
+                                        setTodos(prevTodos => {
+                                            const otherTodos = prevTodos.filter(t => t.folderId !== sharedFolder.id);
+                                            return [...otherTodos, ...sharedTodos];
+                                        });
+                                    }, (error) => {
+                                        console.warn('⚠️ 공유 폴더 실시간 동기화 오류:', { folderId: sharedFolder.id, error: error.code });
+                                    });
+                                    
+                                    sharedUnsubscribers.push(unsubscribe);
+                                } catch (error) {
+                                    console.warn('⚠️ 공유 폴더 리스너 설정 실패:', { folderId: sharedFolder.id, error });
+                                }
+                            }
+                        }
+                        
+                        // 통합 해제 함수 설정
+                        sharedFoldersUnsubscribe = () => {
+                            sharedUnsubscribers.forEach(unsub => unsub());
+                        };
+                    }
+                    
                     // 현재 로컬 데이터와 다른 경우에만 업데이트
                     setFolders(prevFolders => {
                         const isDataDifferent = JSON.stringify(prevFolders) !== JSON.stringify(firestoreFolders);
                         if (isDataDifferent) {
-                            console.log('🔄 폴더 데이터 실시간 업데이트:', firestoreFolders.length);
+                            console.log('🔄 폴더 데이터 실시간 업데이트:', firestoreFolders.map(f => ({ id: f.id, name: f.name })));
                             return firestoreFolders;
                         }
                         return prevFolders;
@@ -1248,6 +1301,10 @@ const App: React.FC = () => {
                     foldersUnsubscribe();
                     foldersUnsubscribe = null;
                 }
+                if (sharedFoldersUnsubscribe) {
+                    sharedFoldersUnsubscribe();
+                    sharedFoldersUnsubscribe = null;
+                }
                 
                 setTodos([]);
                 setFolders([]);
@@ -1264,6 +1321,7 @@ const App: React.FC = () => {
             unsubscribe();
             if (todosUnsubscribe) todosUnsubscribe();
             if (foldersUnsubscribe) foldersUnsubscribe();
+            if (sharedFoldersUnsubscribe) sharedFoldersUnsubscribe();
         };
     }, []);
 
@@ -2620,7 +2678,8 @@ const App: React.FC = () => {
         const todoToDelete = todos.find(t => t.id === id);
         
         // 🔥 먼저 로컬 상태를 즉시 업데이트 (사용자 경험 개선)
-        setTodos(prevTodos => prevTodos.filter(todo => todo.id !== id));
+        const updatedTodos = todos.filter(todo => todo.id !== id);
+        setTodos(updatedTodos);
         
         // Firestore에서 삭제 - 무조건 삭제
         if (googleUser && todoToDelete) {
@@ -2630,10 +2689,23 @@ const App: React.FC = () => {
                 // 협업자: 폴더 소유자의 Firestore에서 삭제 (동기화를 위해)
                 const targetOwnerUid = folder?.ownerId || googleUser.uid;
                 
+                // 1. 개별 컬렉션에서 삭제
                 const todosRef = collection(db, 'users', targetOwnerUid, 'todos');
                 const todoDocRef = doc(todosRef, id.toString());
                 await deleteDoc(todoDocRef);
-                console.log('✅ 목표 Firestore 삭제:', { targetOwnerUid, id });
+                console.log('✅ 개별 목표 Firestore 삭제:', { targetOwnerUid, id });
+                
+                // 2. 백업 데이터도 업데이트 (실시간 리스너 동기화 문제 해결)
+                try {
+                    const backupDataRef = doc(db, 'users', targetOwnerUid, 'data', 'todos');
+                    await setDoc(backupDataRef, { 
+                        todos: updatedTodos,
+                        lastUpdated: new Date().toISOString()
+                    }, { merge: true });
+                    console.log('✅ 백업 데이터 업데이트 완료 - 삭제 반영');
+                } catch (backupError) {
+                    console.warn('⚠️ 백업 데이터 업데이트 실패:', backupError);
+                }
                 
                 // 삭제 성공 시 전체 데이터 동기화도 업데이트
                 if (isAutoSyncEnabled) {
@@ -3212,6 +3284,25 @@ const App: React.FC = () => {
         }
     };
 
+    // 수동 동기화 함수
+    const handleManualSync = async () => {
+        setIsSyncingData(true);
+        try {
+            console.log('🔄 수동 동기화 시작...');
+            
+            // Firebase에서 최신 데이터 다시 로드
+            await handleSyncDataToFirebase();
+            
+            setToastMessage('✅ 데이터 동기화 완료');
+            console.log('✅ 수동 동기화 완료');
+        } catch (error) {
+            console.error('❌ 수동 동기화 실패:', error);
+            setToastMessage('❌ 동기화 실패');
+        } finally {
+            setIsSyncingData(false);
+        }
+    };
+
     const handleMoveToFolder = async (goalId: number, folderId: string | null) => {
         const todo = todos.find(t => t.id === goalId);
         if (!todo) return;
@@ -3780,6 +3871,7 @@ const App: React.FC = () => {
                         onSyncSharedFolder={handleSyncSharedFolder}
                         isSyncing={isSyncingData}
                         isSyncingData={isSyncingData}
+                        onManualSync={handleManualSync}
                         // 공동작업 관련 props
                         activeUsers={activeUsers}
                         editingStates={editingStates}
@@ -4462,6 +4554,7 @@ const Header: React.FC<{
     onSyncSharedFolder: () => void; 
     isSyncing: boolean;
     isSyncingData: boolean;
+    onManualSync: () => void;
     // 공동작업 관련 props
     activeUsers: UserPresence[];
     editingStates: { [todoId: number]: EditingState };
@@ -4472,7 +4565,7 @@ const Header: React.FC<{
     isViewModeCalendar, onToggleViewMode, isAiSorting, sortType, onSort, 
     filter, onFilter, categoryFilter, onCategoryFilter, userCategories, 
     onAddCategory, onRemoveCategory, onSetSelectionMode, onOpenSettings, 
-    onAddGoal, currentFolderId, folders, onSyncSharedFolder, isSyncing, isSyncingData,
+    onAddGoal, currentFolderId, folders, onSyncSharedFolder, isSyncing, isSyncingData, onManualSync,
     activeUsers, editingStates, onToggleCollaboration, onUpdateCollaborationSettings
 }) => {
     const [isFilterPopoverOpen, setIsFilterPopoverOpen] = useState(false);
@@ -4699,13 +4792,36 @@ const Header: React.FC<{
                             </button>
                         )}
                         
-                        {/* 동기화 상태 표시 */}
-                        {isSyncingData && (
-                            <div className="sync-status-indicator" title="데이터 동기화 중...">
-                                <div className="spinner" style={{ width: '16px', height: '16px' }} />
-                                <span style={{ fontSize: '12px', marginLeft: '4px' }}>동기화중</span>
-                            </div>
-                        )}
+                        {/* 동기화 상태 표시 - 항상 표시하고 클릭 시 수동 동기화 */}
+                        <button 
+                            className="sync-status-indicator clickable" 
+                            onClick={() => {
+                                if (!isSyncingData) {
+                                    // 수동 동기화 실행
+                                    if (currentFolderId && folders.find(f => f.id === currentFolderId)?.isShared) {
+                                        // 공유 폴더 동기화
+                                        onSyncSharedFolder();
+                                    } else {
+                                        // 일반 데이터 동기화
+                                        onManualSync();
+                                    }
+                                }
+                            }}
+                            disabled={isSyncingData}
+                            title={isSyncingData ? "동기화 중..." : "클릭하여 수동 동기화"}
+                        >
+                            {isSyncingData ? (
+                                <>
+                                    <div className="spinner" style={{ width: '16px', height: '16px' }} />
+                                    <span style={{ fontSize: '12px', marginLeft: '4px' }}>동기화중</span>
+                                </>
+                            ) : (
+                                <>
+                                    <span style={{ fontSize: '16px' }}>🔄</span>
+                                    <span style={{ fontSize: '12px', marginLeft: '4px' }}>동기화</span>
+                                </>
+                            )}
+                        </button>
                         
                         <button onClick={onOpenSettings} className="header-icon-button" aria-label={t('settings_title')}>{icons.settings}</button>
                     </div>
