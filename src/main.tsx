@@ -1640,8 +1640,6 @@ const App: React.FC = () => {
                 }
             }
             
-            setToastMessage('✅ 전체 데이터 동기화 완료! (목표: ' + sanitizedTodos.length + '개, 폴더: ' + folders.length + '개)');
-            setTimeout(() => setToastMessage(''), 3000);
             setIsSyncingData(false);
         } catch (error: any) {
             console.error('동기화 오류:', error);
