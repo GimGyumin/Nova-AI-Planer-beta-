@@ -1268,7 +1268,7 @@ const App: React.FC = () => {
     }, []);
 
     // Firebase 설정 진단 함수
-    const diagnoseFirbaseSetup = useCallback(() => {
+    const diagnoseFirebaseSetup = useCallback(() => {
         console.log('🔍 Firebase 진단 시작...');
         console.log('Firebase Auth:', auth);
         console.log('Firebase DB:', db);
@@ -3760,7 +3760,7 @@ const App: React.FC = () => {
                 isLoadingData={isLoadingData}
                 isAutoSyncEnabled={isAutoSyncEnabled}
                 setIsAutoSyncEnabled={setIsAutoSyncEnabled}
-                onDiagnoseFirebase={diagnoseFirbaseSetup}
+                onDiagnoseFirebase={diagnoseFirebaseSetup}
             />}
             {isVersionInfoOpen && <VersionInfoModal onClose={() => setIsVersionInfoOpen(false)} t={t} />}
             {isUsageGuideOpen && <UsageGuideModal onClose={() => setIsUsageGuideOpen(false)} t={t} />}
@@ -5979,7 +5979,7 @@ const SettingsModal: React.FC<{
                                     </div>
                                     <div style={{ display: 'flex', justifyContent: 'center', padding: '8px 0' }}>
                                         <button 
-                                            onClick={diagnoseFirbaseSetup} 
+                                            onClick={onDiagnoseFirebase} 
                                             style={{ 
                                                 backgroundColor: 'transparent', 
                                                 border: '1px solid #D3D3D3', 
@@ -5995,69 +5995,85 @@ const SettingsModal: React.FC<{
                                     </div>
                                 </div>
                             )}
+                        </div>
 
-                            <div className="settings-section-header">클라우드 동기화</div>
-                            <div className="settings-section-body">
-                                {googleUser && (
-                                    <>
-                                        <button className="settings-item action-item" onClick={onSyncDataToFirebase} disabled={isSyncingData}>
-                                            <span className="action-text">{isSyncingData ? '저장중...' : '클라우드에 저장'}</span>
-                                        </button>
-                                        <button className="settings-item action-item" onClick={onLoadDataFromFirebase} disabled={isLoadingData}>
-                                            <span className="action-text">{isLoadingData ? '로드중...' : '클라우드에서 불러오기'}</span>
-                                        </button>
-                                        <label className="settings-item">
-                                            <div>
-                                                <span>자동 동기화</span>
-                                                <div style={{ fontSize: '12px', opacity: 0.7, marginTop: '4px' }}>목표 변경 시 자동으로 저장</div>
-                                            </div>
-                                            <div className="theme-toggle-switch">
-                                                <input type="checkbox" checked={isAutoSyncEnabled} onChange={(e) => setIsAutoSyncEnabled(e.target.checked)} />
-                                                <span className="slider round"></span>
-                                            </div>
-                                        </label>
-                                    </>
-                                )}
-                            </div>
-
-                            <div className="settings-section-header">{t('settings_data_header')}</div>
-                            <div className="settings-section-body">
-                                <button className="settings-item action-item" onClick={onExportData} disabled={dataActionStatus !== 'idle'}><span className="action-text">{dataActionStatus === 'exporting' ? t('data_exporting') : t('settings_export_data')}</span></button>
-                                <button className="settings-item action-item" onClick={() => fileInputRef.current?.click()} disabled={dataActionStatus !== 'idle'}><span className="action-text">{dataActionStatus === 'importing' ? t('data_importing') : t('settings_import_data')}</span><input type="file" ref={fileInputRef} onChange={onImportData} accept=".json" style={{ display: 'none' }} /></button>
-                            </div>
-
-                            <div className="settings-section-header">{t('settings_share_link_header')}</div>
-                            <div className="settings-section-body">
-                                {!shareableLink && (
-                                    <button className="settings-item action-item" onClick={handleCreateShareLink} disabled={isGeneratingLink}><span className="action-text">{isGeneratingLink ? '단축 URL 생성 중...' : t('settings_generate_link')}</span></button>
-                                )}
-                                {shareableLink && (
-                                    <div className="share-link-container">
-                                        <div style={{ marginBottom: '8px', fontSize: '12px', opacity: 0.7 }}>{shareableLink.length < 100 ? '단축 URL' : '일반 링크'} ({shareableLink.length}자)</div>
-                                        <input type="text" readOnly value={shareableLink} onClick={(e) => (e.target as HTMLInputElement).select()} />
-                                        <button onClick={handleCopyLink}>{t('settings_copy_link')}</button>
-                                    </div>
-                                )}
-                            </div>
-
-                            <div className="settings-section-header">{t('settings_section_info')}</div>
-                            <div className="settings-section-body">
-                                <div className="settings-item nav-indicator" onClick={onOpenVersionInfo}>
-                                    <span>{t('settings_version')}</span>
-                                    <div className="settings-item-value-with-icon"><span>1.5</span>{icons.forward}</div>
+                        {googleUser && (
+                            <>
+                                <div className="settings-section-header">클라우드 동기화</div>
+                                <div className="settings-section-body">
+                                    <button className="settings-item action-item" onClick={onSyncDataToFirebase} disabled={isSyncingData}>
+                                        <span className="action-text">{isSyncingData ? '저장중...' : '클라우드에 저장'}</span>
+                                    </button>
+                                    <button className="settings-item action-item" onClick={onLoadDataFromFirebase} disabled={isLoadingData}>
+                                        <span className="action-text">{isLoadingData ? '로드중...' : '클라우드에서 불러오기'}</span>
+                                    </button>
+                                    <label className="settings-item">
+                                        <div>
+                                            <span>자동 동기화</span>
+                                            <div style={{ fontSize: '12px', opacity: 0.7, marginTop: '4px' }}>목표 변경 시 자동으로 저장</div>
+                                        </div>
+                                        <div className="theme-toggle-switch">
+                                            <input type="checkbox" checked={isAutoSyncEnabled} onChange={(e) => setIsAutoSyncEnabled(e.target.checked)} />
+                                            <span className="slider round"></span>
+                                        </div>
+                                    </label>
                                 </div>
-                                <div className="settings-item nav-indicator" onClick={onOpenUsageGuide}><span>{t('usage_guide_title')}</span><div className="settings-item-value-with-icon">{icons.forward}</div></div>
-                                <div className="settings-item nav-indicator" onClick={() => {
-                                    setAlertMessage(`This is a very long alert message.\n\nThis message spans multiple lines and is designed to test whether the alert popup properly expands vertically to accommodate longer content.\n\nIt includes line breaks,\nand multiple paragraphs.\n\nWhen long error messages or guidance messages like this are displayed, the popup should adjust its size appropriately.\n\nFor extremely long content that requires scrolling, a scrollbar should appear, and the button area should always remain fixed at the bottom.`);
-                                }}><span>{t('test_long_alert')}</span><div className="settings-item-value-with-icon"><span>{t('test_long_alert_desc')}</span>{icons.forward}</div></div>
-                                <div className="settings-item"><span>{t('settings_developer')}</span><span className="settings-item-value">{t('developer_name')}</span></div>
-                                <div className="settings-item"><span>{t('settings_copyright')}</span><span className="settings-item-value">{t('copyright_notice')}</span></div>
-                            </div>
+                            </>
+                        )}
 
-                            <div className="settings-section-header">{t('settings_delete_account')}</div>
-                            <div className="settings-section-body">
-                                <button className="settings-item action-item" onClick={handleDeleteClick} disabled={dataActionStatus !== 'idle'}><span className="action-text destructive">{dataActionStatus === 'deleting' ? t('data_deleting') : t('settings_delete_account')}</span></button>
+                        <div className="settings-section-header">{t('settings_data_header')}</div>
+                        <div className="settings-section-body">
+                            <div style={{ fontSize: '12px', opacity: 0.7, marginBottom: '12px', padding: '8px', backgroundColor: 'var(--bg-color-secondary)', borderRadius: '8px' }}>
+                                {t('settings_data_header_desc')}
                             </div>
+                            <button className="settings-item action-item" onClick={onExportData} disabled={dataActionStatus !== 'idle'}>
+                                <span className="action-text">{dataActionStatus === 'exporting' ? t('data_exporting') : t('settings_export_data')}</span>
+                            </button>
+                            <button className="settings-item action-item" onClick={() => fileInputRef.current?.click()} disabled={dataActionStatus !== 'idle'}>
+                                <span className="action-text">{dataActionStatus === 'importing' ? t('data_importing') : t('settings_import_data')}</span>
+                                <input type="file" ref={fileInputRef} onChange={onImportData} accept=".json" style={{ display: 'none' }} />
+                            </button>
+                        </div>
+
+                        {todos.length > 0 && (
+                            <>
+                                <div className="settings-section-header">{t('settings_share_link_header')}</div>
+                                <div className="settings-section-body">
+                                    {!shareableLink && (
+                                        <button className="settings-item action-item" onClick={handleCreateShareLink} disabled={isGeneratingLink}>
+                                            <span className="action-text">{isGeneratingLink ? '단축 URL 생성 중...' : t('settings_generate_link')}</span>
+                                        </button>
+                                    )}
+                                    {shareableLink && (
+                                        <div className="share-link-container">
+                                            <div style={{ marginBottom: '8px', fontSize: '12px', opacity: 0.7 }}>{shareableLink.length < 100 ? '단축 URL' : '일반 링크'} ({shareableLink.length}자)</div>
+                                            <input type="text" readOnly value={shareableLink} onClick={(e) => (e.target as HTMLInputElement).select()} />
+                                            <button onClick={handleCopyLink}>{t('settings_copy_link')}</button>
+                                        </div>
+                                    )}
+                                </div>
+                            </>
+                        )}
+
+                        <div className="settings-section-header">{t('settings_section_info')}</div>
+                        <div className="settings-section-body">
+                            <div className="settings-item nav-indicator" onClick={onOpenVersionInfo}>
+                                <span>{t('settings_version')}</span>
+                                <div className="settings-item-value-with-icon"><span>1.5</span>{icons.forward}</div>
+                            </div>
+                            <div className="settings-item nav-indicator" onClick={onOpenUsageGuide}><span>{t('usage_guide_title')}</span><div className="settings-item-value-with-icon">{icons.forward}</div></div>
+                            <div className="settings-item nav-indicator" onClick={() => {
+                                setAlertMessage(`This is a very long alert message.\n\nThis message spans multiple lines and is designed to test whether the alert popup properly expands vertically to accommodate longer content.\n\nIt includes line breaks,\nand multiple paragraphs.\n\nWhen long error messages or guidance messages like this are displayed, the popup should adjust its size appropriately.\n\nFor extremely long content that requires scrolling, a scrollbar should appear, and the button area should always remain fixed at the bottom.`);
+                            }}><span>{t('test_long_alert')}</span><div className="settings-item-value-with-icon"><span>{t('test_long_alert_desc')}</span>{icons.forward}</div></div>
+                            <div className="settings-item"><span>{t('settings_developer')}</span><span className="settings-item-value">{t('developer_name')}</span></div>
+                            <div className="settings-item"><span>{t('settings_copyright')}</span><span className="settings-item-value">{t('copyright_notice')}</span></div>
+                        </div>
+
+                        <div className="settings-section-header">{t('settings_delete_account')}</div>
+                        <div className="settings-section-body">
+                            <button className="settings-item action-item" onClick={handleDeleteClick} disabled={dataActionStatus !== 'idle'}>
+                                <span className="action-text destructive">{dataActionStatus === 'deleting' ? t('data_deleting') : t('settings_delete_account')}</span>
+                            </button>
                         </div>
                     </>
                 );
