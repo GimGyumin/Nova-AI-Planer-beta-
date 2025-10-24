@@ -3506,11 +3506,13 @@ const App: React.FC = () => {
     };
 
     const performDeleteAllData = async () => {
+        console.log('🗑️ performDeleteAllData 함수 시작');
         setDataActionStatus('deleting');
         
         try {
             // 1. Firebase 사용자 데이터 삭제
             if (googleUser) {
+                console.log('📧 사용자 정보:', { uid: googleUser.uid, email: googleUser.email });
                 console.log('🗑️ Firebase 데이터 삭제 시작...');
                 
                 // 백업 데이터 삭제 (users/{uid}/data/)
@@ -3533,6 +3535,7 @@ const App: React.FC = () => {
                 // 개별 목표 컬렉션 삭제 (users/{uid}/todos/)
                 const todosRef = collection(db, 'users', googleUser.uid, 'todos');
                 const todosSnapshot = await getDocs(todosRef);
+                console.log('📊 삭제할 todos 개수:', todosSnapshot.size);
                 const deletePromises = todosSnapshot.docs.map(doc => deleteDoc(doc.ref));
                 await Promise.all(deletePromises);
                 console.log('✅ 개별 todos 삭제 완료:', todosSnapshot.size, '개');
@@ -3540,6 +3543,7 @@ const App: React.FC = () => {
                 // 개별 폴더 컬렉션 삭제 (users/{uid}/folders/)
                 const foldersRef = collection(db, 'users', googleUser.uid, 'folders');
                 const foldersSnapshot = await getDocs(foldersRef);
+                console.log('📊 삭제할 folders 개수:', foldersSnapshot.size);
                 const deleteFolderPromises = foldersSnapshot.docs.map(doc => deleteDoc(doc.ref));
                 await Promise.all(deleteFolderPromises);
                 console.log('✅ folders 삭제 완료:', foldersSnapshot.size, '개');
@@ -3644,15 +3648,21 @@ const App: React.FC = () => {
                 console.log('🔥 모든 클라우드 데이터 삭제 완료 - 사용자 데이터가 완전히 제거되었습니다');
             }
 
-            // 2. 로컬 상태 초기화
+            // 2. 로컬 상태 완전 초기화
+            console.log('🔄 로컬 상태 초기화 시작...');
             setTodos([]);
             setFolders([]);
             setActiveUsers([]);
             setEditingStates({});
             setConflicts([]);
             setCurrentFolderId(null);
+            setSelectedTodoIds(new Set());
+            setIsSelectionMode(false);
+            setFilter('all');
+            setCategoryFilter('all');
             
-            // 3. 설정 초기화
+            // 3. 설정 완전 초기화
+            console.log('⚙️ 설정 초기화 시작...');
             setLanguage('ko');
             setIsDarkMode(true);
             setBackgroundTheme('default');
@@ -3660,13 +3670,21 @@ const App: React.FC = () => {
             setUserCategories(['school', 'work', 'personal', 'other']);
             
             // 4. localStorage 완전 삭제
+            console.log('💾 localStorage 초기화 시작...');
             localStorage.clear();
+            console.log('✅ localStorage 완전 삭제 완료');
             
-            // 5. Firebase 로그아웃
+            // 5. Firebase 로그아웃 및 리스너 정리
             if (googleUser) {
                 console.log('🚪 Firebase 로그아웃 처리...');
-                await signOut(auth);
-                console.log('✅ 로그아웃 완료');
+                
+                // 실시간 리스너들 정리 (auth state listener가 자동으로 정리됨)
+                try {
+                    await signOut(auth);
+                    console.log('✅ 로그아웃 완료');
+                } catch (logoutError) {
+                    console.warn('⚠️ 로그아웃 중 오류:', logoutError);
+                }
             }
             
             console.log('✅ 모든 데이터 삭제 완료');
@@ -3674,8 +3692,9 @@ const App: React.FC = () => {
             
             // 6. 완전한 초기화를 위해 페이지 새로고침
             setTimeout(() => {
+                console.log('🔄 페이지 새로고침으로 완전 초기화...');
                 window.location.reload();
-            }, 2000);
+            }, 1500);
             
         } catch (error) {
             console.error('❌ 데이터 삭제 중 오류:', error);
@@ -3760,6 +3779,7 @@ const App: React.FC = () => {
                         folders={folders}
                         onSyncSharedFolder={handleSyncSharedFolder}
                         isSyncing={isSyncingData}
+                        isSyncingData={isSyncingData}
                         // 공동작업 관련 props
                         activeUsers={activeUsers}
                         editingStates={editingStates}
@@ -4441,6 +4461,7 @@ const Header: React.FC<{
     folders: Folder[]; 
     onSyncSharedFolder: () => void; 
     isSyncing: boolean;
+    isSyncingData: boolean;
     // 공동작업 관련 props
     activeUsers: UserPresence[];
     editingStates: { [todoId: number]: EditingState };
@@ -4451,7 +4472,7 @@ const Header: React.FC<{
     isViewModeCalendar, onToggleViewMode, isAiSorting, sortType, onSort, 
     filter, onFilter, categoryFilter, onCategoryFilter, userCategories, 
     onAddCategory, onRemoveCategory, onSetSelectionMode, onOpenSettings, 
-    onAddGoal, currentFolderId, folders, onSyncSharedFolder, isSyncing,
+    onAddGoal, currentFolderId, folders, onSyncSharedFolder, isSyncing, isSyncingData,
     activeUsers, editingStates, onToggleCollaboration, onUpdateCollaborationSettings
 }) => {
     const [isFilterPopoverOpen, setIsFilterPopoverOpen] = useState(false);
@@ -4555,7 +4576,7 @@ const Header: React.FC<{
                                     {isCollaborationEnabled ? '👥' : '👤'}
                                 </button>
                                 
-                                {isCollaborationPopoverOpen && (
+                                {isCollaborationPopoverOpen && currentFolderId && (
                                     <div className="profile-popover collaboration-popover" style={{ right: '60px', top: '50px' }}>
                                         <div className="popover-section">
                                             <h4 style={{ marginBottom: '12px' }}>공동작업 설정</h4>
@@ -4677,6 +4698,15 @@ const Header: React.FC<{
                                 {isSyncing ? <div className="spinner" style={{ width: '20px', height: '20px' }} /> : '🔄'}
                             </button>
                         )}
+                        
+                        {/* 동기화 상태 표시 */}
+                        {isSyncingData && (
+                            <div className="sync-status-indicator" title="데이터 동기화 중...">
+                                <div className="spinner" style={{ width: '16px', height: '16px' }} />
+                                <span style={{ fontSize: '12px', marginLeft: '4px' }}>동기화중</span>
+                            </div>
+                        )}
+                        
                         <button onClick={onOpenSettings} className="header-icon-button" aria-label={t('settings_title')}>{icons.settings}</button>
                     </div>
                 )}
@@ -6138,9 +6168,6 @@ const SettingsModal: React.FC<{
                                 <div className="settings-item-value-with-icon"><span>1.5</span>{icons.forward}</div>
                             </div>
                             <div className="settings-item nav-indicator" onClick={onOpenUsageGuide}><span>{t('usage_guide_title')}</span><div className="settings-item-value-with-icon">{icons.forward}</div></div>
-                            <div className="settings-item nav-indicator" onClick={() => {
-                                setAlertMessage(`This is a very long alert message.\n\nThis message spans multiple lines and is designed to test whether the alert popup properly expands vertically to accommodate longer content.\n\nIt includes line breaks,\nand multiple paragraphs.\n\nWhen long error messages or guidance messages like this are displayed, the popup should adjust its size appropriately.\n\nFor extremely long content that requires scrolling, a scrollbar should appear, and the button area should always remain fixed at the bottom.`);
-                            }}><span>{t('test_long_alert')}</span><div className="settings-item-value-with-icon"><span>{t('test_long_alert_desc')}</span>{icons.forward}</div></div>
                             <div className="settings-item"><span>{t('settings_developer')}</span><span className="settings-item-value">{t('developer_name')}</span></div>
                             <div className="settings-item"><span>{t('settings_copyright')}</span><span className="settings-item-value">{t('copyright_notice')}</span></div>
                         </div>
