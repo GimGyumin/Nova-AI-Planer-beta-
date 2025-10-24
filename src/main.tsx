@@ -2844,7 +2844,33 @@ const App: React.FC = () => {
             
         } catch (error) {
             console.error('❌ 데이터 삭제 중 오류:', error);
-            setToastMessage('❌ 데이터 삭제 중 오류가 발생했습니다: ' + (error instanceof Error ? error.message : '알 수 없는 오류'));
+            
+            // 구체적인 오류 타입에 따른 사용자 친화적 메시지
+            let errorTitle = '❌ 삭제 실패';
+            let errorMessage = '데이터 삭제 중 오류가 발생했습니다.';
+            
+            if (error instanceof Error) {
+                if (error.message.includes('permission-denied') || error.message.includes('insufficient permissions')) {
+                    errorTitle = '❌ 권한 부족';
+                    errorMessage = '삭제 권한이 부족합니다.\n\n잠시 후 다시 시도해주세요.\n(Firebase 보안 규칙이 업데이트 중일 수 있습니다)';
+                } else if (error.message.includes('network-request-failed')) {
+                    errorTitle = '❌ 네트워크 오류';
+                    errorMessage = '인터넷 연결을 확인하고 다시 시도해주세요.';
+                } else if (error.message.includes('unauthenticated')) {
+                    errorTitle = '❌ 로그인 필요';
+                    errorMessage = '로그인이 만료되었습니다.\n다시 로그인해주세요.';
+                } else {
+                    errorMessage = '데이터 삭제 중 오류가 발생했습니다.\n\n오류 내용: ' + error.message;
+                }
+            }
+            
+            // Alert 팝업으로 오류 표시
+            setAlertConfig({
+                title: errorTitle,
+                message: errorMessage,
+                confirmText: '확인',
+                onConfirm: () => setAlertConfig(null)
+            });
         } finally {
             setDataActionStatus('idle');
             setIsSettingsOpen(false);
