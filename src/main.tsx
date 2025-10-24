@@ -2456,9 +2456,33 @@ const App: React.FC = () => {
         ));
     };
 
-    const handleDeleteFolder = (folderId: string) => {
+    const handleDeleteFolder = async (folderId: string) => {
         const folder = folders.find(f => f.id === folderId);
         if (!folder) return;
+
+        // 🔥 폴더 내 모든 목표를 Firebase에서도 루트로 이동
+        const folderTodos = todos.filter(todo => todo.folderId === folderId);
+        
+        if (googleUser && folderTodos.length > 0) {
+            try {
+                for (const todo of folderTodos) {
+                    const updatedTodo = { ...todo, folderId: undefined };
+                    
+                    // 폴더 소유자의 Firestore에서 업데이트
+                    const targetOwnerUid = folder.ownerId || googleUser.uid;
+                    const todosRef = collection(db, 'users', targetOwnerUid, 'todos');
+                    const todoDocRef = doc(todosRef, todo.id.toString());
+                    
+                    const sanitizedTodo = sanitizeFirestoreData(updatedTodo);
+                    if (sanitizedTodo) {
+                        await setDoc(todoDocRef, sanitizedTodo);
+                    }
+                }
+                console.log('✅ 폴더 삭제 시 목표들 Firebase 이동 완료:', { count: folderTodos.length });
+            } catch (error) {
+                console.error('❌ 폴더 삭제 시 목표 이동 실패:', error);
+            }
+        }
 
         // Move all goals in this folder to root (folderId = undefined)
         setTodos(todos.map(todo =>
@@ -2657,12 +2681,51 @@ const App: React.FC = () => {
         setTimeout(() => setToastMessage(''), 3000);
     };
 
-    const handleMoveGoalToFolder = (goalId: number, targetFolderId: string | null) => {
+    const handleMoveGoalToFolder = async (goalId: number, targetFolderId: string | null) => {
+        const todo = todos.find(t => t.id === goalId);
+        if (!todo) return;
+        
+        const updatedTodo = { ...todo, folderId: targetFolderId || undefined };
+        
+        // 🔥 Firebase에 저장 (중요!)
+        if (googleUser) {
+            try {
+                // 원래 폴더와 새 폴더의 소유자를 확인
+                const originalFolder = folders.find(f => f.id === todo.folderId);
+                const targetFolder = folders.find(f => f.id === targetFolderId);
+                
+                // 원래 폴더에서 삭제
+                if (originalFolder?.ownerId && originalFolder.ownerId !== googleUser.uid) {
+                    const originalTodosRef = collection(db, 'users', originalFolder.ownerId, 'todos');
+                    const originalDocRef = doc(originalTodosRef, goalId.toString());
+                    await deleteDoc(originalDocRef);
+                    console.log('✅ 원래 폴더에서 목표 삭제:', { originalOwner: originalFolder.ownerId, goalId });
+                }
+                
+                // 새 폴더에 저장
+                const targetOwnerUid = targetFolder?.ownerId || googleUser.uid;
+                const todosRef = collection(db, 'users', targetOwnerUid, 'todos');
+                const todoDocRef = doc(todosRef, goalId.toString());
+                
+                const sanitizedTodo = sanitizeFirestoreData(updatedTodo);
+                if (sanitizedTodo) {
+                    await setDoc(todoDocRef, sanitizedTodo);
+                    console.log('✅ 새 폴더에 목표 저장:', { targetOwner: targetOwnerUid, goalId, targetFolderId });
+                }
+            } catch (error) {
+                console.error('❌ 폴더 이동 Firebase 저장 실패:', error);
+            }
+        }
+        
+        // UI 업데이트
         setTodos(todos.map(todo =>
             todo.id === goalId
                 ? { ...todo, folderId: targetFolderId || undefined }
                 : todo
         ));
+        
+        setToastMessage('✅ 목표가 폴더로 이동되었습니다');
+        setTimeout(() => setToastMessage(''), 3000);
     };
 
     const handleToggleComplete = async (id: number) => {
