@@ -1175,6 +1175,7 @@ const App: React.FC = () => {
     const [isGoogleLoggingOut, setIsGoogleLoggingOut] = useState<boolean>(false);
     const [isSyncingData, setIsSyncingData] = useState<boolean>(false);
     const [isLoadingData, setIsLoadingData] = useState<boolean>(false);
+    const [isAuthLoading, setIsAuthLoading] = useState<boolean>(true); // 인증 상태 로딩
 
     // Firebase 로그인 상태 감시 및 데이터 자동 로드 + 실시간 리스너
     useEffect(() => {
@@ -1184,6 +1185,7 @@ const App: React.FC = () => {
         
         const unsubscribe = onAuthStateChanged(auth, async (user) => {
             setGoogleUser(user);
+            setIsAuthLoading(false); // 인증 상태 확인 완료
             
             if (user) {
                 // 로그인 성공 시 Firebase에서 모든 데이터 자동 로드
@@ -1850,6 +1852,9 @@ const App: React.FC = () => {
     }, []);
 
     useEffect(() => {
+        // 인증 상태가 아직 로딩 중이면 URL 처리를 기다림
+        if (isAuthLoading) return;
+        
         const handleFolderShare = async () => {
             const urlParams = new URLSearchParams(window.location.search);
             const dataFromUrl = urlParams.get('data');
@@ -1904,7 +1909,8 @@ const App: React.FC = () => {
 
                         if (!folderExists) {
                             // 만약 소유자 UID가 포함되어 있고 사용자가 로그인하지 않았다면 로그인 요구
-                            if (shareInfo.ownerId && !googleUser) {
+                            // 단, 인증 상태가 아직 로딩 중이면 기다림
+                            if (shareInfo.ownerId && !googleUser && !isAuthLoading) {
                                 setAlertConfig({
                                     title: '로그인 필요',
                                     message: '이 공유 폴더는 소유자 기반 동기화를 위해 로그인이 필요합니다. 계속하려면 로그인하세요.',
@@ -2075,7 +2081,7 @@ const App: React.FC = () => {
         };;
         
         handleFolderShare();
-    }, [t, folders, googleUser, handleFirebaseGoogleLogin]);
+    }, [t, folders, googleUser, handleFirebaseGoogleLogin, isAuthLoading]);
 
     // 공유 폴더의 목표를 Firestore에서 실시간으로 동기화
     useEffect(() => {
