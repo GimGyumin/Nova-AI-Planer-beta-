@@ -714,7 +714,7 @@ const translations = {
 
     // Main Page
     my_goals_title: 'My Goals',
-    all_goals_label: 'All Goals',
+    all_goals_label: '나의 목표',
     sort_label_manual: 'Manual',
     sort_label_deadline: 'Deadline',
     sort_label_newest: 'Newest',
@@ -722,7 +722,7 @@ const translations = {
     sort_label_ai: 'Priority Order',
     ai_sorting_button: 'Sorting...',
     add_new_goal_button_label: 'Add New Goal',
-    filter_all: 'All Goals',
+    filter_all: '나의 목표',
     filter_active: 'In Progress',
     filter_completed: 'Completed',
     // Category Filters
@@ -1302,17 +1302,25 @@ const App: React.FC = () => {
                                         
                                         console.log('🔄 공유 폴더 목표 실시간 업데이트:', { folderId: sharedFolder.id, count: sharedTodos.length });
                                         
-                                        // 공유 폴더 목표 병합 (기존 공유 폴더 목표 제거 후 새로운 목표 추가)
+                                        // 공유 폴더 목표 병합 (해당 공유 폴더의 기존 공유 목표만 제거)
                                         setTodos(prevTodos => {
-                                            // 해당 공유 폴더의 기존 목표들 제거
-                                            const otherTodos = prevTodos.filter(t => t.folderId !== sharedFolder.id);
+                                            // 해당 공유 폴더의 기존 공유 목표들만 제거 (개인 목표는 보존)
+                                            const otherTodos = prevTodos.filter(t => 
+                                                !(t.folderId === sharedFolder.id && t.isSharedTodo === true)
+                                            );
+                                            
+                                            // 중복 방지: 이미 존재하는 목표는 제외
+                                            const newSharedTodos = sharedTodos.filter(newTodo => 
+                                                !otherTodos.some(existingTodo => existingTodo.id === newTodo.id)
+                                            );
+                                            
                                             // 새로운 공유 폴더 목표들 추가
-                                            const updatedTodos = [...otherTodos, ...sharedTodos];
+                                            const updatedTodos = [...otherTodos, ...newSharedTodos];
                                             
                                             console.log('📊 목표 병합 결과:', { 
                                                 기존총개수: prevTodos.length, 
                                                 제외된공유목표: prevTodos.length - otherTodos.length,
-                                                새로운공유목표: sharedTodos.length,
+                                                중복제거후새목표: newSharedTodos.length,
                                                 최종총개수: updatedTodos.length 
                                             });
                                             
@@ -2621,8 +2629,8 @@ const App: React.FC = () => {
         
         // 현재 폴더에 속한 목표만 필터링
         if (currentFolderId === null) {
-            // "모든 목표"를 선택한 경우, 모든 목표 표시
-            sortedTodos = sortedTodos;
+            // "나의 목표"를 선택한 경우, 같은 계정의 개인 목표만 표시 (공유 목표 제외)
+            sortedTodos = sortedTodos.filter(todo => !todo.isSharedTodo);
         } else {
             // 특정 폴더를 선택한 경우, 해당 폴더의 목표만 표시
             sortedTodos = sortedTodos.filter(todo => todo.folderId === currentFolderId);
@@ -5057,7 +5065,7 @@ const TodoItem: React.FC<{ todo: Goal; onToggleComplete: (id: number) => void; o
                             }}
                             title="폴더 선택"
                         >
-                            <option value="root">📁 All Goals</option>
+                            <option value="root">📁 나의 목표</option>
                             {folders.map(folder => (
                                 <option key={folder.id} value={folder.id}>{folder.name}</option>
                             ))}
