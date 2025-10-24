@@ -33,9 +33,11 @@ const sanitizeFirestoreData = (obj: any): any => {
   if (obj === undefined || obj === null) return undefined;  // null과 undefined 모두 차단
   if (typeof obj !== 'object') return obj;
   if (Array.isArray(obj)) {
-    return obj
+    const cleanedArray = obj
+      .filter(item => item !== undefined) // undefined 항목 먼저 제거
       .map(item => sanitizeFirestoreData(item))
-      .filter(item => item !== undefined);
+      .filter(item => item !== undefined); // 정제 후 undefined가 된 항목도 제거
+    return cleanedArray.length > 0 ? cleanedArray : undefined;
   }
   
   // 객체가 null인지 추가 확인
@@ -63,6 +65,8 @@ const sanitizeFirestoreData = (obj: any): any => {
       const sanitized = sanitizeFirestoreData(value);
       if (sanitized !== undefined) {
         cleaned[key] = sanitized;
+      } else {
+        console.warn(`⚠️ 중첩 객체/배열 제거됨: ${key}`);
       }
     } else {
       cleaned[key] = value;
@@ -1282,14 +1286,28 @@ const App: React.FC = () => {
                 const sanitizedTodos = todos.filter(todo => todo != null);
                 const { doc, setDoc, serverTimestamp } = await import('firebase/firestore');
                 
+                // 각 todo 객체의 undefined 값 제거
+                const cleanedTodos = sanitizedTodos
+                    .map(todo => sanitizeFirestoreData(todo))
+                    .filter(todo => todo !== undefined);
+                
                 // 목표 데이터 저장
                 const todosRef = doc(db, 'users', googleUser.uid, 'data', 'todos');
-                await setDoc(todosRef, {
-                    todos: sanitizedTodos,
+                const todosData = {
+                    todos: cleanedTodos,
                     lastSyncTime: serverTimestamp(),
-                    totalGoals: sanitizedTodos.length,
+                    totalGoals: cleanedTodos.length,
                     syncedAt: new Date().toISOString()
-                });
+                };
+                
+                // 데이터 정제 후 저장
+                const sanitizedTodosData = sanitizeFirestoreData(todosData);
+                if (sanitizedTodosData) {
+                    await setDoc(todosRef, sanitizedTodosData);
+                    console.log('✅ Todos Firestore 저장 완료:', { count: cleanedTodos.length });
+                } else {
+                    console.error('❌ Todos 데이터 정제 실패');
+                }
                 
                 // 설정값 저장 (colorMode, language, theme)
                 const settingsRef = doc(db, 'users', googleUser.uid, 'data', 'settings');
@@ -1350,14 +1368,28 @@ const App: React.FC = () => {
             const sanitizedTodos = todos.filter(todo => todo != null);
             const { doc, setDoc, serverTimestamp } = await import('firebase/firestore');
             
+            // 각 todo 객체의 undefined 값 제거
+            const cleanedTodos = sanitizedTodos
+                .map(todo => sanitizeFirestoreData(todo))
+                .filter(todo => todo !== undefined);
+            
             // 1. 목표 데이터 저장
             const todosRef = doc(db, 'users', googleUser.uid, 'data', 'todos');
-            await setDoc(todosRef, {
-                todos: sanitizedTodos,
+            const todosData = {
+                todos: cleanedTodos,
                 lastSyncTime: serverTimestamp(),
-                totalGoals: sanitizedTodos.length,
+                totalGoals: cleanedTodos.length,
                 syncedAt: new Date().toISOString()
-            });
+            };
+            
+            // 데이터 정제 후 저장
+            const sanitizedTodosData = sanitizeFirestoreData(todosData);
+            if (sanitizedTodosData) {
+                await setDoc(todosRef, sanitizedTodosData);
+                console.log('✅ 백업 Todos Firestore 저장 완료:', { count: cleanedTodos.length });
+            } else {
+                throw new Error('Todos 데이터 정제 실패');
+            }
             
             // 2. 설정값도 저장 (language, theme, colorMode, apiKey, userCategories 등)
             const settingsRef = doc(db, 'users', googleUser.uid, 'data', 'settings');
@@ -2590,7 +2622,13 @@ const App: React.FC = () => {
             
             // Firestore 업데이트
             const folderRef = doc(db, 'users', googleUser.uid, 'folders', folder.id);
-            await setDoc(folderRef, updatedFolder);
+            const sanitizedFolder = sanitizeFirestoreData(updatedFolder);
+            if (sanitizedFolder) {
+                await setDoc(folderRef, sanitizedFolder);
+                console.log('✅ 폴더 이름 변경 Firestore 저장 완료');
+            } else {
+                throw new Error('폴더 데이터 정제 실패');
+            }
             
             // 로컬 상태 업데이트
             setFolders(folders.map(f => f.id === folder.id ? updatedFolder : f));
@@ -2633,7 +2671,13 @@ const App: React.FC = () => {
             
             // Firestore 업데이트
             const folderRef = doc(db, 'users', googleUser.uid, 'folders', folder.id);
-            await setDoc(folderRef, updatedFolder);
+            const sanitizedFolder = sanitizeFirestoreData(updatedFolder);
+            if (sanitizedFolder) {
+                await setDoc(folderRef, sanitizedFolder);
+                console.log('✅ 협업자 초대 Firestore 저장 완료');
+            } else {
+                throw new Error('폴더 데이터 정제 실패');
+            }
             
             // 로컬 상태 업데이트
             setFolders(folders.map(f => f.id === folder.id ? updatedFolder : f));
@@ -2661,7 +2705,12 @@ const App: React.FC = () => {
             
             // Firestore 업데이트
             const folderRef = doc(db, 'users', googleUser.uid, 'folders', folder.id);
-            await setDoc(folderRef, updatedFolder);
+            const sanitizedFolder = sanitizeFirestoreData(updatedFolder);
+            if (sanitizedFolder) {
+                await setDoc(folderRef, sanitizedFolder);
+            } else {
+                throw new Error('폴더 데이터 정제 실패');
+            }
             
             // 로컬 상태 업데이트
             setFolders(folders.map(f => f.id === folder.id ? updatedFolder : f));
@@ -2686,7 +2735,12 @@ const App: React.FC = () => {
             
             // Firestore 업데이트
             const folderRef = doc(db, 'users', googleUser.uid, 'folders', folder.id);
-            await setDoc(folderRef, updatedFolder);
+            const sanitizedFolder = sanitizeFirestoreData(updatedFolder);
+            if (sanitizedFolder) {
+                await setDoc(folderRef, sanitizedFolder);
+            } else {
+                throw new Error('폴더 데이터 정제 실패');
+            }
             
             // 로컬 상태 업데이트
             setFolders(folders.map(f => f.id === folder.id ? updatedFolder : f));
@@ -2724,7 +2778,12 @@ const App: React.FC = () => {
             
             // 소유자의 Firestore에서 협업자 제거
             const folderRef = doc(db, 'users', folder.ownerId, 'folders', folder.id);
-            await setDoc(folderRef, updatedFolder);
+            const sanitizedFolder = sanitizeFirestoreData(updatedFolder);
+            if (sanitizedFolder) {
+                await setDoc(folderRef, sanitizedFolder);
+            } else {
+                throw new Error('폴더 데이터 정제 실패');
+            }
             
             // 로컬에서 폴더 제거
             setFolders(folders.filter(f => f.id !== folder.id));
