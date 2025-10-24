@@ -5267,7 +5267,7 @@ const SettingsModal: React.FC<{
 
 const VersionInfoModal: React.FC<{ onClose: () => void; t: (key: string) => any; }> = ({ onClose, t }) => {
     const [isClosing, handleClose] = useModalAnimation(onClose);
-    const buildNumber = "2.0 (25.10.23)";
+    const buildNumber = "2.0.0 (25.10.24)";
 
             const changelogItems = [
         { icon: '🔔', title: '미리알림 관리', desc: 'Step-by-step 미리알림 추가. 제목, 기한(선택), 시간(선택), 반복 설정, 설명, 활성화 여부' },
@@ -5288,7 +5288,7 @@ const VersionInfoModal: React.FC<{ onClose: () => void; t: (key: string) => any;
         <Modal onClose={handleClose} isClosing={isClosing} className="version-info-modal">
             {/* 버전 정보 섹션 */}
             <div className="version-info-header">
-                <h2>🧪 Nova AI Planner v2.1 Beta</h2>
+                <h2>🧪 Nova AI Planner v2.0 Beta</h2>
                 <p>{t('build_number')}: {buildNumber}</p>
             </div>
             
