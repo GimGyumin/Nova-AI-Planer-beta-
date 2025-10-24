@@ -2728,18 +2728,101 @@ const App: React.FC = () => {
         event.target.value = '';
     };
 
-    const handleDeleteAllData = () => {
+    const handleDeleteAllData = async () => {
+        if (!window.confirm('정말로 모든 데이터를 삭제하시겠습니까?\n\n⚠️ 이 작업은 되돌릴 수 없습니다:\n- 모든 목표와 폴더\n- Firebase 클라우드 데이터\n- 로컬 설정\n- 공유 폴더 데이터\n\n삭제하려면 "확인"을 클릭하세요.')) {
+            return;
+        }
+
         setDataActionStatus('deleting');
-        setTimeout(() => {
+        
+        try {
+            // 1. Firebase 사용자 데이터 삭제
+            if (googleUser) {
+                console.log('🗑️ Firebase 데이터 삭제 시작...');
+                
+                // 모든 todos 삭제
+                const todosRef = collection(db, 'users', googleUser.uid, 'todos');
+                const todosSnapshot = await getDocs(todosRef);
+                const deletePromises = todosSnapshot.docs.map(doc => deleteDoc(doc.ref));
+                await Promise.all(deletePromises);
+                console.log('✅ todos 삭제 완료:', todosSnapshot.size, '개');
+
+                // 모든 folders 삭제
+                const foldersRef = collection(db, 'users', googleUser.uid, 'folders');
+                const foldersSnapshot = await getDocs(foldersRef);
+                const deleteFolderPromises = foldersSnapshot.docs.map(doc => deleteDoc(doc.ref));
+                await Promise.all(deleteFolderPromises);
+                console.log('✅ folders 삭제 완료:', foldersSnapshot.size, '개');
+
+                // 공유 폴더에서 내가 참여한 데이터 정리
+                const sharedFoldersRef = collection(db, 'sharedFolders');
+                const sharedSnapshot = await getDocs(sharedFoldersRef);
+                for (const doc of sharedSnapshot.docs) {
+                    const data = doc.data();
+                    if (data.collaborators && Array.isArray(data.collaborators)) {
+                        const filteredCollaborators = data.collaborators.filter(
+                            (collab: any) => collab.userId !== googleUser.uid
+                        );
+                        if (filteredCollaborators.length !== data.collaborators.length) {
+                            await updateDoc(doc.ref, { collaborators: filteredCollaborators });
+                            console.log('✅ 공유 폴더에서 내 계정 제거:', doc.id);
+                        }
+                    }
+                }
+
+                // presence 데이터 삭제
+                try {
+                    for (const folder of folders) {
+                        if (folder.id) {
+                            const presenceRef = doc(db, 'folderPresence', folder.id, 'users', googleUser.uid);
+                            await deleteDoc(presenceRef);
+                        }
+                    }
+                    console.log('✅ presence 데이터 삭제 완료');
+                } catch (presenceError) {
+                    console.warn('⚠️ presence 데이터 삭제 중 일부 오류:', presenceError);
+                }
+
+                // editing states 삭제
+                try {
+                    const editingQuery = query(collection(db, 'folderEditing'), where('userId', '==', googleUser.uid));
+                    const editingSnapshot = await getDocs(editingQuery);
+                    const deleteEditingPromises = editingSnapshot.docs.map(doc => deleteDoc(doc.ref));
+                    await Promise.all(deleteEditingPromises);
+                    console.log('✅ editing states 삭제 완료');
+                } catch (editingError) {
+                    console.warn('⚠️ editing states 삭제 중 일부 오류:', editingError);
+                }
+            }
+
+            // 2. 로컬 상태 초기화
             setTodos([]);
+            setFolders([]);
+            setActiveUsers([]);
+            setEditingStates({});
+            setConflicts([]);
+            setCurrentFolderId(null);
+            
+            // 3. 설정 초기화
             setLanguage('ko');
             setIsDarkMode(true);
             setBackgroundTheme('default');
             setSortType('manual');
+            setUserCategories(['school', 'work', 'personal', 'other']);
+            
+            // 4. localStorage 완전 삭제
             localStorage.clear();
+            
+            console.log('✅ 모든 데이터 삭제 완료');
+            setToastMessage('✅ 모든 데이터가 완전히 삭제되었습니다');
+            
+        } catch (error) {
+            console.error('❌ 데이터 삭제 중 오류:', error);
+            setToastMessage('❌ 데이터 삭제 중 오류가 발생했습니다: ' + (error instanceof Error ? error.message : '알 수 없는 오류'));
+        } finally {
             setDataActionStatus('idle');
             setIsSettingsOpen(false);
-        }, 1500);
+        }
     };
 
     const isAnyModalOpen = isGoalAssistantOpen || !!editingTodo || !!infoTodo || isSettingsOpen || !!alertConfig || isVersionInfoOpen || isUsageGuideOpen;
