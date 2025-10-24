@@ -421,7 +421,7 @@ const translations = {
 
     // Main Page
     my_goals_title: '나의 목표',
-    all_goals_label: '모든 목표',
+    all_goals_label: '나의 목표',
     sort_label_manual: '사용자화',
     sort_label_deadline: '마감일순',
     sort_label_newest: '최신순',
@@ -429,7 +429,7 @@ const translations = {
     sort_label_ai: '우선순위로 정렬',
     ai_sorting_button: '정렬 중...',
     add_new_goal_button_label: '새로운 목표 추가',
-    filter_all: '모든 목표',
+    filter_all: '나의 목표',
     filter_active: '진행중',
     filter_completed: '완료됨',
     // 카테고리 필터
@@ -609,7 +609,7 @@ const translations = {
     folder_share_link_desc: '이 링크로 다른 사용자를 초대할 수 있습니다',
     folder_copy_link: '링크 복사',
     folder_leave_confirm: '폴더에서 나가시겠습니까?',
-    folder_delete_confirm: '폴더를 삭제하시겠습니까? 모든 목표가 루트로 이동됩니다.',
+    folder_delete_confirm: '폴더를 삭제하시겠습니까? 나의 목표로 이동됩니다.',
     settings_developer: '개발자',
     developer_name: 'Kim Kyumin',
     settings_copyright: '저작권',
@@ -2649,7 +2649,7 @@ const App: React.FC = () => {
             sortedTodos.sort((a, b) => a.wish.localeCompare(b.wish));
         }
 
-        // 상태 필터 (모든 목표, 진행중, 완료됨)
+        // 상태 필터 (나의 목표, 진행중, 완료됨)
         if (filter === 'active') sortedTodos = sortedTodos.filter(todo => !todo.completed);
         if (filter === 'completed') sortedTodos = sortedTodos.filter(todo => todo.completed);
         
@@ -4569,7 +4569,7 @@ const FolderNavigator: React.FC<{
                     <div className="modal-content alert-modal">
                         <div className="alert-content">
                             <h2>폴더 삭제</h2>
-                            <p style={{ fontSize: '0.9rem' }}>"{folders.find(f => f.id === deletingFolderId)?.name}" 폴더를 삭제하시겠습니까?<br/>폴더 내 목표는 "모든 목표"로 이동됩니다.</p>
+                            <p style={{ fontSize: '0.9rem' }}>"{folders.find(f => f.id === deletingFolderId)?.name}" 폴더를 삭제하시겠습니까?<br/>폴더 내 목표는 "나의 목표"로 이동됩니다.</p>
                         </div>
                         <div className="modal-buttons">
                             <button 
