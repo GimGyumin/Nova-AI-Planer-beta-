@@ -218,7 +218,7 @@ const PWAInstallPrompt: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             앱으로 설치하기
           </h2>
           <p className="text-gray-600 dark:text-gray-300 text-sm">
-            Nova를 홈 화면에 추가하여 더 편리하게 사용하세요.
+            Nova Beta를 홈 화면에 추가하여 더 편리하게 사용하세요.
           </p>
         </div>
 
@@ -475,7 +475,7 @@ const translations = {
     delete_all_data_button: '모든 데이터 및 설정 지우기',
     settings_done_button: '완료',
     settings_section_data: '데이터 관리',
-    settings_section_account: 'Nova 계정',
+    settings_section_account: 'Nova Beta 계정',
     settings_sync_data: '지금 동기화',
     settings_load_data: '불러오기',
     settings_logout: '로그아웃',
@@ -825,7 +825,7 @@ const translations = {
     settings_bg_forest_green: 'Forest',
     settings_bg_purple: 'Purple',
     settings_bg_royal_purple: 'Royal Purple',
-    settings_section_account: 'Nova Account',
+    settings_section_account: 'Nova Beta Account',
     settings_sync_data: 'Sync Data',
     settings_load_data: 'Load Data',
     settings_logout: 'Sign Out',
@@ -5288,7 +5288,7 @@ const VersionInfoModal: React.FC<{ onClose: () => void; t: (key: string) => any;
         <Modal onClose={handleClose} isClosing={isClosing} className="version-info-modal">
             {/* 버전 정보 섹션 */}
             <div className="version-info-header">
-                <h2>✨ Nova AI Planner v2.0</h2>
+                <h2>🧪 Nova AI Planner v2.1 Beta</h2>
                 <p>{t('build_number')}: {buildNumber}</p>
             </div>
             
