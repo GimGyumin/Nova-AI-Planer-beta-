@@ -1344,13 +1344,22 @@ const App: React.FC = () => {
             
             await setDoc(settingsRef, settingsData);
             
-            // 3. 폴더 데이터도 동기화 (개별 문서로 저장)
+            // 3. 폴더 데이터도 동기화 (개별 문서로 저장, 안전한 처리)
             for (const folder of folders) {
-                const folderRef = doc(db, 'users', googleUser.uid, 'folders', folder.id);
-                await setDoc(folderRef, {
-                    ...folder,
-                    updatedAt: serverTimestamp()
-                });
+                try {
+                    const folderRef = doc(db, 'users', googleUser.uid, 'folders', folder.id);
+                    const folderData = {
+                        ...folder,
+                        // 필수 필드 보장
+                        ownerId: folder.ownerId || googleUser.uid,
+                        collaborators: folder.collaborators || [],
+                        updatedAt: serverTimestamp()
+                    };
+                    await setDoc(folderRef, folderData);
+                    console.log(`✅ 폴더 ${folder.id} 동기화 완료`);
+                } catch (folderError) {
+                    console.error(`❌ 폴더 ${folder.id} 동기화 실패:`, folderError);
+                }
             }
             
             setToastMessage('✅ 전체 데이터 동기화 완료! (목표: ' + sanitizedTodos.length + '개, 폴더: ' + folders.length + '개)');
@@ -1396,19 +1405,33 @@ const App: React.FC = () => {
                 if (settingsData.userCategories) setUserCategories(settingsData.userCategories);
             }
             
-            // 3. 폴더 데이터 불러오기
-            const foldersRef = collection(db, 'users', user.uid, 'folders');
-            const foldersSnap = await getDocs(foldersRef);
-            
-            const loadedFolders: Folder[] = [];
-            foldersSnap.forEach((doc) => {
-                loadedFolders.push({ id: doc.id, ...doc.data() } as Folder);
-            });
-            setFolders(loadedFolders);
+            // 3. 폴더 데이터 불러오기 (더 안전한 로딩)
+            try {
+                const foldersRef = collection(db, 'users', user.uid, 'folders');
+                const foldersSnap = await getDocs(foldersRef);
+                
+                const loadedFolders: Folder[] = [];
+                foldersSnap.forEach((doc) => {
+                    const folderData = doc.data();
+                    const folder = { 
+                        id: doc.id, 
+                        ...folderData,
+                        // 협업자 정보가 없으면 기본값 설정
+                        collaborators: folderData.collaborators || [],
+                        ownerId: folderData.ownerId || user.uid
+                    } as Folder;
+                    loadedFolders.push(folder);
+                });
+                setFolders(loadedFolders);
+                console.log('✅ 폴더 로드 완료:', { count: loadedFolders.length });
+            } catch (folderError) {
+                console.warn('⚠️ 폴더 로드 실패, 빈 배열로 설정:', folderError);
+                setFolders([]);
+            }
             
             console.log('✅ 클라우드 데이터 로드 완료:', {
                 todos: todosSnap.exists() ? (todosSnap.data().todos?.length || 0) : 0,
-                folders: loadedFolders.length,
+                folders: '로드됨',
                 settings: settingsSnap.exists() ? '로드됨' : '없음'
             });
         } catch (error: any) {
@@ -2576,39 +2599,80 @@ const App: React.FC = () => {
             return;
         }
 
-        const folder = folders.find(f => f.id === currentFolderId);
-        if (!folder || !folder.collaborators || folder.collaborators.length === 0) {
-            setToastMessage('❌ 이것은 공유 폴더가 아닙니다');
-            return;
-        }
-
-        const owner = folder.collaborators.find(c => c.role === 'owner');
-        if (!owner || !owner.userId) {
-            setAlertConfig({
-                title: '❌ 소유자 정보 오류',
-                message: '폴더 소유자 정보가 없습니다.\n폴더를 다시 공유받아주세요.',
-                confirmText: '확인',
-                onConfirm: () => setAlertConfig(null)
-            });
-            setIsSyncingData(false);
-            return;
-        }
-
-        // 임시 owner ID 확인 및 수정
-        if (owner.userId.startsWith('owner_')) {
-            console.warn('⚠️ 임시 소유자 ID 발견:', owner.userId);
-            setAlertConfig({
-                title: '⚠️ 소유자 정보 오류',
-                message: '폴더 소유자 정보에 문제가 있습니다.\n폴더 소유자에게 새로운 공유 링크를 요청해주세요.',
-                confirmText: '확인',
-                onConfirm: () => setAlertConfig(null)
-            });
-            setIsSyncingData(false);
-            return;
-        }
-
         setIsSyncingData(true);
+
         try {
+            // 1. 먼저 최신 폴더 정보를 Firebase에서 다시 로드
+            console.log('🔄 폴더 정보 재로딩 중...', currentFolderId);
+            const { doc, getDoc, collection, query, where, getDocs } = await import('firebase/firestore');
+            
+            let folder = folders.find(f => f.id === currentFolderId);
+            
+            // 로컬에 폴더 정보가 없거나 협업자 정보가 없으면 Firebase에서 다시 로드
+            if (!folder || !folder.collaborators || folder.collaborators.length === 0) {
+                console.log('⚠️ 로컬 폴더 정보가 불완전함, Firebase에서 재로딩...');
+                
+                // 현재 사용자의 폴더에서 찾기
+                const userFolderRef = doc(db, 'users', googleUser.uid, 'folders', currentFolderId);
+                const userFolderSnap = await getDoc(userFolderRef);
+                
+                if (userFolderSnap.exists()) {
+                    folder = { id: currentFolderId, ...userFolderSnap.data() } as Folder;
+                    console.log('✅ 사용자 폴더에서 로드됨:', folder);
+                } else {
+                    // 다른 사용자들의 폴더에서 찾기 (공유받은 경우)
+                    console.log('🔍 공유된 폴더 검색 중...');
+                    // 이 경우는 복잡하므로 사용자에게 새로고침 안내
+                    setAlertConfig({
+                        title: '📡 폴더 정보 로딩 중',
+                        message: '폴더 정보를 불러오는 중입니다.\n잠시 후 다시 시도하거나 새로고침해주세요.',
+                        confirmText: '확인',
+                        onConfirm: () => setAlertConfig(null)
+                    });
+                    setIsSyncingData(false);
+                    return;
+                }
+            }
+
+            // 2. 폴더 정보 유효성 재검사
+            if (!folder || !folder.collaborators || folder.collaborators.length === 0) {
+                setAlertConfig({
+                    title: '❌ 협업 폴더 아님',
+                    message: '이것은 공유 폴더가 아닙니다.\n개인 폴더는 개별적으로 동기화됩니다.',
+                    confirmText: '확인',
+                    onConfirm: () => setAlertConfig(null)
+                });
+                setIsSyncingData(false);
+                return;
+            }
+
+            // 3. 소유자 정보 확인
+            const owner = folder.collaborators.find(c => c.role === 'owner');
+            if (!owner || !owner.userId) {
+                setAlertConfig({
+                    title: '❌ 소유자 정보 오류',
+                    message: '폴더 소유자 정보가 없습니다.\n폴더를 다시 공유받아주세요.',
+                    confirmText: '확인',
+                    onConfirm: () => setAlertConfig(null)
+                });
+                setIsSyncingData(false);
+                return;
+            }
+
+            // 4. 임시 owner ID 확인 및 수정
+            if (owner.userId.startsWith('owner_')) {
+                console.warn('⚠️ 임시 소유자 ID 발견:', owner.userId);
+                setAlertConfig({
+                    title: '⚠️ 소유자 정보 오류',
+                    message: '폴더 소유자 정보에 문제가 있습니다.\n폴더 소유자에게 새로운 공유 링크를 요청해주세요.',
+                    confirmText: '확인',
+                    onConfirm: () => setAlertConfig(null)
+                });
+                setIsSyncingData(false);
+                return;
+            }
+
+            // 5. 동기화 실행
             console.log('🔄 수동 동기화 시작:', { folderId: currentFolderId, ownerUid: owner.userId });
             
             // 현재 로컬에 있는 이 폴더의 목표 수
