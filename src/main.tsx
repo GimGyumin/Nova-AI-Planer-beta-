@@ -1744,7 +1744,19 @@ const App: React.FC = () => {
                 return deduped;
             });
         }, (error) => {
-            console.error('소유자 목표 동기화 실패:', error);
+            console.error('❌ 실시간 동기화 실패:', error);
+            
+            // 에러 종류에 따른 처리
+            if (error.code === 'permission-denied') {
+                console.warn('⚠️ 권한 부족으로 실시간 동기화 실패 - 수동 동기화를 사용하세요');
+                setToastMessage('⚠️ 실시간 동기화 실패 - 🔄 버튼으로 수동 동기화하세요');
+            } else if (error.code === 'not-found') {
+                console.warn('⚠️ 폴더를 찾을 수 없음 - 폴더가 삭제되었을 수 있습니다');
+                setToastMessage('⚠️ 공유 폴더를 찾을 수 없습니다');
+            } else {
+                console.warn('⚠️ 네트워크 오류로 실시간 동기화 실패');
+                setToastMessage('⚠️ 네트워크 오류 - 🔄 버튼으로 재시도하세요');
+            }
         });
         unsubscribers.push(todosUnsubscribe);
 
@@ -2436,30 +2448,60 @@ const App: React.FC = () => {
 
         setIsSyncingData(true);
         try {
-            console.log('🔄 폴더 동기화 시작:', { folderId: currentFolderId, ownerUid: owner.userId });
+            console.log('🔄 수동 동기화 시작:', { folderId: currentFolderId, ownerUid: owner.userId });
+            
+            // 현재 로컬에 있는 이 폴더의 목표 수
+            const currentLocalTodos = todos.filter(t => t.folderId === currentFolderId);
+            console.log('📊 현재 로컬 목표 수:', currentLocalTodos.length);
             
             const todosRef = collection(db, 'users', owner.userId, 'todos');
             const q = query(todosRef, where('folderId', '==', currentFolderId));
             const snapshot = await getDocs(q);
             
-            const loadedTodos: Goal[] = [];
+            const serverTodos: Goal[] = [];
             snapshot.forEach((doc) => {
-                loadedTodos.push({ id: parseInt(doc.id), ...doc.data() } as Goal);
+                serverTodos.push({ id: parseInt(doc.id), ...doc.data() } as Goal);
             });
             
-            console.log('✅ 폴더 동기화 완료:', { count: loadedTodos.length });
+            console.log('📊 서버 목표 수:', serverTodos.length);
             
-            // 로드된 목표와 기존 목표를 병합
-            setTodos(prevTodos => {
-                const otherTodos = prevTodos.filter(t => t.folderId !== currentFolderId);
-                const merged = [...otherTodos, ...loadedTodos];
-                return merged;
-            });
+            // 실시간 리스너가 제대로 작동 중인지 확인
+            if (currentLocalTodos.length === serverTodos.length) {
+                console.log('✅ 실시간 동기화가 정상 작동 중입니다');
+                setToastMessage(`✅ 동기화 확인 완료 (${serverTodos.length}개 항목 - 이미 최신 상태)`);
+            } else {
+                console.log('⚠️ 로컬과 서버 데이터 불일치 감지:', {
+                    local: currentLocalTodos.length,
+                    server: serverTodos.length
+                });
+                
+                // 서버 데이터로 강제 업데이트
+                setTodos(prevTodos => {
+                    const otherTodos = prevTodos.filter(t => t.folderId !== currentFolderId);
+                    const merged = [...otherTodos, ...serverTodos];
+                    return merged;
+                });
+                
+                setToastMessage(`🔄 동기화 완료 (${serverTodos.length}개 항목 - ${Math.abs(serverTodos.length - currentLocalTodos.length)}개 차이 수정)`);
+            }
             
-            setToastMessage(`✅ 동기화 완료 (${loadedTodos.length}개 항목)`);
+            // 실시간 리스너 상태 체크
+            const listenerStatus = currentFolderId && googleUser ? '활성' : '비활성';
+            console.log('📡 실시간 리스너 상태:', listenerStatus);
+            
         } catch (error) {
-            console.error('❌ 폴더 동기화 실패:', error);
-            setToastMessage('❌ 동기화 실패: ' + (error instanceof Error ? error.message : '알 수 없는 오류'));
+            console.error('❌ 동기화 실패:', error);
+            if (error instanceof Error) {
+                if (error.message.includes('permission-denied')) {
+                    setToastMessage('❌ 동기화 실패: 폴더 접근 권한이 없습니다');
+                } else if (error.message.includes('not-found')) {
+                    setToastMessage('❌ 동기화 실패: 폴더를 찾을 수 없습니다');
+                } else {
+                    setToastMessage('❌ 동기화 실패: ' + error.message);
+                }
+            } else {
+                setToastMessage('❌ 동기화 실패: 알 수 없는 오류');
+            }
         } finally {
             setIsSyncingData(false);
         }
@@ -3423,7 +3465,7 @@ const Header: React.FC<{
                                 disabled={isSyncing}
                                 className="header-icon-button" 
                                 aria-label="동기화"
-                                title="공유 폴더 동기화"
+                                title={isSyncing ? '동기화 중...' : '공유 폴더 수동 동기화\n실시간 동기화가 실패했을 때 사용하세요'}
                             >
                                 {isSyncing ? <div className="spinner" style={{ width: '20px', height: '20px' }} /> : '🔄'}
                             </button>
