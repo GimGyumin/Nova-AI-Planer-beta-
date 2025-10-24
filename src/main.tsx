@@ -2728,11 +2728,25 @@ const App: React.FC = () => {
         event.target.value = '';
     };
 
-    const handleDeleteAllData = async () => {
-        if (!window.confirm('정말로 모든 데이터를 삭제하시겠습니까?\n\n⚠️ 이 작업은 되돌릴 수 없습니다:\n- 모든 목표와 폴더\n- Firebase 클라우드 데이터\n- 로컬 설정\n- 공유 폴더 데이터\n\n삭제하려면 "확인"을 클릭하세요.')) {
-            return;
-        }
+    const handleDeleteAllData = () => {
+        // 커스텀 확인 대화상자 표시
+        setAlertConfig({
+            title: '⚠️ 모든 데이터 삭제',
+            message: '정말로 모든 데이터를 삭제하시겠습니까?\n\n이 작업은 되돌릴 수 없습니다:\n\n• 모든 목표와 폴더\n• Firebase 클라우드 데이터\n• 로컬 설정\n• 공유 폴더 데이터\n• 실시간 협업 정보',
+            confirmText: '삭제',
+            cancelText: '취소',
+            isDestructive: true,
+            onConfirm: () => {
+                setAlertConfig(null);
+                performDeleteAllData();
+            },
+            onCancel: () => {
+                setAlertConfig(null);
+            }
+        });
+    };
 
+    const performDeleteAllData = async () => {
         setDataActionStatus('deleting');
         
         try {
