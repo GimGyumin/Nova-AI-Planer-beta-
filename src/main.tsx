@@ -459,6 +459,7 @@ const translations = {
     select_button_label: '선택',
     cancel_selection_button_label: '취소',
     delete_selected_button_label: '{count}개 삭제',
+    select_all_button_label: '전체선택',
     delete_selected_confirm_title: '목표 삭제',
     delete_selected_confirm_message: '선택한 {count}개의 목표가 영구적으로 삭제됩니다. 이 작업은 되돌릴 수 없습니다.',
     days_left: '{count}일 남음',
@@ -751,6 +752,7 @@ const translations = {
     select_button_label: 'Select',
     cancel_selection_button_label: 'Cancel',
     delete_selected_button_label: 'Delete {count}',
+    select_all_button_label: 'Select All',
     delete_selected_confirm_title: 'Delete Goals',
     delete_selected_confirm_message: 'The {count} selected goals will be permanently deleted.',
     days_left: '{count} days left',
@@ -3512,6 +3514,12 @@ const App: React.FC = () => {
         setSelectedTodoIds(new Set());
     };
 
+    const handleSelectAll = () => {
+        // 현재 필터된 todos의 모든 ID를 선택
+        const allVisibleTodoIds = new Set(filteredTodos.map(todo => todo.id));
+        setSelectedTodoIds(allVisibleTodoIds);
+    };
+
     const handleDeleteSelected = () => {
         const count = selectedTodoIds.size;
         setAlertConfig({
@@ -3849,8 +3857,10 @@ const App: React.FC = () => {
                         t={t} 
                         isSelectionMode={isSelectionMode} 
                         selectedCount={selectedTodoIds.size} 
+                        totalVisibleCount={filteredTodos.length}
                         onCancelSelection={handleCancelSelection} 
                         onDeleteSelected={handleDeleteSelected} 
+                        onSelectAll={handleSelectAll}
                         isViewModeCalendar={isViewModeCalendar} 
                         onToggleViewMode={() => setIsViewModeCalendar(!isViewModeCalendar)} 
                         isAiSorting={isAiSorting} 
@@ -4532,8 +4542,10 @@ const Header: React.FC<{
     t: (key: string) => any; 
     isSelectionMode: boolean; 
     selectedCount: number; 
+    totalVisibleCount: number;
     onCancelSelection: () => void; 
     onDeleteSelected: () => void; 
+    onSelectAll: () => void;
     isViewModeCalendar: boolean; 
     onToggleViewMode: () => void; 
     isAiSorting: boolean; 
@@ -4561,7 +4573,7 @@ const Header: React.FC<{
     onToggleCollaboration: (folderId: string, enabled: boolean) => void;
     onUpdateCollaborationSettings: (folderId: string, settings: any) => void;
 }> = ({ 
-    t, isSelectionMode, selectedCount, onCancelSelection, onDeleteSelected, 
+    t, isSelectionMode, selectedCount, totalVisibleCount, onCancelSelection, onDeleteSelected, onSelectAll,
     isViewModeCalendar, onToggleViewMode, isAiSorting, sortType, onSort, 
     filter, onFilter, categoryFilter, onCategoryFilter, userCategories, 
     onAddCategory, onRemoveCategory, onSetSelectionMode, onOpenSettings, 
@@ -4829,7 +4841,23 @@ const Header: React.FC<{
             </div>
             <div className="header-right">
                 {isSelectionMode ? (
-                    <button onClick={onDeleteSelected} className="header-action-button destructive">{t('delete_selected_button_label').replace('{count}', String(selectedCount))}</button>
+                    <>
+                        {selectedCount === 0 ? (
+                            <button onClick={onSelectAll} className="header-action-button">{t('select_all_button_label')}</button>
+                        ) : selectedCount === totalVisibleCount ? (
+                            <button onClick={onCancelSelection} className="header-action-button">{t('cancel_selection_button_label')}</button>
+                        ) : (
+                            <>
+                                <button onClick={onSelectAll} className="header-action-button">{t('select_all_button_label')}</button>
+                                <button onClick={onCancelSelection} className="header-action-button">{t('cancel_selection_button_label')}</button>
+                            </>
+                        )}
+                        {selectedCount > 0 && (
+                            <button onClick={onDeleteSelected} className="header-action-button destructive">
+                                {t('delete_selected_button_label').replace('{count}', String(selectedCount))}
+                            </button>
+                        )}
+                    </>
                 ) : (
                     <>
                         <button onClick={onAddGoal} className="header-icon-button" aria-label={t('add_new_goal_button_label')}>{icons.add}</button>
