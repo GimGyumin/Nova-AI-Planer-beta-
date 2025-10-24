@@ -2060,6 +2060,35 @@ const App: React.FC = () => {
 
                             // Firestore 저장 완료 후 폴더 추가 및 현재 폴더 설정
                             setFolders([...folders, finalFolderData]);
+                            
+                            // Firebase에 폴더 저장
+                            if (googleUser) {
+                                try {
+                                    const { doc, setDoc } = await import('firebase/firestore');
+                                    const folderRef = doc(db, 'users', googleUser.uid, 'folders', finalFolderData.id);
+                                    await setDoc(folderRef, {
+                                        name: finalFolderData.name,
+                                        color: finalFolderData.color,
+                                        ownerId: finalFolderData.ownerId,
+                                        createdAt: finalFolderData.createdAt,
+                                        updatedAt: finalFolderData.updatedAt,
+                                        isShared: finalFolderData.isShared,
+                                        collaborators: finalFolderData.collaborators || [],
+                                        collaborationSettings: finalFolderData.collaborationSettings || {
+                                            enabled: true,
+                                            showPresence: true,
+                                            showEditingState: true,
+                                            enableConflictDetection: true,
+                                            allowGuestView: false,
+                                            requireApproval: false
+                                        }
+                                    });
+                                    console.log('✅ 공유 폴더 Firebase 저장 완료:', finalFolderData.id);
+                                } catch (saveError) {
+                                    console.error('❌ 공유 폴더 Firebase 저장 실패:', saveError);
+                                }
+                            }
+                            
                             // setCurrentFolderId를 설정하면 useEffect가 자동으로 handleSetCurrentFolder를 호출함
                             setCurrentFolderId(finalFolderData.id);
 
@@ -2763,7 +2792,7 @@ const App: React.FC = () => {
     };
 
     // Folder Management Functions
-    const handleCreateFolder = (folderName: string) => {
+    const handleCreateFolder = async (folderName: string) => {
         if (!folderName.trim()) {
             setAlertConfig({ title: 'Error', message: 'Folder name cannot be empty.' });
             return;
@@ -2788,7 +2817,30 @@ const App: React.FC = () => {
             isShared: false
         };
 
+        // 로컬 상태 업데이트
         setFolders([...folders, newFolder]);
+        
+        // Firebase에 폴더 저장
+        if (googleUser) {
+            try {
+                const { doc, setDoc } = await import('firebase/firestore');
+                const folderRef = doc(db, 'users', googleUser.uid, 'folders', newFolder.id);
+                await setDoc(folderRef, {
+                    name: newFolder.name,
+                    color: newFolder.color,
+                    ownerId: newFolder.ownerId,
+                    createdAt: newFolder.createdAt,
+                    updatedAt: newFolder.updatedAt,
+                    isShared: newFolder.isShared,
+                    collaborators: [],
+                    collaborationSettings: newFolder.collaborationSettings
+                });
+                console.log('✅ 폴더 Firebase 저장 완료:', newFolder.id);
+            } catch (saveError) {
+                console.error('❌ 폴더 Firebase 저장 실패:', saveError);
+            }
+        }
+        
         console.log('📁 새 폴더 생성:', { name: folderName, collaborationEnabled: false });
         return newFolder;
     };
