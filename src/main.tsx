@@ -1222,7 +1222,7 @@ const App: React.FC = () => {
                         const folderData = doc.data();
                         const folder = { 
                             id: doc.id, 
-                            name: folderData.name || '', // 폴더 이름 명시적 보존
+                            name: folderData.name || '이름 없는 폴더', // 빈 이름 방지
                             color: folderData.color || '#007AFF',
                             ...folderData,
                             collaborators: folderData.collaborators || [],
@@ -1247,6 +1247,38 @@ const App: React.FC = () => {
                         for (const sharedFolder of sharedFolders) {
                             if (sharedFolder.ownerId) {
                                 try {
+                                    // 1. 공유 폴더 자체 정보 실시간 동기화 (이름, 색상 등)
+                                    const ownerFolderRef = doc(db, 'users', sharedFolder.ownerId, 'folders', sharedFolder.id);
+                                    const folderInfoUnsubscribe = onSnapshot(ownerFolderRef, (folderDoc) => {
+                                        if (folderDoc.exists()) {
+                                            const ownerFolderData = folderDoc.data();
+                                            console.log('🔄 공유 폴더 정보 실시간 업데이트:', { 
+                                                folderId: sharedFolder.id, 
+                                                name: ownerFolderData.name,
+                                                color: ownerFolderData.color 
+                                            });
+                                            
+                                            // 폴더 정보 업데이트
+                                            setFolders(prevFolders => {
+                                                return prevFolders.map(folder => {
+                                                    if (folder.id === sharedFolder.id) {
+                                                        return {
+                                                            ...folder,
+                                                            name: ownerFolderData.name || folder.name || '공유 폴더',
+                                                            color: ownerFolderData.color || folder.color,
+                                                            updatedAt: ownerFolderData.updatedAt || folder.updatedAt
+                                                        };
+                                                    }
+                                                    return folder;
+                                                });
+                                            });
+                                        }
+                                    }, (error) => {
+                                        console.error('❌ 공유 폴더 정보 동기화 오류:', error);
+                                    });
+                                    sharedUnsubscribers.push(folderInfoUnsubscribe);
+                                    
+                                    // 2. 공유 폴더 목표 실시간 동기화
                                     const sharedTodosRef = collection(db, 'users', sharedFolder.ownerId, 'todos');
                                     const sharedQuery = query(sharedTodosRef, where('folderId', '==', sharedFolder.id));
                                     
