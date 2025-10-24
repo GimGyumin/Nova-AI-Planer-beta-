@@ -1,10 +1,10 @@
 {
-  "name": "nova-ai-planner-beta",
-  "description": "🧪 Nova AI Planner Beta Channel - Cloud-native goal management with real-time collaboration",
+  "name": "nova-ai-planner",
+  "description": "🚀 Nova AI Planner - Cloud-native goal management with real-time collaboration",
   "private": true,
-  "version": "2.0.0-beta",
-  "homepage": "https://GimGyumin.github.io/Nova-AI-Planer-beta-",
-  "keywords": ["beta", "ai", "planner", "goals", "collaboration", "cloud", "firebase", "react", "typescript"],
+  "version": "2.0.0",
+  "homepage": "https://GimGyumin.github.io/Nova-AI-Planer",
+  "keywords": ["ai", "planner", "goals", "collaboration", "cloud", "firebase", "react", "typescript"],
   "type": "module",
   "scripts": {
     "dev": "vite",

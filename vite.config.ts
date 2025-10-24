@@ -4,8 +4,8 @@ import react from '@vitejs/plugin-react';
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
     return {
-      // 배포 리포지토리 경로에 맞게 base 경로 수정 (베타 리포지토리)
-      base: '/Nova-AI-Planer-beta-/',
+      // 정식 배포 리포지토리 경로
+      base: '/Nova-AI-Planer/',
       build: {
         outDir: 'dist',
       },

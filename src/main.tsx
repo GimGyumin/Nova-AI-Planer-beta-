@@ -230,7 +230,7 @@ const PWAInstallPrompt: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             앱으로 설치하기
           </h2>
           <p className="text-gray-600 dark:text-gray-300 text-sm">
-            Nova Beta를 홈 화면에 추가하여 더 편리하게 사용하세요.
+            Nova를 홈 화면에 추가하여 더 편리하게 사용하세요.
           </p>
         </div>
 
@@ -487,7 +487,7 @@ const translations = {
     delete_all_data_button: '모든 데이터 및 설정 지우기',
     settings_done_button: '완료',
     settings_section_data: '데이터 관리',
-    settings_section_account: 'Nova Beta 계정',
+    settings_section_account: 'Nova 계정',
     settings_sync_data: '지금 동기화',
     settings_load_data: '불러오기',
     settings_logout: '로그아웃',
@@ -573,6 +573,27 @@ const translations = {
     settings_version: '버전',
     test_long_alert: '긴 알림 테스트',
     test_long_alert_desc: '긴 내용의 알림 팝업 테스트',
+    
+    // 폴더 관리
+    folder_manage_title: '폴더 관리',
+    folder_manage_info: '폴더 정보',
+    folder_manage_collaborators: '협업자',
+    folder_manage_settings: '설정',
+    folder_name_edit: '폴더 이름 편집',
+    folder_invite_new: '새 협업자 초대',
+    folder_invite_email: '이메일 주소',
+    folder_invite_role: '역할',
+    folder_role_owner: '소유자',
+    folder_role_editor: '편집자',
+    folder_role_viewer: '뷰어',
+    folder_invite_button: '초대하기',
+    folder_leave: '폴더 나가기',
+    folder_delete: '폴더 삭제',
+    folder_share_link: '공유 링크',
+    folder_share_link_desc: '이 링크로 다른 사용자를 초대할 수 있습니다',
+    folder_copy_link: '링크 복사',
+    folder_leave_confirm: '폴더에서 나가시겠습니까?',
+    folder_delete_confirm: '폴더를 삭제하시겠습니까? 모든 목표가 루트로 이동됩니다.',
     settings_developer: '개발자',
     developer_name: 'Kim Kyumin',
     settings_copyright: '저작권',
@@ -839,7 +860,7 @@ const translations = {
     settings_bg_forest_green: 'Forest',
     settings_bg_purple: 'Purple',
     settings_bg_royal_purple: 'Royal Purple',
-    settings_section_account: 'Nova Beta Account',
+    settings_section_account: 'Nova Account',
     settings_sync_data: 'Sync Data',
     settings_load_data: 'Load Data',
     settings_logout: 'Sign Out',
@@ -1098,6 +1119,14 @@ const App: React.FC = () => {
     const [isSyncing, setIsSyncing] = useState<boolean>(false);  // 동기화 중 상태
     const [isGoalAssistantOpen, setIsGoalAssistantOpen] = useState<boolean>(false);
     const [editingTodo, setEditingTodo] = useState<Goal | null>(null);
+    
+    // 폴더 관리 모달 상태
+    const [isFolderManageOpen, setIsFolderManageOpen] = useState<boolean>(false);
+    const [managingFolderId, setManagingFolderId] = useState<string | null>(null);
+    const [editingFolderName, setEditingFolderName] = useState<string>('');
+    const [inviteEmail, setInviteEmail] = useState<string>('');
+    const [inviteRole, setInviteRole] = useState<'editor' | 'viewer'>('editor');
+    const [isInviting, setIsInviting] = useState<boolean>(false);
     const [infoTodo, setInfoTodo] = useState<Goal | null>(null);
     const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
     const [isAiSorting, setIsAiSorting] = useState<boolean>(false);
@@ -2549,6 +2578,176 @@ const App: React.FC = () => {
         }
     };
 
+    // 폴더 관리 함수들
+    const handleRenameFolderSubmit = async (folder: Folder) => {
+        if (!editingFolderName.trim() || !googleUser) {
+            setEditingFolderName('');
+            return;
+        }
+        
+        try {
+            const updatedFolder = { ...folder, name: editingFolderName.trim(), updatedAt: new Date().toISOString() };
+            
+            // Firestore 업데이트
+            const folderRef = doc(db, 'users', googleUser.uid, 'folders', folder.id);
+            await setDoc(folderRef, updatedFolder);
+            
+            // 로컬 상태 업데이트
+            setFolders(folders.map(f => f.id === folder.id ? updatedFolder : f));
+            setEditingFolderName('');
+            
+            console.log('✅ 폴더 이름 변경 완료:', editingFolderName.trim());
+        } catch (error) {
+            console.error('❌ 폴더 이름 변경 실패:', error);
+            setEditingFolderName('');
+        }
+    };
+
+    const handleInviteCollaborator = async (folder: Folder) => {
+        if (!inviteEmail.trim() || !googleUser || isInviting) return;
+        
+        setIsInviting(true);
+        try {
+            // 이미 초대된 사용자인지 확인
+            const isAlreadyInvited = folder.sharedWith?.some(s => s.email === inviteEmail.trim()) || 
+                                   folder.ownerEmail === inviteEmail.trim();
+            
+            if (isAlreadyInvited) {
+                alert('이미 초대된 사용자입니다.');
+                setIsInviting(false);
+                return;
+            }
+            
+            const newCollaborator = {
+                email: inviteEmail.trim(),
+                userId: '', // 실제로는 이메일로 사용자 ID를 찾아야 함
+                role: inviteRole,
+                addedAt: new Date().toISOString()
+            };
+            
+            const updatedFolder = {
+                ...folder,
+                sharedWith: [...(folder.sharedWith || []), newCollaborator],
+                updatedAt: new Date().toISOString()
+            };
+            
+            // Firestore 업데이트
+            const folderRef = doc(db, 'users', googleUser.uid, 'folders', folder.id);
+            await setDoc(folderRef, updatedFolder);
+            
+            // 로컬 상태 업데이트
+            setFolders(folders.map(f => f.id === folder.id ? updatedFolder : f));
+            setInviteEmail('');
+            
+            console.log('✅ 협업자 초대 완료:', newCollaborator);
+        } catch (error) {
+            console.error('❌ 협업자 초대 실패:', error);
+        } finally {
+            setIsInviting(false);
+        }
+    };
+
+    const handleChangeCollaboratorRole = async (folder: Folder, userId: string, newRole: string) => {
+        if (!googleUser) return;
+        
+        try {
+            const updatedFolder = {
+                ...folder,
+                sharedWith: folder.sharedWith?.map(s => 
+                    s.userId === userId ? { ...s, role: newRole } : s
+                ),
+                updatedAt: new Date().toISOString()
+            };
+            
+            // Firestore 업데이트
+            const folderRef = doc(db, 'users', googleUser.uid, 'folders', folder.id);
+            await setDoc(folderRef, updatedFolder);
+            
+            // 로컬 상태 업데이트
+            setFolders(folders.map(f => f.id === folder.id ? updatedFolder : f));
+            
+            console.log('✅ 협업자 역할 변경 완료:', { userId, newRole });
+        } catch (error) {
+            console.error('❌ 협업자 역할 변경 실패:', error);
+        }
+    };
+
+    const handleRemoveCollaborator = async (folder: Folder, userId: string) => {
+        if (!googleUser) return;
+        
+        if (!confirm('이 협업자를 제거하시겠습니까?')) return;
+        
+        try {
+            const updatedFolder = {
+                ...folder,
+                sharedWith: folder.sharedWith?.filter(s => s.userId !== userId),
+                updatedAt: new Date().toISOString()
+            };
+            
+            // Firestore 업데이트
+            const folderRef = doc(db, 'users', googleUser.uid, 'folders', folder.id);
+            await setDoc(folderRef, updatedFolder);
+            
+            // 로컬 상태 업데이트
+            setFolders(folders.map(f => f.id === folder.id ? updatedFolder : f));
+            
+            console.log('✅ 협업자 제거 완료:', userId);
+        } catch (error) {
+            console.error('❌ 협업자 제거 실패:', error);
+        }
+    };
+
+    const handleCopyShareLink = (folder: Folder) => {
+        const shareLink = `${window.location.origin}${window.location.pathname}?invite=${folder.id}`;
+        navigator.clipboard.writeText(shareLink).then(() => {
+            alert('공유 링크가 복사되었습니다!');
+        }).catch(() => {
+            alert('링크 복사에 실패했습니다.');
+        });
+    };
+
+    const handleLeaveFolderConfirm = (folder: Folder) => {
+        if (confirm(t.folder_leave_confirm)) {
+            handleLeaveFolder(folder);
+        }
+    };
+
+    const handleLeaveFolder = async (folder: Folder) => {
+        if (!googleUser) return;
+        
+        try {
+            const updatedFolder = {
+                ...folder,
+                sharedWith: folder.sharedWith?.filter(s => s.userId !== googleUser.uid),
+                updatedAt: new Date().toISOString()
+            };
+            
+            // 소유자의 Firestore에서 협업자 제거
+            const folderRef = doc(db, 'users', folder.ownerId, 'folders', folder.id);
+            await setDoc(folderRef, updatedFolder);
+            
+            // 로컬에서 폴더 제거
+            setFolders(folders.filter(f => f.id !== folder.id));
+            
+            // 현재 폴더라면 루트로 이동
+            if (currentFolderId === folder.id) {
+                setCurrentFolderId(null);
+            }
+            
+            setIsFolderManageOpen(false);
+            console.log('✅ 폴더 나가기 완료');
+        } catch (error) {
+            console.error('❌ 폴더 나가기 실패:', error);
+        }
+    };
+
+    const handleDeleteFolderConfirm = (folder: Folder) => {
+        if (confirm(t.folder_delete_confirm)) {
+            handleDeleteFolder(folder.id);
+            setIsFolderManageOpen(false);
+        }
+    };
+
     const handleChangeFolderColor = (folderId: string, color: string) => {
         setFolders(folders.map(folder =>
             folder.id === folderId
@@ -3391,6 +3590,31 @@ const FolderNavigator: React.FC<{ folders: Folder[]; currentFolderId: string | n
                                 </button>
                                 <button 
                                     onClick={() => {
+                                        setManagingFolderId(folder.id);
+                                        setIsFolderManageOpen(true);
+                                    }}
+                                    style={{
+                                        width: '24px',
+                                        height: '24px',
+                                        padding: '0',
+                                        borderRadius: '4px',
+                                        border: 'none',
+                                        backgroundColor: 'var(--button-bg-color)',
+                                        color: 'var(--text-color)',
+                                        cursor: 'pointer',
+                                        fontSize: '0.8rem',
+                                        lineHeight: '1',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        transition: 'all 0.2s'
+                                    }}
+                                    title="폴더 관리"
+                                >
+                                    ⚙️
+                                </button>
+                                <button 
+                                    onClick={() => {
                                         setRenamingFolderId(folder.id);
                                         setRenameInput(folder.name);
                                     }}
@@ -3615,6 +3839,194 @@ const FolderNavigator: React.FC<{ folders: Folder[]; currentFolderId: string | n
                             >
                                 변경
                             </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            
+            {/* 폴더 관리 모달 */}
+            {isFolderManageOpen && managingFolderId && (
+                <div className="modal-backdrop" onClick={() => setIsFolderManageOpen(false)}>
+                    <div className="modal-content large-modal" onClick={(e) => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h3>{t.folder_manage_title}</h3>
+                            <button onClick={() => setIsFolderManageOpen(false)}>✕</button>
+                        </div>
+                        <div className="modal-body">
+                            {(() => {
+                                const folder = folders.find(f => f.id === managingFolderId);
+                                if (!folder) return null;
+                                
+                                const isOwner = folder.ownerId === googleUser?.uid;
+                                const userRole = isOwner ? 'owner' : 
+                                    folder.sharedWith?.find(s => s.userId === googleUser?.uid)?.role || 'viewer';
+                                
+                                return (
+                                    <div className="folder-manage-content">
+                                        {/* 폴더 정보 */}
+                                        <div className="folder-info-section">
+                                            <h4>{t.folder_manage_info}</h4>
+                                            <div className="folder-info-item">
+                                                <label>{t.folder_name}:</label>
+                                                {editingFolderName ? (
+                                                    <div className="inline-edit">
+                                                        <input
+                                                            type="text"
+                                                            value={editingFolderName}
+                                                            onChange={(e) => setEditingFolderName(e.target.value)}
+                                                            onKeyPress={(e) => {
+                                                                if (e.key === 'Enter') {
+                                                                    handleRenameFolderSubmit(folder);
+                                                                }
+                                                            }}
+                                                        />
+                                                        <button onClick={() => handleRenameFolderSubmit(folder)}>✓</button>
+                                                        <button onClick={() => setEditingFolderName('')}>✕</button>
+                                                    </div>
+                                                ) : (
+                                                    <div className="folder-name-display">
+                                                        <span>{folder.name}</span>
+                                                        {isOwner && (
+                                                            <button 
+                                                                className="edit-btn"
+                                                                onClick={() => setEditingFolderName(folder.name)}
+                                                            >
+                                                                ✏️
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <div className="folder-info-item">
+                                                <label>{t.folder_owner}:</label>
+                                                <span>{folder.ownerEmail || folder.ownerId}</span>
+                                            </div>
+                                            <div className="folder-info-item">
+                                                <label>{t.role}:</label>
+                                                <span>{userRole === 'owner' ? t.folder_role_owner : 
+                                                      userRole === 'editor' ? t.folder_role_editor : 
+                                                      t.folder_role_viewer}</span>
+                                            </div>
+                                            <div className="folder-info-item">
+                                                <label>{t.created_date}:</label>
+                                                <span>{new Date(folder.createdAt).toLocaleDateString()}</span>
+                                            </div>
+                                        </div>
+
+                                        {/* 협업자 목록 */}
+                                        <div className="collaborators-section">
+                                            <h4>{t.folder_manage_collaborators}</h4>
+                                            <div className="collaborator-list">
+                                                {/* 소유자 */}
+                                                <div className="collaborator-item owner">
+                                                    <div className="collaborator-info">
+                                                        <span className="email">{folder.ownerEmail || folder.ownerId}</span>
+                                                        <span className="role owner-role">{t.folder_role_owner}</span>
+                                                    </div>
+                                                </div>
+                                                
+                                                {/* 협업자들 */}
+                                                {folder.sharedWith?.map((collaborator, index) => (
+                                                    <div key={index} className="collaborator-item">
+                                                        <div className="collaborator-info">
+                                                            <span className="email">{collaborator.email || collaborator.userId}</span>
+                                                            <span className={`role ${collaborator.role}`}>
+                                                                {collaborator.role === 'editor' ? t.folder_role_editor : t.folder_role_viewer}
+                                                            </span>
+                                                        </div>
+                                                        {isOwner && (
+                                                            <div className="collaborator-actions">
+                                                                <select 
+                                                                    value={collaborator.role} 
+                                                                    onChange={(e) => handleChangeCollaboratorRole(folder, collaborator.userId, e.target.value)}
+                                                                >
+                                                                    <option value="editor">{t.folder_role_editor}</option>
+                                                                    <option value="viewer">{t.folder_role_viewer}</option>
+                                                                </select>
+                                                                <button 
+                                                                    className="remove-btn"
+                                                                    onClick={() => handleRemoveCollaborator(folder, collaborator.userId)}
+                                                                >
+                                                                    🗑️
+                                                                </button>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )) || []}
+                                            </div>
+                                            
+                                            {/* 새 협업자 초대 */}
+                                            {(isOwner || userRole === 'editor') && (
+                                                <div className="invite-section">
+                                                    <h5>{t.folder_invite_new}</h5>
+                                                    <div className="invite-form">
+                                                        <input
+                                                            type="email"
+                                                            placeholder={t.folder_invite_email}
+                                                            value={inviteEmail}
+                                                            onChange={(e) => setInviteEmail(e.target.value)}
+                                                        />
+                                                        <select 
+                                                            value={inviteRole} 
+                                                            onChange={(e) => setInviteRole(e.target.value)}
+                                                        >
+                                                            <option value="editor">{t.folder_role_editor}</option>
+                                                            <option value="viewer">{t.folder_role_viewer}</option>
+                                                        </select>
+                                                        <button 
+                                                            onClick={() => handleInviteCollaborator(folder)}
+                                                            disabled={!inviteEmail || isInviting}
+                                                        >
+                                                            {isInviting ? '초대 중...' : t.folder_invite_button}
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* 설정 및 액션 */}
+                                        <div className="folder-settings-section">
+                                            <h4>{t.folder_manage_settings}</h4>
+                                            
+                                            {/* 공유 링크 */}
+                                            <div className="share-link-section">
+                                                <label>{t.folder_share_link}</label>
+                                                <p className="share-link-desc">{t.folder_share_link_desc}</p>
+                                                <div className="share-link-input">
+                                                    <input 
+                                                        type="text" 
+                                                        readOnly 
+                                                        value={`${window.location.origin}${window.location.pathname}?invite=${folder.id}`}
+                                                    />
+                                                    <button onClick={() => handleCopyShareLink(folder)}>
+                                                        {t.folder_copy_link}
+                                                    </button>
+                                                </div>
+                                            </div>
+
+                                            {/* 액션 버튼들 */}
+                                            <div className="folder-actions">
+                                                {!isOwner && (
+                                                    <button 
+                                                        className="leave-folder-btn"
+                                                        onClick={() => handleLeaveFolderConfirm(folder)}
+                                                    >
+                                                        {t.folder_leave}
+                                                    </button>
+                                                )}
+                                                {isOwner && (
+                                                    <button 
+                                                        className="delete-folder-btn"
+                                                        onClick={() => handleDeleteFolderConfirm(folder)}
+                                                    >
+                                                        {t.folder_delete}
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })()}
                         </div>
                     </div>
                 </div>
@@ -5405,7 +5817,7 @@ const VersionInfoModal: React.FC<{ onClose: () => void; t: (key: string) => any;
         <Modal onClose={handleClose} isClosing={isClosing} className="version-info-modal">
             {/* 버전 정보 섹션 */}
             <div className="version-info-header">
-                <h2>🧪 Nova AI Planner v2.0 Beta</h2>
+                <h2>🚀 Nova AI Planner v2.0</h2>
                 <p>{t('build_number')}: {buildNumber}</p>
             </div>
             

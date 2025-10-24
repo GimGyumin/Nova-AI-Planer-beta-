@@ -1763,3 +1763,369 @@ input:checked + .slider:before { -webkit-transform: translateX(20px); -ms-transf
 .collaboration-toggle.active .collaboration-toggle-knob {
     transform: translateX(20px);
 }
+
+/* 폴더 관리 모달 스타일 */
+.large-modal {
+  max-width: 700px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.folder-manage-content {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.folder-info-section,
+.collaborators-section,
+.folder-settings-section {
+  padding: 16px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background-color: var(--card-bg-color);
+}
+
+.folder-info-section h4,
+.collaborators-section h4,
+.folder-settings-section h4 {
+  margin: 0 0 16px 0;
+  color: var(--text-color);
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.folder-info-item {
+  display: flex;
+  align-items: center;
+  margin-bottom: 12px;
+  gap: 12px;
+}
+
+.folder-info-item label {
+  font-weight: 500;
+  min-width: 80px;
+  color: var(--text-secondary-color);
+}
+
+.folder-name-display {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.folder-name-display .edit-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.9rem;
+  padding: 4px;
+  border-radius: 4px;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+
+.folder-name-display .edit-btn:hover {
+  opacity: 1;
+  background-color: var(--hover-bg-color);
+}
+
+.inline-edit {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.inline-edit input {
+  padding: 4px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background-color: var(--input-bg-color);
+  color: var(--text-color);
+}
+
+.inline-edit button {
+  padding: 4px 8px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.inline-edit button:first-of-type {
+  background-color: var(--success-color);
+  color: white;
+}
+
+.inline-edit button:last-of-type {
+  background-color: var(--danger-color);
+  color: white;
+}
+
+.collaborator-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.collaborator-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background-color: var(--input-bg-color);
+}
+
+.collaborator-item.owner {
+  border-color: var(--primary-color);
+  background-color: rgba(0, 122, 255, 0.1);
+}
+
+.collaborator-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.collaborator-info .email {
+  font-weight: 500;
+  color: var(--text-color);
+}
+
+.collaborator-info .role {
+  font-size: 0.8rem;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-weight: 500;
+  text-transform: capitalize;
+}
+
+.collaborator-info .role.owner,
+.collaborator-info .role.owner-role {
+  background-color: var(--primary-color);
+  color: white;
+}
+
+.collaborator-info .role.editor {
+  background-color: #34c759;
+  color: white;
+}
+
+.collaborator-info .role.viewer {
+  background-color: #ff9500;
+  color: white;
+}
+
+.collaborator-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.collaborator-actions select {
+  padding: 4px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background-color: var(--input-bg-color);
+  color: var(--text-color);
+  font-size: 0.9rem;
+}
+
+.collaborator-actions .remove-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 1rem;
+  padding: 4px;
+  border-radius: 4px;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+
+.collaborator-actions .remove-btn:hover {
+  opacity: 1;
+  background-color: var(--danger-color);
+}
+
+.invite-section {
+  border-top: 1px solid var(--border-color);
+  padding-top: 16px;
+}
+
+.invite-section h5 {
+  margin: 0 0 12px 0;
+  color: var(--text-color);
+  font-size: 1rem;
+  font-weight: 500;
+}
+
+.invite-form {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.invite-form input {
+  flex: 1;
+  min-width: 200px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background-color: var(--input-bg-color);
+  color: var(--text-color);
+}
+
+.invite-form select {
+  padding: 8px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background-color: var(--input-bg-color);
+  color: var(--text-color);
+}
+
+.invite-form button {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  background-color: var(--primary-color);
+  color: white;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background-color 0.2s;
+}
+
+.invite-form button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.invite-form button:hover:not(:disabled) {
+  background-color: var(--primary-color-hover);
+}
+
+.share-link-section {
+  margin-bottom: 20px;
+}
+
+.share-link-section label {
+  display: block;
+  font-weight: 500;
+  margin-bottom: 4px;
+  color: var(--text-color);
+}
+
+.share-link-desc {
+  font-size: 0.9rem;
+  color: var(--text-secondary-color);
+  margin-bottom: 8px;
+}
+
+.share-link-input {
+  display: flex;
+  gap: 8px;
+}
+
+.share-link-input input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background-color: var(--input-bg-color);
+  color: var(--text-color);
+  font-family: monospace;
+  font-size: 0.9rem;
+}
+
+.share-link-input button {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  background-color: #5856d6;
+  color: white;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background-color 0.2s;
+}
+
+.share-link-input button:hover {
+  background-color: #4a4ac0;
+}
+
+.folder-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+.folder-actions button {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background-color 0.2s;
+}
+
+.leave-folder-btn {
+  background-color: #ff9500;
+  color: white;
+}
+
+.leave-folder-btn:hover {
+  background-color: #e6850e;
+}
+
+.delete-folder-btn {
+  background-color: var(--danger-color);
+  color: white;
+}
+
+.delete-folder-btn:hover {
+  background-color: #e32d20;
+}
+
+/* 반응형 디자인 */
+@media (max-width: 768px) {
+  .large-modal {
+    max-width: 95vw;
+    margin: 20px;
+  }
+  
+  .folder-manage-content {
+    gap: 16px;
+  }
+  
+  .invite-form {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .invite-form input,
+  .invite-form select,
+  .invite-form button {
+    width: 100%;
+  }
+  
+  .share-link-input {
+    flex-direction: column;
+  }
+  
+  .folder-actions {
+    flex-direction: column;
+  }
+  
+  .collaborator-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  
+  .collaborator-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
