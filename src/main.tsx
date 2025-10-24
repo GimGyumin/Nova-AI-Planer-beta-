@@ -319,8 +319,9 @@ interface Folder {
   ownerId: string;
   createdAt: string;
   updatedAt: string;
-  collaborators?: Collaborator[];  // 폴더 단위 협업자
-  sharedWith?: { [userId: string]: 'viewer' | 'editor' };  // 폴더 권한
+    collaborators?: Collaborator[];  // 폴더 단위 협업자
+    sharedWith?: Collaborator[];  // 폴더 권한 (배열로 통일)
+    ownerEmail?: string; // 폴더 소유자 이메일(공유 폴더용)
   color?: string;  // 폴더 색상 (선택사항)
   // 공동작업 설정
   collaborationSettings?: {
@@ -331,10 +332,11 @@ interface Folder {
     allowGuestView: boolean;  // 게스트 보기 허용
     requireApproval: boolean;  // 협업자 승인 필요
   };
-  isShared?: boolean;  // 공유 상태 (기존 호환성)
+    isShared?: boolean;  // 공유 상태 (기존 호환성)
 }
 
 interface Goal {
+    isSharedTodo?: boolean; // 공유 목표 여부
   id: number;
   wish: string;
   outcome: string;
@@ -351,7 +353,7 @@ interface Goal {
   // 협업 관련 필드
   ownerId?: string;  // 소유자 UID
   collaborators?: Collaborator[];  // 협업자 목록
-  sharedWith?: { [userId: string]: 'viewer' | 'editor' };  // 권한 설정
+    sharedWith?: Collaborator[];  // 권한 설정 (배열로 통일)
   // 섹션/카테고리 필드
   category?: string;  // 사용자 정의 카테고리
   // 충돌 감지 필드
@@ -1196,8 +1198,8 @@ const App: React.FC = () => {
                 console.log('📡 실시간 데이터 동기화 리스너 설정 중...');
                 
                 // 디바운싱을 위한 타이머 변수
-                let todosUpdateTimer: number | null = null;
-                let foldersUpdateTimer: number | null = null;
+                let todosUpdateTimer: ReturnType<typeof setTimeout> | null = null;
+                let foldersUpdateTimer: ReturnType<typeof setTimeout> | null = null;
                 
                 // 목표 데이터 실시간 감시 (개인 목표만) - 디바운싱 적용
                 const todosRef = doc(db, 'users', user.uid, 'data', 'todos');
@@ -1307,14 +1309,12 @@ const App: React.FC = () => {
                                     const sharedTodosRef = collection(db, 'users', sharedFolder.ownerId, 'todos');
                                     const sharedQuery = query(sharedTodosRef, where('folderId', '==', sharedFolder.id));
                                     
-                                    let sharedTodosTimer: number | null = null;
-                                    
+                                    let sharedTodosTimer: ReturnType<typeof setTimeout> | null = null;
                                     const unsubscribe = onSnapshot(sharedQuery, (sharedSnapshot) => {
                                         // 기존 타이머가 있으면 제거
                                         if (sharedTodosTimer) {
                                             clearTimeout(sharedTodosTimer);
                                         }
-                                        
                                         // 1.5초 디바운싱 적용 (공유 목표는 빠른 반응이 필요)
                                         sharedTodosTimer = setTimeout(() => {
                                             const sharedTodos: Goal[] = [];
@@ -2628,14 +2628,29 @@ const App: React.FC = () => {
     }, [themeMode, isDarkMode]);
 
     // 자동동기화: todos 변경 시 Firebase에 자동 저장
+    // 동기화 디바운스 타이머 ref
+    const syncDebounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    // 동기화 디바운싱: todos, folders, settings 등 주요 상태 변경 후 10초 후 동기화
     useEffect(() => {
-        if (isAutoSyncEnabled && googleUser && todos.length > 0) {
-            const timer = setTimeout(() => {
-                handleSyncDataToFirebase();
-            }, 2000); // 2초 딜레이 (사용자가 입력을 마칠 때까지 대기)
-            return () => clearTimeout(timer);
+        if (!isAutoSyncEnabled || !googleUser) return;
+
+        // 기존 타이머 제거
+        if (syncDebounceTimer.current) {
+            clearTimeout(syncDebounceTimer.current);
         }
-    }, [todos, isAutoSyncEnabled, googleUser]);
+
+        // 5초 후 동기화
+    syncDebounceTimer.current = setTimeout(() => {
+            handleSyncDataToFirebase();
+        }, 5000);
+
+        return () => {
+            if (syncDebounceTimer.current) {
+                clearTimeout(syncDebounceTimer.current);
+            }
+        };
+    }, [todos, folders, language, themeMode, isDarkMode, backgroundTheme, apiKey, userCategories, isAutoSyncEnabled, googleUser]);
 
     useEffect(() => {
         const selectedTheme = backgroundOptions.find(opt => opt.id === backgroundTheme) || backgroundOptions[0];
@@ -3125,7 +3140,17 @@ const App: React.FC = () => {
             }
             
             // 로컬 상태 업데이트
-            setFolders(folders.map(f => f.id === folder.id ? updatedFolder : f));
+                        setFolders(folders.map(f => f.id === folder.id ? {
+                                                        ...updatedFolder,
+                                                        sharedWith: Array.isArray(updatedFolder.sharedWith)
+                                                            ? updatedFolder.sharedWith.filter((c): c is Collaborator =>
+                                                                    c && typeof c.role === 'string' && ['owner','editor','viewer'].includes(c.role)
+                                                                ).map(c => ({
+                                                                    ...c,
+                                                                    role: c.role as 'owner' | 'editor' | 'viewer'
+                                                                }))
+                                                            : []
+                        } : f));
             setInviteEmail('');
             
             console.log('✅ 협업자 초대 완료:', newCollaborator);
@@ -3158,7 +3183,17 @@ const App: React.FC = () => {
             }
             
             // 로컬 상태 업데이트
-            setFolders(folders.map(f => f.id === folder.id ? updatedFolder : f));
+                        setFolders(folders.map(f => f.id === folder.id ? {
+                            ...updatedFolder,
+                            sharedWith: Array.isArray(updatedFolder.sharedWith)
+                                ? updatedFolder.sharedWith.filter((c): c is Collaborator =>
+                                        c && typeof c.role === 'string' && ['owner','editor','viewer'].includes(c.role)
+                                    ).map(c => ({
+                                        ...c,
+                                        role: c.role as 'owner' | 'editor' | 'viewer'
+                                    }))
+                                : []
+                        } : f));
             
             console.log('✅ 협업자 역할 변경 완료:', { userId, newRole });
         } catch (error) {
@@ -3206,7 +3241,7 @@ const App: React.FC = () => {
     };
 
     const handleLeaveFolderConfirm = (folder: Folder) => {
-        if (confirm(t.folder_leave_confirm)) {
+    if (confirm(t('folder_leave_confirm'))) {
             handleLeaveFolder(folder);
         }
     };
@@ -3246,7 +3281,7 @@ const App: React.FC = () => {
     };
 
     const handleDeleteFolderConfirm = (folder: Folder) => {
-        if (confirm(t.folder_delete_confirm)) {
+    if (confirm(t('folder_delete_confirm'))) {
             handleDeleteFolder(folder.id);
             setIsFolderManageOpen(false);
         }
@@ -4162,7 +4197,7 @@ const App: React.FC = () => {
                 <div className="modal-backdrop" onClick={() => setIsFolderManageOpen(false)}>
                     <div className="modal-content large-modal" onClick={(e) => e.stopPropagation()}>
                         <div className="modal-header">
-                            <h3>{t.folder_manage_title}</h3>
+                            <h3>{t('folder_manage_title')}</h3>
                             <button onClick={() => setIsFolderManageOpen(false)}>✕</button>
                         </div>
                         <div className="modal-body">
@@ -4178,9 +4213,9 @@ const App: React.FC = () => {
                                     <div className="folder-manage-content">
                                         {/* 폴더 정보 */}
                                         <div className="folder-info-section">
-                                            <h4>{t.folder_manage_info}</h4>
+                                            <h4>{t('folder_manage_info')}</h4>
                                             <div className="folder-info-item">
-                                                <label>{t.folder_name}:</label>
+                                                <label>{t('folder_name')}:</label>
                                                 {editingFolderName ? (
                                                     <div className="inline-edit">
                                                         <input
@@ -4211,30 +4246,30 @@ const App: React.FC = () => {
                                                 )}
                                             </div>
                                             <div className="folder-info-item">
-                                                <label>{t.folder_owner}:</label>
+                                                <label>{t('folder_owner')}:</label>
                                                 <span>{folder.ownerEmail || folder.ownerId}</span>
                                             </div>
                                             <div className="folder-info-item">
-                                                <label>{t.role}:</label>
-                                                <span>{userRole === 'owner' ? t.folder_role_owner : 
-                                                      userRole === 'editor' ? t.folder_role_editor : 
-                                                      t.folder_role_viewer}</span>
+                                                <label>{t('role')}:</label>
+                                <span>{userRole === 'owner' ? t('folder_role_owner') :
+                                    userRole === 'editor' ? t('folder_role_editor') :
+                                    t('folder_role_viewer')}</span>
                                             </div>
                                             <div className="folder-info-item">
-                                                <label>{t.created_date}:</label>
+                                                <label>{t('created_date')}:</label>
                                                 <span>{new Date(folder.createdAt).toLocaleDateString()}</span>
                                             </div>
                                         </div>
 
                                         {/* 협업자 목록 */}
                                         <div className="collaborators-section">
-                                            <h4>{t.folder_manage_collaborators}</h4>
+                                            <h4>{t('folder_manage_collaborators')}</h4>
                                             <div className="collaborator-list">
                                                 {/* 소유자 */}
                                                 <div className="collaborator-item owner">
                                                     <div className="collaborator-info">
                                                         <span className="email">{folder.ownerEmail || folder.ownerId}</span>
-                                                        <span className="role owner-role">{t.folder_role_owner}</span>
+                                                        <span className="role owner-role">{t('folder_role_owner')}</span>
                                                     </div>
                                                 </div>
                                                 
@@ -4244,7 +4279,7 @@ const App: React.FC = () => {
                                                         <div className="collaborator-info">
                                                             <span className="email">{collaborator.email || collaborator.userId}</span>
                                                             <span className={`role ${collaborator.role}`}>
-                                                                {collaborator.role === 'editor' ? t.folder_role_editor : t.folder_role_viewer}
+                                                                {collaborator.role === 'editor' ? t('folder_role_editor') : t('folder_role_viewer')}
                                                             </span>
                                                         </div>
                                                         {isOwner && (
@@ -4253,8 +4288,8 @@ const App: React.FC = () => {
                                                                     value={collaborator.role} 
                                                                     onChange={(e) => handleChangeCollaboratorRole(folder, collaborator.userId, e.target.value)}
                                                                 >
-                                                                    <option value="editor">{t.folder_role_editor}</option>
-                                                                    <option value="viewer">{t.folder_role_viewer}</option>
+                                                                    <option value="editor">{t('folder_role_editor')}</option>
+                                                                    <option value="viewer">{t('folder_role_viewer')}</option>
                                                                 </select>
                                                                 <button 
                                                                     className="remove-btn"
@@ -4271,26 +4306,26 @@ const App: React.FC = () => {
                                             {/* 새 협업자 초대 */}
                                             {(isOwner || userRole === 'editor') && (
                                                 <div className="invite-section">
-                                                    <h5>{t.folder_invite_new}</h5>
+                                                    <h5>{t('folder_invite_new')}</h5>
                                                     <div className="invite-form">
                                                         <input
                                                             type="email"
-                                                            placeholder={t.folder_invite_email}
+                                                            placeholder={t('folder_invite_email')}
                                                             value={inviteEmail}
                                                             onChange={(e) => setInviteEmail(e.target.value)}
                                                         />
                                                         <select 
                                                             value={inviteRole} 
-                                                            onChange={(e) => setInviteRole(e.target.value)}
+                                                            onChange={(e) => setInviteRole(e.target.value as 'editor' | 'viewer')}
                                                         >
-                                                            <option value="editor">{t.folder_role_editor}</option>
-                                                            <option value="viewer">{t.folder_role_viewer}</option>
+                                                            <option value="editor">{t('folder_role_editor')}</option>
+                                                            <option value="viewer">{t('folder_role_viewer')}</option>
                                                         </select>
                                                         <button 
                                                             onClick={() => handleInviteCollaborator(folder)}
                                                             disabled={!inviteEmail || isInviting}
                                                         >
-                                                            {isInviting ? '초대 중...' : t.folder_invite_button}
+                                                            {isInviting ? '초대 중...' : t('folder_invite_button')}
                                                         </button>
                                                     </div>
                                                 </div>
@@ -4299,12 +4334,12 @@ const App: React.FC = () => {
 
                                         {/* 설정 및 액션 */}
                                         <div className="folder-settings-section">
-                                            <h4>{t.folder_manage_settings}</h4>
+                                            <h4>{t('folder_manage_settings')}</h4>
                                             
                                             {/* 공유 링크 */}
                                             <div className="share-link-section">
-                                                <label>{t.folder_share_link}</label>
-                                                <p className="share-link-desc">{t.folder_share_link_desc}</p>
+                                                <label>{t('folder_share_link')}</label>
+                                                <p className="share-link-desc">{t('folder_share_link_desc')}</p>
                                                 <div className="share-link-input">
                                                     <input 
                                                         type="text" 
@@ -4312,7 +4347,7 @@ const App: React.FC = () => {
                                                         value={`${window.location.origin}${window.location.pathname}?invite=${folder.id}`}
                                                     />
                                                     <button onClick={() => handleCopyShareLink(folder)}>
-                                                        {t.folder_copy_link}
+                                                        {t('folder_copy_link')}
                                                     </button>
                                                 </div>
                                             </div>
@@ -4324,7 +4359,7 @@ const App: React.FC = () => {
                                                         className="leave-folder-btn"
                                                         onClick={() => handleLeaveFolderConfirm(folder)}
                                                     >
-                                                        {t.folder_leave}
+                                                        {t('folder_leave')}
                                                     </button>
                                                 )}
                                                 {isOwner && (
@@ -4332,7 +4367,7 @@ const App: React.FC = () => {
                                                         className="delete-folder-btn"
                                                         onClick={() => handleDeleteFolderConfirm(folder)}
                                                     >
-                                                        {t.folder_delete}
+                                                        {t('folder_delete')}
                                                     </button>
                                                 )}
                                             </div>
@@ -4878,18 +4913,18 @@ const Header: React.FC<{
                             )}
                         </div>
                         
-                        {/* 공동작업 설정 버튼 (폴더 선택시에만) */}
-                        {currentFolderId && (
+                        {/* 공동작업 설정 버튼 (공유 폴더에서만, 이모티콘 없이 텍스트만) */}
+                        {currentFolderId && folders.find(f => f.id === currentFolderId)?.isShared && (
                             <div className="collaboration-settings">
                                 <button 
                                     onClick={() => setIsCollaborationPopoverOpen(!isCollaborationPopoverOpen)}
-                                    className={`header-icon-button ${isCollaborationEnabled ? 'collaboration-active' : ''}`}
+                                    className={`main-action-button ${isCollaborationEnabled ? 'collaboration-active' : ''}`}
                                     aria-label="공동작업 설정"
                                     title="공동작업 설정"
+                                    style={{ borderRadius: '999px', padding: '8px 16px', fontWeight: 500 }}
                                 >
-                                    {isCollaborationEnabled ? '👥' : '👤'}
+                                    {isCollaborationEnabled ? '공동작업' : '단독작업'}
                                 </button>
-                                
                                 {isCollaborationPopoverOpen && currentFolderId && (
                                     <div className="profile-popover collaboration-popover" style={{ right: '60px', top: '50px' }}>
                                         <div className="popover-section">
@@ -5000,30 +5035,28 @@ const Header: React.FC<{
                             </div>
                         )}
                         
-                        {/* 공유 폴더 동기화 버튼 */}
-                        {currentFolderId && folders.find(f => f.id === currentFolderId)?.collaborators && (
+                        {/* 공유 폴더 동기화 버튼 - 공유 폴더에서만, 이모티콘 없이 텍스트만 */}
+                        {currentFolderId && folders.find(f => f.id === currentFolderId)?.isShared && (
                             <button 
                                 onClick={onSyncSharedFolder} 
                                 disabled={isSyncing}
-                                className="header-icon-button" 
+                                className="main-action-button"
                                 aria-label="동기화"
                                 title={isSyncing ? '동기화 중...' : '공유 폴더 수동 동기화\n실시간 동기화가 실패했을 때 사용하세요'}
+                                style={{ borderRadius: '999px', padding: '8px 16px', fontWeight: 500, marginLeft: 8 }}
                             >
-                                {isSyncing ? <div className="spinner" style={{ width: '20px', height: '20px' }} /> : '🔄'}
+                                {isSyncing ? <div className="spinner" style={{ width: '20px', height: '20px' }} /> : '동기화'}
                             </button>
                         )}
                         
-                        {/* 동기화 상태 표시 - 항상 표시하고 클릭 시 수동 동기화 */}
+                        {/* 동기화 상태 표시 - 항상 표시, 이모티콘 없이 텍스트만 */}
                         <button 
                             className="sync-status-indicator clickable" 
                             onClick={() => {
                                 if (!isSyncingData) {
-                                    // 수동 동기화 실행
                                     if (currentFolderId && folders.find(f => f.id === currentFolderId)?.isShared) {
-                                        // 공유 폴더 동기화
                                         onSyncSharedFolder();
                                     } else {
-                                        // 일반 데이터 동기화
                                         onManualSync();
                                     }
                                 }
@@ -5032,15 +5065,9 @@ const Header: React.FC<{
                             title={isSyncingData ? "동기화 중..." : "클릭하여 수동 동기화"}
                         >
                             {isSyncingData ? (
-                                <>
-                                    <div className="spinner" style={{ width: '16px', height: '16px' }} />
-                                    <span style={{ fontSize: '12px', marginLeft: '4px' }}>동기화중</span>
-                                </>
+                                <span style={{ fontSize: '12px' }}>동기화중</span>
                             ) : (
-                                <>
-                                    <span style={{ fontSize: '16px' }}>🔄</span>
-                                    <span style={{ fontSize: '12px', marginLeft: '4px' }}>동기화</span>
-                                </>
+                                <span style={{ fontSize: '12px' }}>동기화</span>
                             )}
                         </button>
                         
@@ -5914,18 +5941,21 @@ const FolderCollaborationModal: React.FC<{
                                 <button 
                                     onClick={handleCreateShareLink}
                                     disabled={isGeneratingLink || !linkPassword.trim()}
-                                    style={{ 
+                                    className="primary"
+                                    style={{
                                         width: '100%',
-                                        padding: '12px', 
-                                        backgroundColor: isGeneratingLink || !linkPassword.trim() ? 'var(--primary-color)' : 'var(--primary-color)', 
-                                        color: 'white', 
-                                        border: 'none', 
-                                        borderRadius: '8px', 
+                                        padding: '14px 0',
+                                        backgroundColor: 'var(--primary-color)',
+                                        color: 'white',
+                                        border: 'none',
+                                        borderRadius: '24px',
+                                        boxShadow: '0 2px 8px rgba(88,86,214,0.08)',
+                                        fontWeight: 700,
+                                        fontSize: '16px',
+                                        letterSpacing: '0.01em',
                                         cursor: isGeneratingLink || !linkPassword.trim() ? 'not-allowed' : 'pointer',
-                                        fontWeight: '600',
                                         opacity: isGeneratingLink || !linkPassword.trim() ? 0.6 : 1,
-                                        fontSize: '15px',
-                                        transition: 'all 0.2s'
+                                        transition: 'all 0.2s',
                                     }}
                                 >
                                     {isGeneratingLink ? '링크 생성 중...' : '공유 링크 생성'}
