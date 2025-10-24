@@ -1881,8 +1881,9 @@ const App: React.FC = () => {
                                         const password = prompt('폴더 암호를 입력하세요:');
                                         if (password === shareInfo.password) {
                                             sessionStorage.setItem(`folder_${shareInfo.folderId}_password`, password);
-                                            // 재시도
-                                            window.location.reload();
+                                            setAlertConfig(null);
+                                            // 암호가 맞으면 폴더 추가 로직을 직접 실행
+                                            handleFolderShare();
                                         } else if (password !== null) {
                                             setAlertConfig({
                                                 title: '암호 오류',
