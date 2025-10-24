@@ -2707,7 +2707,7 @@ const App: React.FC = () => {
     };
 
     const handleLeaveFolderConfirm = (folder: Folder) => {
-        if (confirm(t.folder_leave_confirm)) {
+        if (confirm(t('folder_leave_confirm'))) {
             handleLeaveFolder(folder);
         }
     };
@@ -2742,7 +2742,7 @@ const App: React.FC = () => {
     };
 
     const handleDeleteFolderConfirm = (folder: Folder) => {
-        if (confirm(t.folder_delete_confirm)) {
+        if (confirm(t('folder_delete_confirm'))) {
             handleDeleteFolder(folder.id);
             setIsFolderManageOpen(false);
         }
@@ -3355,7 +3355,7 @@ const App: React.FC = () => {
         }
     };
 
-    const isAnyModalOpen = isGoalAssistantOpen || !!editingTodo || !!infoTodo || isSettingsOpen || !!alertConfig || isVersionInfoOpen || isUsageGuideOpen;
+    const isAnyModalOpen = isGoalAssistantOpen || !!editingTodo || !!infoTodo || isSettingsOpen || !!alertConfig || isVersionInfoOpen || isUsageGuideOpen || isFolderManageOpen;
 
     return (
         <div className={`main-page-layout ${isViewModeCalendar ? 'calendar-view-active' : ''}`}>
@@ -3369,6 +3369,10 @@ const App: React.FC = () => {
                     onRenameFolder={handleRenameFolder}
                     onDeleteFolder={handleDeleteFolder}
                     onSetCollaboratingFolder={setCollaboratingFolder}
+                    onManageFolder={(folderId) => {
+                        setManagingFolderId(folderId);
+                        setIsFolderManageOpen(true);
+                    }}
                     todos={todos}
                     t={t}
                 />
@@ -3499,7 +3503,18 @@ const App: React.FC = () => {
     );
 };
 
-const FolderNavigator: React.FC<{ folders: Folder[]; currentFolderId: string | null; onSetCurrentFolder: (folderId: string | null) => void; onCreateFolder: (name: string) => void; onRenameFolder: (folderId: string, newName: string) => void; onDeleteFolder: (folderId: string) => void; onSetCollaboratingFolder: (folder: Folder | null) => void; todos: Goal[]; t: (key: string) => any; }> = ({ folders, currentFolderId, onSetCurrentFolder, onCreateFolder, onRenameFolder, onDeleteFolder, onSetCollaboratingFolder, todos, t }) => {
+const FolderNavigator: React.FC<{ 
+    folders: Folder[]; 
+    currentFolderId: string | null; 
+    onSetCurrentFolder: (folderId: string | null) => void; 
+    onCreateFolder: (name: string) => void; 
+    onRenameFolder: (folderId: string, newName: string) => void; 
+    onDeleteFolder: (folderId: string) => void; 
+    onSetCollaboratingFolder: (folder: Folder | null) => void; 
+    onManageFolder: (folderId: string) => void;
+    todos: Goal[]; 
+    t: (key: string) => any; 
+}> = ({ folders, currentFolderId, onSetCurrentFolder, onCreateFolder, onRenameFolder, onDeleteFolder, onSetCollaboratingFolder, onManageFolder, todos, t }) => {
     const [isAddingFolder, setIsAddingFolder] = useState(false);
     const [newFolderName, setNewFolderName] = useState('');
     const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null);
@@ -3590,8 +3605,7 @@ const FolderNavigator: React.FC<{ folders: Folder[]; currentFolderId: string | n
                                 </button>
                                 <button 
                                     onClick={() => {
-                                        setManagingFolderId(folder.id);
-                                        setIsFolderManageOpen(true);
+                                        onManageFolder(folder.id);
                                     }}
                                     style={{
                                         width: '24px',
@@ -3849,7 +3863,7 @@ const FolderNavigator: React.FC<{ folders: Folder[]; currentFolderId: string | n
                 <div className="modal-backdrop" onClick={() => setIsFolderManageOpen(false)}>
                     <div className="modal-content large-modal" onClick={(e) => e.stopPropagation()}>
                         <div className="modal-header">
-                            <h3>{t.folder_manage_title}</h3>
+                            <h3>{t('folder_manage_title')}</h3>
                             <button onClick={() => setIsFolderManageOpen(false)}>✕</button>
                         </div>
                         <div className="modal-body">
@@ -3865,9 +3879,9 @@ const FolderNavigator: React.FC<{ folders: Folder[]; currentFolderId: string | n
                                     <div className="folder-manage-content">
                                         {/* 폴더 정보 */}
                                         <div className="folder-info-section">
-                                            <h4>{t.folder_manage_info}</h4>
+                                            <h4>폴더 정보</h4>
                                             <div className="folder-info-item">
-                                                <label>{t.folder_name}:</label>
+                                                <label>폴더 이름:</label>
                                                 {editingFolderName ? (
                                                     <div className="inline-edit">
                                                         <input
@@ -3898,30 +3912,30 @@ const FolderNavigator: React.FC<{ folders: Folder[]; currentFolderId: string | n
                                                 )}
                                             </div>
                                             <div className="folder-info-item">
-                                                <label>{t.folder_owner}:</label>
+                                                <label>{t('folder_owner')}:</label>
                                                 <span>{folder.ownerEmail || folder.ownerId}</span>
                                             </div>
                                             <div className="folder-info-item">
-                                                <label>{t.role}:</label>
-                                                <span>{userRole === 'owner' ? t.folder_role_owner : 
-                                                      userRole === 'editor' ? t.folder_role_editor : 
-                                                      t.folder_role_viewer}</span>
+                                                <label>{t('role')}:</label>
+                                                <span>{userRole === 'owner' ? t('folder_role_owner') : 
+                                                      userRole === 'editor' ? t('folder_role_editor') : 
+                                                      t('folder_role_viewer')}</span>
                                             </div>
                                             <div className="folder-info-item">
-                                                <label>{t.created_date}:</label>
+                                                <label>{t('created_date')}:</label>
                                                 <span>{new Date(folder.createdAt).toLocaleDateString()}</span>
                                             </div>
                                         </div>
 
                                         {/* 협업자 목록 */}
                                         <div className="collaborators-section">
-                                            <h4>{t.folder_manage_collaborators}</h4>
+                                            <h4>{t('folder_manage_collaborators')}</h4>
                                             <div className="collaborator-list">
                                                 {/* 소유자 */}
                                                 <div className="collaborator-item owner">
                                                     <div className="collaborator-info">
                                                         <span className="email">{folder.ownerEmail || folder.ownerId}</span>
-                                                        <span className="role owner-role">{t.folder_role_owner}</span>
+                                                        <span className="role owner-role">{t('folder_role_owner')}</span>
                                                     </div>
                                                 </div>
                                                 
@@ -3931,17 +3945,17 @@ const FolderNavigator: React.FC<{ folders: Folder[]; currentFolderId: string | n
                                                         <div className="collaborator-info">
                                                             <span className="email">{collaborator.email || collaborator.userId}</span>
                                                             <span className={`role ${collaborator.role}`}>
-                                                                {collaborator.role === 'editor' ? t.folder_role_editor : t.folder_role_viewer}
+                                                                {collaborator.role === 'editor' ? t('folder_role_editor') : t('folder_role_viewer')}
                                                             </span>
                                                         </div>
                                                         {isOwner && (
                                                             <div className="collaborator-actions">
                                                                 <select 
-                                                                    value={collaborator.role} 
+                                                                    value={collaborator.role}
                                                                     onChange={(e) => handleChangeCollaboratorRole(folder, collaborator.userId, e.target.value)}
                                                                 >
-                                                                    <option value="editor">{t.folder_role_editor}</option>
-                                                                    <option value="viewer">{t.folder_role_viewer}</option>
+                                                                    <option value="editor">{t('folder_role_editor')}</option>
+                                                                    <option value="viewer">{t('folder_role_viewer')}</option>
                                                                 </select>
                                                                 <button 
                                                                     className="remove-btn"
@@ -3958,11 +3972,11 @@ const FolderNavigator: React.FC<{ folders: Folder[]; currentFolderId: string | n
                                             {/* 새 협업자 초대 */}
                                             {(isOwner || userRole === 'editor') && (
                                                 <div className="invite-section">
-                                                    <h5>{t.folder_invite_new}</h5>
+                                                    <h5>{t('folder_invite_new')}</h5>
                                                     <div className="invite-form">
                                                         <input
                                                             type="email"
-                                                            placeholder={t.folder_invite_email}
+                                                            placeholder={t('folder_invite_email')}
                                                             value={inviteEmail}
                                                             onChange={(e) => setInviteEmail(e.target.value)}
                                                         />
