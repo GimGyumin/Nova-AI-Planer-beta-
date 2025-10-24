@@ -30,6 +30,24 @@ export const googleProvider = new GoogleAuthProvider();
 googleProvider.addScope('profile');
 googleProvider.addScope('email');
 
+// 브라우저 호환성을 위한 설정
+googleProvider.setCustomParameters({
+  prompt: 'select_account',
+  access_type: 'offline'
+});
+
+// 사파리에서 팝업 문제 해결을 위한 추가 설정
+if (typeof window !== 'undefined') {
+  const userAgent = navigator.userAgent.toLowerCase();
+  const isSafari = userAgent.includes('safari') && !userAgent.includes('chrome') && !userAgent.includes('firefox');
+  
+  if (isSafari) {
+    googleProvider.setCustomParameters({
+      prompt: 'consent'
+    });
+  }
+}
+
 // Firestore 초기화 (로컬 캐시 활성화)
 export const db = getFirestore(app);
 
