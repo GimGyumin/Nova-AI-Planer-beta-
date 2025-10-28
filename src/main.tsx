@@ -7,108 +7,56 @@ import { signInWithPopup, signOut, onAuthStateChanged, User } from 'firebase/aut
 import { collection, doc, updateDoc, setDoc, onSnapshot, getDoc, deleteDoc, query, where, getDocs } from 'firebase/firestore';
 import { httpsCallable, getFunctions } from 'firebase/functions';
 import './index.css';
+import FolderCreateModal from './FolderCreateModal';
+// Import mobile-scoped CSS so we can toggle the mobile-style class on desktop when appropriate
+import './mobile/mobile.css';
 
-// --- 타입 정의 ---
-
-// --- PWA 유틸리티 함수 ---
-const isMobile = () => {
-  // 더 정확한 모바일 감지
-  const mobileRegex = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile|Tablet/i;
-  const isUserAgentMobile = mobileRegex.test(navigator.userAgent);
-  const isTouchDevice = navigator.maxTouchPoints && navigator.maxTouchPoints > 2;
-  const isSmallScreen = window.innerWidth <= 768;
-  
-  console.log('Mobile detection:', { isUserAgentMobile, isTouchDevice, isSmallScreen, userAgent: navigator.userAgent });
-  
-  return isUserAgentMobile || (isTouchDevice && isSmallScreen);
+// --- 작은 유틸 유틸리티 함수들 (파일 내에서 참조되는 전역 헬퍼들이 없을 경우 안전하게 대체) ---
+const getSystemTheme = (): 'dark' | 'light' => {
+    try {
+        const stored = localStorage.getItem('theme');
+        if (stored === 'dark' || stored === 'light') return stored;
+        return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    } catch (e) {
+        return 'light';
+    }
 };
 
-const isStandalone = () => {
-  return window.matchMedia('(display-mode: standalone)').matches || 
-    (window.navigator as any).standalone === true;
-};
-
-// --- Firestore 데이터 정제 함수 ---
 const sanitizeFirestoreData = (obj: any): any => {
-  if (obj === undefined || obj === null) return undefined;  // null과 undefined 모두 차단
-  if (typeof obj !== 'object') return obj;
-  if (Array.isArray(obj)) {
-    const cleanedArray = obj
-      .filter(item => item !== undefined) // undefined 항목 먼저 제거
-      .map(item => sanitizeFirestoreData(item))
-      .filter(item => item !== undefined); // 정제 후 undefined가 된 항목도 제거
-    return cleanedArray.length > 0 ? cleanedArray : undefined;
-  }
-  
-  // 객체가 null인지 추가 확인
-  if (obj === null) return undefined;
-  
-  // Object.entries 호출 전에 객체 유효성 검사
-  let entries;
-  try {
-    entries = Object.entries(obj);
-  } catch (error) {
-    console.error('❌ Object.entries 실패:', error, obj);
-    return undefined;
-  }
-  
-  // 객체의 모든 필드를 정제
-  const cleaned: any = {};
-  for (const [key, value] of entries) {
-    // undefined와 빈 문자열만 제외 (null은 허용)
-    if (value === undefined || (typeof value === 'string' && value.trim() === '')) {
-      console.warn(`⚠️ 필드 제거됨: ${key} = ${value}`);
-      continue;
+    // 안전한 직렬화: undefined를 null로 바꾸고, 순환 참조가 있으면 원본 반환
+    try {
+        return JSON.parse(JSON.stringify(obj, (_k, v) => (v === undefined ? null : v)));
+    } catch (e) {
+        return obj;
     }
-    // 중첩 객체도 재귀적으로 정제
-    if (typeof value === 'object' && value !== null) {
-      const sanitized = sanitizeFirestoreData(value);
-      if (sanitized !== undefined) {
-        cleaned[key] = sanitized;
-      } else {
-        console.warn(`⚠️ 중첩 객체/배열 제거됨: ${key}`);
-      }
-    } else {
-      cleaned[key] = value;
+};
+
+const isMobile = (): boolean => {
+    if (typeof navigator !== 'undefined') {
+        return /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (typeof window !== 'undefined' && window.innerWidth <= 600);
     }
-  }
-  return Object.keys(cleaned).length > 0 ? cleaned : undefined;
-};
-
-// --- 다크모드 감지 ---
-const getSystemTheme = () => {
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-};
-
-// --- 브라우저 감지 ---
-const isSafari = () => {
-  const userAgent = navigator.userAgent.toLowerCase();
-  return userAgent.includes('safari') && !userAgent.includes('chrome') && !userAgent.includes('firefox');
-};
-
-const isMobileSafari = () => {
-  const userAgent = navigator.userAgent.toLowerCase();
-  return /iphone|ipad|ipod/.test(userAgent) && /safari/.test(userAgent) && !/crios|fxios/.test(userAgent);
-};
-
-// --- 알림 권한 요청 함수 ---
-const requestNotificationPermission = async () => {
-  if (!('Notification' in window)) {
-    console.log('This browser does not support notifications');
     return false;
-  }
-
-  if (Notification.permission === 'granted') {
-    return true;
-  }
-
-  if (Notification.permission !== 'denied') {
-    const permission = await Notification.requestPermission();
-    return permission === 'granted';
-  }
-
-  return false;
 };
+
+const isStandalone = (): boolean => {
+    try {
+        return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || (navigator as any).standalone === true;
+    } catch (e) {
+        return false;
+    }
+};
+
+const requestNotificationPermission = async (): Promise<boolean> => {
+    if (!('Notification' in window)) return false;
+    try {
+        const perm = await Notification.requestPermission();
+        return perm === 'granted';
+    } catch (e) {
+        return false;
+    }
+};
+
+
 
 // --- 푸시 알림 구독 함수 ---
 const subscribeToPushNotifications = async () => {
@@ -203,113 +151,97 @@ const showLocalNotification = (title: string, options?: NotificationOptions) => 
 // --- 다크모드 감지 ---
 
 // --- PWA 설치 안내 컴포넌트 ---
-const PWAInstallPrompt: React.FC<{ onClose: () => void }> = ({ onClose }) => {
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
-  const [isIOS, setIsIOS] = useState(false);
+const PWAInstallPrompt: React.FC<{ onInstalled?: () => void }> = ({ onInstalled }) => {
+    const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+    const [isIOS, setIsIOS] = useState(false);
+    const [isVisible, setIsVisible] = useState(true);
 
-  useEffect(() => {
-    const isIOSDevice = /iPad|iPhone|iPod/.test(navigator.userAgent);
-    setIsIOS(isIOSDevice);
+    useEffect(() => {
+        const isIOSDevice = /iPad|iPhone|iPod/.test(navigator.userAgent);
+        setIsIOS(isIOSDevice);
 
-    const handleBeforeInstallPrompt = (e: Event) => {
-      e.preventDefault();
-      setDeferredPrompt(e);
+        const handleBeforeInstallPrompt = (e: Event) => {
+            e.preventDefault();
+            setDeferredPrompt(e);
+        };
+
+        window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+        return () => {
+            window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+        };
+    }, []);
+
+    const handleInstall = async () => {
+        if (deferredPrompt) {
+            deferredPrompt.prompt();
+            const choice = await deferredPrompt.userChoice;
+            try {
+                if (choice && choice.outcome === 'accepted') {
+                    setDeferredPrompt(null);
+                    onInstalled && onInstalled();
+                    setIsVisible(false);
+                    try { localStorage.setItem('pwa-prompt-dismissed', 'installed'); } catch (e) {}
+                }
+                else {
+                    // user dismissed the browser install prompt
+                    try { localStorage.setItem('pwa-prompt-dismissed', Date.now().toString()); } catch (e) {}
+                    setIsVisible(false);
+                }
+            } catch (e) {
+                // ignore
+            }
+        }
     };
 
-    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    // Dismiss/close removed to enforce non-dismissible install instruction on mobile
 
-    return () => {
-      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-    };
-  }, []);
+    // Render as a full-screen, non-dismissible overlay. No close buttons.
+    if (!isVisible) return null;
 
-  const handleInstall = async () => {
-    if (deferredPrompt) {
-      deferredPrompt.prompt();
-      const { outcome } = await deferredPrompt.userChoice;
-      if (outcome === 'accepted') {
-        setDeferredPrompt(null);
-        onClose();
-      }
-    }
-  };
+    return (
+        <div className="modal-backdrop" style={{ alignItems: 'stretch', padding: 0, backgroundColor: 'rgba(0,0,0,0.95)' }}>
+            <div className="modal-content onboarding-modal install-prompt" onClick={e => e.stopPropagation()} style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
+                <div style={{ textAlign: 'center', padding: '24px' }} className="install-instructions">
+                    <div className="install-icon" aria-hidden>
+                        {/* Share square icon like iOS share */}
+                        <svg width="64" height="64" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M16 6l4 4-4 4" stroke="#0A0A0A" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/><rect x="2" y="2" width="20" height="20" rx="4" stroke="#0A0A0A" strokeWidth="1.5"/></svg>
+                    </div>
+                    <h2 style={{ color: 'white', fontSize: '1.6rem', margin: '14px 0 6px', fontWeight: 800 }}>아이콘을 탭하고,</h2>
+                    <p style={{ color: 'white', fontSize: '1.5rem', fontWeight: 800, margin: 0, paddingBottom: 10 }}>'홈 화면에 추가'를 누르세요.</p>
+                    <div style={{ height: 18 }} />
+                    <h3 style={{ color: 'rgba(255,255,255,0.95)', fontSize: '1.1rem', margin: '8px 0 6px' }}>아이콘이 보이지 않나요?</h3>
+                    <p style={{ color: 'rgba(255,255,255,0.85)', margin: '0 8px 12px', lineHeight: 1.4 }}>아이콘을 탭하면 찾을 수 있습니다.</p>
+                    <div className="install-more-icon" aria-hidden>
+                        {/* Ellipsis / more icon */}
+                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" fill="#ffffff" opacity="0.95"/><circle cx="7" cy="12" r="1.5" fill="#0A0A0A"/><circle cx="12" cy="12" r="1.5" fill="#0A0A0A"/><circle cx="17" cy="12" r="1.5" fill="#0A0A0A"/></svg>
+                    </div>
+                </div>
 
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-sm w-full">
-        <div className="text-center mb-4">
-          <div className="w-16 h-16 bg-indigo-600 rounded-lg mx-auto mb-4 flex items-center justify-center">
-            <span className="text-white text-2xl font-bold">N</span>
-          </div>
-          <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
-            앱으로 설치하기
-          </h2>
-          <p className="text-gray-600 dark:text-gray-300 text-sm">
-            Nova Beta를 홈 화면에 추가하여 더 편리하게 사용하세요.
-          </p>
-        </div>
-
-        {isIOS ? (
-          <div className="mb-4">
-            <div className="bg-blue-50 dark:bg-blue-900 p-3 rounded-lg mb-3">
-              <p className="text-sm text-blue-800 dark:text-blue-200">
-                iOS에서 설치하는 방법:
-              </p>
+                <div style={{ width: '100%', padding: '20px', boxSizing: 'border-box', display: 'flex', justifyContent: 'center', gap: 12 }}>
+                    {deferredPrompt ? (
+                        <>
+                            <button onClick={handleInstall} className="primary" style={{ padding: '14px 20px', borderRadius: 12, background: 'var(--primary-color)', color: '#fff', border: 'none', fontSize: '1rem' }}>지금 설치하기</button>
+                            {/* keep a clear short hint under the button for clarity */}
+                            <div style={{ width: '100%', display: 'flex', justifyContent: 'center', marginTop: 10 }}>
+                                <span style={{ color: 'rgba(255,255,255,0.85)', fontSize: '0.95rem' }}>아이콘을 탭한 뒤, 설치를 진행하세요.</span>
+                            </div>
+                        </>
+                    ) : (
+                        // iOS or browsers without beforeinstallprompt: provide step instructions (no close button)
+                        <div style={{ color: 'white', maxWidth: 560, textAlign: 'left' }}>
+                            <ol style={{ paddingLeft: 18, lineHeight: 1.6 }}>
+                                <li>공유(□↗) 버튼을 탭합니다.</li>
+                                <li>"홈 화면에 추가"를 선택합니다.</li>
+                                <li>추가 버튼을 탭합니다.</li>
+                            </ol>
+                            {/* no close button by design */}
+                        </div>
+                    )}
+                </div>
             </div>
-            <ol className="text-sm text-gray-600 dark:text-gray-300 space-y-2">
-              <li className="flex items-center">
-                <span className="w-6 h-6 bg-indigo-600 text-white rounded-full flex items-center justify-center text-xs mr-2">1</span>
-                하단의 공유 버튼 (□↗) 탭
-              </li>
-              <li className="flex items-center">
-                <span className="w-6 h-6 bg-indigo-600 text-white rounded-full flex items-center justify-center text-xs mr-2">2</span>
-                "홈 화면에 추가" 선택
-              </li>
-              <li className="flex items-center">
-                <span className="w-6 h-6 bg-indigo-600 text-white rounded-full flex items-center justify-center text-xs mr-2">3</span>
-                "추가" 버튼 탭
-              </li>
-            </ol>
-          </div>
-        ) : (
-          <div className="mb-4">
-            {deferredPrompt ? (
-              <button
-                onClick={handleInstall}
-                className="w-full bg-indigo-600 text-white py-2 px-4 rounded-lg hover:bg-indigo-700 transition-colors"
-              >
-                지금 설치하기
-              </button>
-            ) : (
-              <div className="bg-gray-50 dark:bg-gray-700 p-3 rounded-lg">
-                <p className="text-sm text-gray-600 dark:text-gray-300">
-                  브라우저 메뉴에서 "홈 화면에 추가" 또는 "앱 설치"를 선택하세요.
-                </p>
-              </div>
-            )}
-          </div>
-        )}
-
-        <div className="flex space-x-2">
-          <button
-            onClick={onClose}
-            className="flex-1 bg-gray-200 dark:bg-gray-600 text-gray-800 dark:text-gray-200 py-2 px-4 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-500 transition-colors"
-          >
-            나중에
-          </button>
-          <button
-            onClick={() => {
-              localStorage.setItem('pwa-prompt-dismissed', 'true');
-              onClose();
-            }}
-            className="flex-1 bg-gray-200 dark:bg-gray-600 text-gray-800 dark:text-gray-200 py-2 px-4 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-500 transition-colors"
-          >
-            다시 보지 않기
-          </button>
         </div>
-      </div>
-    </div>
-  );
+    );
 };
 
 // --- 타입 정의 ---
@@ -505,7 +437,7 @@ const translations = {
     delete_all_data_button: '모든 데이터 및 설정 지우기',
     settings_done_button: '완료',
     settings_section_data: '데이터 관리',
-    settings_section_account: 'Nova Beta 계정',
+    settings_section_account: 'Nova 2.0 계정',
     settings_sync_data: '지금 동기화',
     settings_load_data: '불러오기',
     settings_logout: '로그아웃',
@@ -879,7 +811,7 @@ const translations = {
     settings_bg_forest_green: 'Forest',
     settings_bg_purple: 'Purple',
     settings_bg_royal_purple: 'Royal Purple',
-    settings_section_account: 'Nova Beta Account',
+    settings_section_account: 'Nova 2.0 Account',
     settings_sync_data: 'Sync Data',
     settings_load_data: 'Load Data',
     settings_logout: 'Sign Out',
@@ -907,6 +839,7 @@ const translations = {
 // --- 아이콘 객체 ---
 const icons = {
     add: <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>,
+    refresh: <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M1 20v-6h6"></path><path d="M3.51 9a9 9 0 0 1 14.13-3.36L23 10M1 14l5.36 5.36A9 9 0 0 0 20.49 15"></path></svg>,
     more: <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle><circle cx="5" cy="12" r="1"></circle></svg>,
     check: <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>,
     info: <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>,
@@ -1116,6 +1049,9 @@ const backgroundOptions = [
 
 // --- 메인 앱 컴포넌트 ---
 const App: React.FC = () => {
+    // ... 메뉴(더보기) 팝오버 상태
+    const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
+    const moreMenuRef = useRef<HTMLButtonElement>(null);
     const [language, setLanguage] = useState<string>('ko'); // localStorage 제거
     const [todos, setTodos] = useState<Goal[]>([]); // localStorage 제거
     const [folders, setFolders] = useState<Folder[]>([]); // localStorage 제거
@@ -1163,6 +1099,33 @@ const App: React.FC = () => {
     
     // PWA 관련 상태
     const [showPWAPrompt, setShowPWAPrompt] = useState<boolean>(false);
+    // Onboarding shown after first-run in installed PWA
+    const [showOnboarding, setShowOnboarding] = useState<boolean>(false);
+    const [showOnboardingStart, setShowOnboardingStart] = useState<boolean>(false);
+
+    // Handle when app is installed (either via beforeinstallprompt acceptance or appinstalled event)
+    const handleAppInstalled = useCallback(() => {
+        // Hide PWA prompt if visible
+        setShowPWAPrompt(false);
+
+        // Show onboarding and delay the Start button (4.5s)
+        setShowOnboarding(true);
+        setShowOnboardingStart(false);
+        setTimeout(() => setShowOnboardingStart(true), 4500);
+    }, []);
+
+    // Listen for the native appinstalled event in case install happens outside our prompt
+    useEffect(() => {
+        const onAppInstalled = () => {
+            try {
+                console.log('PWA installed (appinstalled event)');
+            } catch (e) {}
+            handleAppInstalled();
+        };
+
+        window.addEventListener('appinstalled', onAppInstalled);
+        return () => window.removeEventListener('appinstalled', onAppInstalled);
+    }, [handleAppInstalled]);
     
     // API 키 및 오프라인 모드 상태 추가 (localStorage 제거)
     const [apiKey, setApiKey] = useState<string>('');
@@ -1247,14 +1210,17 @@ const App: React.FC = () => {
                         const firestoreFolders: Folder[] = [];
                         querySnap.forEach((doc) => {
                             const folderData = doc.data();
-                            const folder = { 
-                                id: doc.id, 
-                                name: folderData.name || '이름 없는 폴더', // 빈 이름 방지
-                                color: folderData.color || '#007AFF',
-                                ...folderData,
-                                collaborators: folderData.collaborators || [],
-                                ownerId: folderData.ownerId || user.uid
-                            } as Folder;
+                            const folder = {
+                                    id: doc.id,
+                                    add: <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>,
+                                    name: folderData.name || '이름 없는 폴더', // 빈 이름 방지
+                                    color: folderData.color || '#007AFF',
+                                    createdAt: folderData.createdAt || new Date().toISOString(),
+                                    updatedAt: folderData.updatedAt || new Date().toISOString(),
+                                    ...folderData,
+                                    collaborators: folderData.collaborators || [],
+                                    ownerId: folderData.ownerId || user.uid
+                                } as Folder;
                             firestoreFolders.push(folder);
                         });
                         
@@ -1263,7 +1229,7 @@ const App: React.FC = () => {
                         if (sharedFolders.length > 0) {
                             console.log('📡 공유 폴더 실시간 동기화 설정:', sharedFolders.map(f => ({ id: f.id, name: f.name, ownerId: f.ownerId })));
                             
-                            // 기존 공유 폴더 리스너 정리
+                                // <button onClick={handleSyncDataToFirebase} className="sync-status-indicator" aria-label="동기화">{isSyncingData ? <span className="spinner" /> : icons.refresh}</button>
                             if (sharedFoldersUnsubscribe) {
                                 sharedFoldersUnsubscribe();
                             }
@@ -2579,17 +2545,67 @@ const App: React.FC = () => {
 
     // PWA 설치 프롬프트 표시 로직 (모바일에서 자동 표시)
     useEffect(() => {
-        const isDismissed = localStorage.getItem('pwa-prompt-dismissed');
-        const isMobileDevice = isMobile();
-        const isInStandalone = isStandalone();
-        
-        console.log('PWA Check:', { isMobileDevice, isInStandalone, isDismissed, userAgent: navigator.userAgent });
-        
-        if (isMobileDevice && !isInStandalone && !isDismissed) {
-            // 모바일 기기에서 PWA가 설치되지 않았으면 즉시 표시 (지연 제거)
-            console.log('Showing PWA prompt immediately');
-            setShowPWAPrompt(true);
+        try {
+            const dismissed = localStorage.getItem('pwa-prompt-dismissed');
+            const isMobileDevice = isMobile();
+            const isInStandalone = isStandalone();
+
+            // allow retry after 24 hours (86400000 ms)
+            const retryAfterMs = 24 * 60 * 60 * 1000;
+            let canShow = true;
+
+            if (dismissed) {
+                if (dismissed === 'installed') {
+                    canShow = false;
+                } else {
+                    const ts = parseInt(dismissed, 10);
+                    if (!isNaN(ts)) {
+                        const elapsed = Date.now() - ts;
+                        if (elapsed < retryAfterMs) canShow = false;
+                    } else {
+                        // unknown value -> treat as dismissed
+                        canShow = false;
+                    }
+                }
+            }
+
+            console.log('PWA Check:', { isMobileDevice, isInStandalone, dismissed, canShow, userAgent: navigator.userAgent });
+
+            if (isMobileDevice && !isInStandalone && canShow) {
+                console.log('Showing PWA prompt immediately');
+                setShowPWAPrompt(true);
+            }
+        } catch (e) {
+            console.warn('PWA prompt check failed', e);
+            // Fallback: show prompt on mobile if not standalone
+            if (isMobile() && !isStandalone()) setShowPWAPrompt(true);
         }
+    }, []);
+
+    // Listen for appinstalled event and mark install. Also show onboarding on first standalone run.
+    useEffect(() => {
+        const onAppInstalled = () => {
+            try { localStorage.setItem('pwa-installed', 'true'); } catch (e) {}
+            // Show onboarding on next run; if running now in standalone, show immediately
+            if (isStandalone()) {
+                if (!localStorage.getItem('pwa-onboard-shown')) {
+                    setShowOnboarding(true);
+                    // reveal start button after 4.5s
+                    setTimeout(() => setShowOnboardingStart(true), 4500);
+                }
+            }
+        };
+        window.addEventListener('appinstalled', onAppInstalled);
+
+        // If already running as standalone and onboarding not shown, show it once
+        try {
+            if (isStandalone() && !localStorage.getItem('pwa-onboard-shown')) {
+                setShowOnboarding(true);
+                setTimeout(() => setShowOnboardingStart(true), 4500);
+            }
+        } catch (e) {}
+
+        return () => window.removeEventListener('appinstalled', onAppInstalled);
     }, []);
 
     // Service Worker 등록 및 알림 권한 요청
@@ -2726,23 +2742,16 @@ const App: React.FC = () => {
             completed: false, 
             lastCompletedDate: null, 
             streak: 0,
-            folderId: (currentFolderId === 'all' || currentFolderId === null) ? undefined : currentFolderId  // "전체"나 "나의 목표" 선택 시 폴더 없음
+            folderId: (currentFolderId === 'all' || currentFolderId === null) ? undefined : currentFolderId
         };
-        
         // Firestore에 저장 - 무조건 저장
         if (googleUser) {
             try {
                 const folder = folders.find(f => f.id === currentFolderId);
-                // 소유자: 자신의 Firestore에 저장
-                // 협업자: 폴더 소유자의 Firestore에 저장 (동기화를 위해)
                 const targetOwnerUid = folder?.ownerId || googleUser.uid;
-                
                 const todosRef = collection(db, 'users', targetOwnerUid, 'todos');
                 const todoDocRef = doc(todosRef, newTodo.id.toString());
-                
-                // 강력한 데이터 정제
                 const sanitizedTodo = sanitizeFirestoreData(newTodo);
-                
                 if (sanitizedTodo) {
                     await setDoc(todoDocRef, sanitizedTodo);
                     console.log('✅ 목표 Firestore 저장:', { targetOwnerUid, newTodo: sanitizedTodo });
@@ -2753,9 +2762,15 @@ const App: React.FC = () => {
                 console.error('❌ 목표 Firestore 저장 실패:', error);
             }
         }
-        
         // UI 업데이트
-        setTodos(prev => [newTodo, ...prev]);
+        setTodos(prev => {
+            const next = [newTodo, ...prev];
+            console.log('🟢 setTodos after add:', next);
+            return next;
+        });
+        // Close modal and reset view so the newly added goal is visible
+        setCurrentFolderId(null);
+        setFilter('all');
         setIsGoalAssistantOpen(false);
     };
     
@@ -4041,10 +4056,73 @@ const App: React.FC = () => {
         }
     };
 
-    const isAnyModalOpen = isGoalAssistantOpen || !!editingTodo || !!infoTodo || isSettingsOpen || !!alertConfig || isVersionInfoOpen || isUsageGuideOpen;
 
+    const isAnyModalOpen = isGoalAssistantOpen || !!editingTodo || !!infoTodo || isSettingsOpen || !!alertConfig || isVersionInfoOpen || isUsageGuideOpen || isFolderManageOpen || !!collaboratingFolder || showAiSortReasonModal;
+    // 모바일/데스크탑 분기: .m 클래스 완전 제거, isMobileScreen만 사용
+    // 홈/뒤로가기 버튼 상태 관리
+    const [isBackButton, setIsBackButton] = useState(false);
+
+    // 예시: 뒤로가기 버튼으로 바꿔야 할 때 setIsBackButton(true) 호출 (상위에서 필요시 트리거)
+    // 실제로는 라우팅/상태에 따라 제어 필요
+
+    // 버튼 클릭 핸들러
+    const handleHomeClick = () => {
+        // 홈 버튼 클릭 시 메인 상태 초기화 (폴더, 필터, 선택모드 등)
+        setCurrentFolderId(null);
+        setFilter('all');
+        setCategoryFilter('all');
+        setIsSelectionMode(false);
+        setIsBackButton(false);
+    };
+    const handleLeftButtonClick = () => {
+        if (isBackButton) {
+            // 뒤로가기 동작 (예: 모달 닫기, 이전 화면 등)
+            window.history.back();
+            setIsBackButton(false); // 필요시
+        } else {
+            handleHomeClick();
+        }
+    };
+
+    // 모바일 분기 및 모바일 전용 UI 완전 제거. 항상 데스크탑 레이아웃만 사용
+
+    // 데스크탑/기존 레이아웃
+    // 모바일은 하단 우측 플로팅, 데스크탑은 상단에 +버튼이 보이도록
+    // 모바일 여부를 .m 클래스가 아니라 window.innerWidth로 판별
+    const [isMobileScreen, setIsMobileScreen] = useState(() => typeof window !== 'undefined' ? window.innerWidth <= 600 : false);
+    useEffect(() => {
+        const handleResize = () => {
+            setIsMobileScreen(window.innerWidth <= 600);
+        };
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, []);
     return (
         <div className={`main-page-layout ${isViewModeCalendar ? 'calendar-view-active' : ''}`}>
+            {/* Floating add button: 모바일은 하단 우측 플로팅, 데스크탑은 상단에만 노출 */}
+            {/* 데스크탑: 상단 +버튼, 모바일: 우측 하단 플로팅 +버튼 */}
+            {!isMobileScreen && (
+                <button
+                    className="floating-add-btn"
+                    aria-label="목표 추가"
+                    onClick={() => setIsGoalAssistantOpen(true)}
+                    style={{ display: isAnyModalOpen ? 'none' : 'inline-flex' }}
+                >
+                    {icons.add}
+                </button>
+            )}
+            {/* 모바일 전용: 우측 하단 플로팅 + 버튼 (중복 방지: 데스크탑은 위의 버튼 사용) */}
+            {isMobileScreen && (
+                <button
+                    className="floating-add-btn mobile-right-add"
+                    aria-label="목표 추가"
+                    onClick={() => setIsGoalAssistantOpen(true)}
+                    style={{ display: isAnyModalOpen ? 'none' : 'inline-flex' }}
+                >
+                    {icons.add}
+                </button>
+            )}
+            {/* Mobile bottom floating add button removed per UX request (no duplicate mobile +) */}
             <div className={`page-content ${isAnyModalOpen ? 'modal-open' : ''}`}>
                 {/* Folder Navigator Component */}
                 <FolderNavigator 
@@ -4062,6 +4140,9 @@ const App: React.FC = () => {
                         setIsFolderManageOpen(true);
                     }}
                     currentUserId={googleUser?.uid}
+                    onAddGoal={() => setIsGoalAssistantOpen(true)}
+                    isAnyModalOpen={isAnyModalOpen}
+                    isMobileScreen={isMobileScreen}
                 />
 
                 <div className="container">
@@ -4087,7 +4168,7 @@ const App: React.FC = () => {
                         onRemoveCategory={(cat) => setUserCategories(userCategories.filter(c => c !== cat))}
                         onSetSelectionMode={() => setIsSelectionMode(true)}
                         onOpenSettings={() => setIsSettingsOpen(true)}
-                        onAddGoal={() => setIsGoalAssistantOpen(true)}
+                        onAddGoal={!isMobileScreen ? () => setIsGoalAssistantOpen(true) : undefined}
                         currentFolderId={currentFolderId}
                         folders={folders}
                         onSyncSharedFolder={handleSyncSharedFolder}
@@ -4190,7 +4271,33 @@ const App: React.FC = () => {
             {isVersionInfoOpen && <VersionInfoModal onClose={() => setIsVersionInfoOpen(false)} t={t} />}
             {alertConfig && <AlertModal title={alertConfig.title} message={alertConfig.message} onConfirm={() => { alertConfig.onConfirm?.(); setAlertConfig(null); }} onCancel={alertConfig.onCancel ? () => { alertConfig.onCancel?.(); setAlertConfig(null); } : undefined} confirmText={alertConfig.confirmText} cancelText={alertConfig.cancelText} isDestructive={alertConfig.isDestructive} t={t} />}
             {toastMessage && <div className="toast-notification">{toastMessage}</div>}
-            {showPWAPrompt && <PWAInstallPrompt onClose={() => setShowPWAPrompt(false)} />}
+            {showPWAPrompt && <PWAInstallPrompt onInstalled={handleAppInstalled} />}
+            {showOnboarding && (
+                <div className="modal-backdrop">
+                    <div className="modal-content onboarding-modal" onClick={(e) => e.stopPropagation()}>
+                        <div className="onboarding-header" style={{ position: 'relative', textAlign: 'center' }}>
+                            <div style={{ width: 72, height: 72, background: 'var(--primary-color)', borderRadius: 12, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '28px', marginBottom: 12 }}>N</div>
+                            <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700 }}>Nova에 오신 것을 환영합니다</h2>
+                            <p style={{ marginTop: 8, color: 'var(--text-secondary-color)' }}>설치해 주셔서 감사합니다 — Nova의 주요 기능을 빠르게 둘러보실 수 있습니다.</p>
+                        </div>
+                        <div className="onboarding-body">
+                            <ul style={{ textAlign: 'left', gap: 8, display: 'flex', flexDirection: 'column' }}>
+                                <li>• 목표 작성 & 관리: 손쉽게 목표를 만들고 추적하세요.</li>
+                                <li>• Gemini AI 어시스트: 목표를 더 나은 형태로 정리해줍니다.</li>
+                                <li>• PWA 알림: 푸시로 마감 알림을 받을 수 있습니다.</li>
+                                <li>• 오프라인 지원 및 클라우드 동기화</li>
+                            </ul>
+                        </div>
+                        <div className="onboarding-footer" style={{ display: 'flex', justifyContent: 'center', gap: 12, padding: '12px 20px 24px 20px' }}>
+                            {!showOnboardingStart ? (
+                                <div style={{ color: 'var(--text-secondary-color)' }}>시작 버튼이 곧 나타납니다...</div>
+                            ) : (
+                                <button className="primary" onClick={() => { try { localStorage.setItem('pwa-onboard-shown', 'true'); } catch (e) {} setShowOnboarding(false); }} style={{ padding: '12px 20px', borderRadius: 12, background: 'var(--primary-color)', color: '#fff', border: 'none' }}>시작하기</button>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
             
             {/* 폴더 관리 모달 */}
             {isFolderManageOpen && managingFolderId && (
@@ -4395,6 +4502,9 @@ const FolderNavigator: React.FC<{
     t: (key: string) => any;
     onManageFolder: (folderId: string) => void;
     currentUserId?: string; // 현재 사용자 ID 추가
+    onAddGoal?: () => void;
+    isAnyModalOpen?: boolean;
+    isMobileScreen?: boolean;
 }> = ({ 
     folders, 
     currentFolderId, 
@@ -4406,24 +4516,20 @@ const FolderNavigator: React.FC<{
     todos, 
     t,
     onManageFolder,
-    currentUserId // 현재 사용자 ID
+    currentUserId, // 현재 사용자 ID
+    onAddGoal,
+    isAnyModalOpen,
+    isMobileScreen
 }) => {
-    const [isAddingFolder, setIsAddingFolder] = useState(false);
-    const [newFolderName, setNewFolderName] = useState('');
+    const [isFolderCreateModalOpen, setIsFolderCreateModalOpen] = useState(false);
     const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null);
     const [renameInput, setRenameInput] = useState('');
     const [deletingFolderId, setDeletingFolderId] = useState<string | null>(null);
 
-    const handleAddFolder = () => {
-        if (newFolderName.trim()) {
-            onCreateFolder(newFolderName);
-            setNewFolderName('');
-            setIsAddingFolder(false);
-        }
-    };
+
 
     return (
-        <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', overflowX: 'auto', display: 'flex', gap: '8px', alignItems: 'center', backgroundColor: 'var(--card-bg-color)' }}>
+    <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', overflowX: 'auto', display: 'flex', gap: '8px', alignItems: 'center', backgroundColor: 'var(--card-bg-color)', position: 'relative' }}>
             {/* Root folder button */}
             <button 
                 onClick={() => onSetCurrentFolder(null)}
@@ -4467,225 +4573,177 @@ const FolderNavigator: React.FC<{
             </button>
             
             {/* Folder list */}
-            {folders.length > 0 && folders
-                .filter(folder => {
-                    // "나의 목표" 선택 시 공유 폴더 숨김 (자신이 소유한 공유 폴더는 표시)
-                    if (currentFolderId === null) {
-                        return !folder.isShared || (folder.isShared && folder.ownerId === currentUserId);
-                    }
-                    // "전체" 선택 시 모든 폴더 표시
-                    return true;
-                })
-                .map(folder => {
-                const folderGoalsCount = todos.filter(t => t.folderId === folder.id).length;
-                return (
-                    <div 
-                        key={folder.id}
-                        style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: '2px' }}
-                    >
-                        <button 
-                            onClick={() => onSetCurrentFolder(folder.id)}
-                            style={{
-                                padding: '6px 12px',
-                                borderRadius: '8px',
-                                border: 'none',
-                                backgroundColor: currentFolderId === folder.id ? folder.color || 'var(--primary-color)' : `${folder.color}20` || 'transparent',
-                                color: currentFolderId === folder.id ? 'white' : 'var(--text-color)',
-                                cursor: 'pointer',
-                                fontSize: '0.9rem',
-                                fontWeight: 500,
-                                whiteSpace: 'nowrap',
-                                transition: 'all 0.2s',
-                                position: 'relative'
-                            }}
-                            title={folder.isShared ? "공유 폴더" : "개인 폴더"}
+            <div style={{ display: 'flex', flex: 1, gap: '8px', alignItems: 'center' }}>
+                {folders.length > 0 && folders
+                    .filter(folder => {
+                        if (currentFolderId === null) {
+                            return !folder.isShared || (folder.isShared && folder.ownerId === currentUserId);
+                        }
+                        return true;
+                    })
+                    .map(folder => {
+                    const folderGoalsCount = todos.filter(t => t.folderId === folder.id).length;
+                    return (
+                        <div 
+                            key={folder.id}
+                            style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: '2px' }}
                         >
-                            {folder.isShared ? '👥' : '📁'} {folder.name} ({folderGoalsCount})
-                        </button>
-                        {currentFolderId === folder.id && (
-                            <div style={{ display: 'flex', gap: '2px' }}>
-                                <button 
-                                    onClick={() => onSetCollaboratingFolder(folder)}
-                                    style={{
-                                        width: '24px',
-                                        height: '24px',
-                                        padding: '0',
-                                        borderRadius: '4px',
-                                        border: 'none',
-                                        backgroundColor: 'var(--primary-color)',
-                                        color: 'white',
-                                        cursor: 'pointer',
-                                        fontSize: '0.8rem',
-                                        lineHeight: '1',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        transition: 'all 0.2s'
-                                    }}
-                                    title="폴더 협업"
-                                >
-                                    👥
-                                </button>
-                                <button 
-                                    onClick={() => onManageFolder(folder.id)}
-                                    style={{
-                                        width: '24px',
-                                        height: '24px',
-                                        padding: '0',
-                                        borderRadius: '4px',
-                                        border: 'none',
-                                        backgroundColor: 'var(--button-bg-color)',
-                                        color: 'var(--text-color)',
-                                        cursor: 'pointer',
-                                        fontSize: '0.8rem',
-                                        lineHeight: '1',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        transition: 'all 0.2s'
-                                    }}
-                                    title="폴더 관리"
-                                >
-                                    ⚙️
-                                </button>
-                                <button 
-                                    onClick={() => {
-                                        setRenamingFolderId(folder.id);
-                                        setRenameInput(folder.name);
-                                    }}
-                                    style={{
-                                        width: '24px',
-                                        height: '24px',
-                                        padding: '0',
-                                        borderRadius: '4px',
-                                        border: 'none',
-                                        backgroundColor: 'var(--button-bg-color)',
-                                        color: 'var(--text-color)',
-                                        cursor: 'pointer',
-                                        fontSize: '0.8rem',
-                                        lineHeight: '1',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        transition: 'all 0.2s'
-                                    }}
-                                    title="폴더 이름 변경"
-                                >
-                                    ✏
-                                </button>
-                                <button 
-                                    onClick={() => {
-                                        setDeletingFolderId(folder.id);
-                                    }}
-                                    style={{
-                                        width: '24px',
-                                        height: '24px',
-                                        padding: '0',
-                                        borderRadius: '4px',
-                                        border: 'none',
-                                        backgroundColor: 'var(--danger-color)',
-                                        color: 'white',
-                                        cursor: 'pointer',
-                                        fontSize: '0.8rem',
-                                        lineHeight: '1',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        transition: 'all 0.2s'
-                                    }}
-                                    title="폴더 삭제"
-                                >
-                                    ×
-                                </button>
-                            </div>
-                        )}
-                    </div>
-                );
-            })}
+                            <button 
+                                onClick={() => onSetCurrentFolder(folder.id)}
+                                style={{
+                                    padding: '6px 12px',
+                                    borderRadius: '8px',
+                                    border: 'none',
+                                    backgroundColor: currentFolderId === folder.id ? folder.color || 'var(--primary-color)' : `${folder.color}20` || 'transparent',
+                                    color: currentFolderId === folder.id ? 'white' : 'var(--text-color)',
+                                    cursor: 'pointer',
+                                    fontSize: '0.9rem',
+                                    fontWeight: 500,
+                                    whiteSpace: 'nowrap',
+                                    transition: 'all 0.2s',
+                                    position: 'relative'
+                                }}
+                                title={folder.isShared ? "공유 폴더" : "개인 폴더"}
+                            >
+                                {folder.isShared ? '👥' : '📁'} {folder.name} ({folderGoalsCount})
+                            </button>
+                            {currentFolderId === folder.id && (
+                                <div style={{ display: 'flex', gap: '2px' }}>
+                                    <button 
+                                        onClick={() => onSetCollaboratingFolder(folder)}
+                                        style={{
+                                            width: '24px',
+                                            height: '24px',
+                                            padding: '0',
+                                            borderRadius: '4px',
+                                            border: 'none',
+                                            backgroundColor: 'var(--primary-color)',
+                                            color: 'white',
+                                            cursor: 'pointer',
+                                            fontSize: '0.8rem',
+                                            lineHeight: '1',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            transition: 'all 0.2s'
+                                        }}
+                                        title="폴더 협업"
+                                    >
+                                        👥
+                                    </button>
+                                    <button 
+                                        onClick={() => onManageFolder(folder.id)}
+                                        style={{
+                                            width: '24px',
+                                            height: '24px',
+                                            padding: '0',
+                                            borderRadius: '4px',
+                                            border: 'none',
+                                            backgroundColor: 'var(--button-bg-color)',
+                                            color: 'var(--text-color)',
+                                            cursor: 'pointer',
+                                            fontSize: '0.8rem',
+                                            lineHeight: '1',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            transition: 'all 0.2s'
+                                        }}
+                                        title="폴더 관리"
+                                    >
+                                        ⚙️
+                                    </button>
+                                    <button 
+                                        onClick={() => {
+                                            setRenamingFolderId(folder.id);
+                                            setRenameInput(folder.name);
+                                        }}
+                                        style={{
+                                            width: '24px',
+                                            height: '24px',
+                                            padding: '0',
+                                            borderRadius: '4px',
+                                            border: 'none',
+                                            backgroundColor: 'var(--button-bg-color)',
+                                            color: 'var(--text-color)',
+                                            cursor: 'pointer',
+                                            fontSize: '0.8rem',
+                                            lineHeight: '1',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            transition: 'all 0.2s'
+                                        }}
+                                        title="폴더 이름 변경"
+                                    >
+                                        ✏
+                                    </button>
+                                    <button 
+                                        onClick={() => {
+                                            setDeletingFolderId(folder.id);
+                                        }}
+                                        style={{
+                                            width: '24px',
+                                            height: '24px',
+                                            padding: '0',
+                                            borderRadius: '4px',
+                                            border: 'none',
+                                            backgroundColor: 'var(--danger-color)',
+                                            color: 'white',
+                                            cursor: 'pointer',
+                                            fontSize: '0.8rem',
+                                            lineHeight: '1',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            transition: 'all 0.2s'
+                                        }}
+                                        title="폴더 삭제"
+                                    >
+                                        ×
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    );
+                })}
+            </div>
             
-            {/* Add folder button - improved UI */}
-            {!isAddingFolder ? (
-                <button 
-                    onClick={() => setIsAddingFolder(true)}
-                    style={{
-                        padding: '6px 12px',
-                        borderRadius: '8px',
-                        border: '2px solid var(--primary-color)',
-                        backgroundColor: 'transparent',
-                        color: 'var(--primary-color)',
-                        cursor: 'pointer',
-                        fontSize: '0.9rem',
-                        fontWeight: 500,
-                        whiteSpace: 'nowrap',
-                        transition: 'all 0.2s',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '4px'
+            {/* Add folder button - open modal for name input */}
+            <button
+                onClick={() => setIsFolderCreateModalOpen(true)}
+                style={{
+                    padding: '6px 12px',
+                    borderRadius: '8px',
+                    border: '2px solid var(--primary-color)',
+                    backgroundColor: 'transparent',
+                    color: 'var(--primary-color)',
+                    cursor: 'pointer',
+                    fontSize: '0.9rem',
+                    fontWeight: 500,
+                    whiteSpace: 'nowrap',
+                    transition: 'all 0.2s',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                }}
+            >
+                ➕ 폴더
+            </button>
+            {/* Mobile inline + button intentionally removed to avoid duplicate add controls on mobile */}
+
+            {isFolderCreateModalOpen && (
+                <FolderCreateModal
+                    onClose={() => setIsFolderCreateModalOpen(false)}
+                    onCreate={(data: any) => {
+                        // FolderCreateModal passes an object { name, isShared, collaborators }
+                        if (data && data.name) {
+                            onCreateFolder(data.name);
+                        }
+                        setIsFolderCreateModalOpen(false);
                     }}
-                >
-                    ➕ 폴더
-                </button>
-            ) : (
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                    <input 
-                        type="text"
-                        value={newFolderName}
-                        onChange={(e) => setNewFolderName(e.target.value)}
-                        onKeyPress={(e) => {
-                            if (e.key === 'Enter') handleAddFolder();
-                            if (e.key === 'Escape') {
-                                setIsAddingFolder(false);
-                                setNewFolderName('');
-                            }
-                        }}
-                        placeholder="폴더 이름..."
-                        autoFocus
-                        style={{
-                            padding: '6px 12px',
-                            borderRadius: '8px',
-                            border: '2px solid var(--primary-color)',
-                            backgroundColor: 'var(--input-bg-color)',
-                            color: 'var(--text-color)',
-                            fontSize: '0.9rem',
-                            outline: 'none',
-                            width: '120px'
-                        }}
-                    />
-                    <button 
-                        onClick={handleAddFolder}
-                        style={{
-                            padding: '4px 12px',
-                            borderRadius: '8px',
-                            border: 'none',
-                            backgroundColor: 'var(--primary-color)',
-                            color: 'white',
-                            cursor: 'pointer',
-                            fontSize: '0.85rem',
-                            fontWeight: 600,
-                            transition: 'all 0.2s'
-                        }}
-                    >
-                        완료
-                    </button>
-                    <button 
-                        onClick={() => {
-                            setIsAddingFolder(false);
-                            setNewFolderName('');
-                        }}
-                        style={{
-                            padding: '4px 12px',
-                            borderRadius: '8px',
-                            border: '1px solid var(--border-color)',
-                            backgroundColor: 'transparent',
-                            color: 'var(--text-color)',
-                            cursor: 'pointer',
-                            fontSize: '0.85rem',
-                            transition: 'all 0.2s'
-                        }}
-                    >
-                        취소
-                    </button>
-                </div>
+                    t={t}
+                />
             )}
             
             {/* Delete Folder Modal */}
@@ -4804,7 +4862,7 @@ const Header: React.FC<{
     onRemoveCategory: (cat: string) => void; 
     onSetSelectionMode: () => void; 
     onOpenSettings: () => void; 
-    onAddGoal: () => void; 
+    onAddGoal?: () => void; 
     currentFolderId: string | null; 
     folders: Folder[]; 
     onSyncSharedFolder: () => void; 
@@ -4816,13 +4874,14 @@ const Header: React.FC<{
     editingStates: { [todoId: number]: EditingState };
     onToggleCollaboration: (folderId: string, enabled: boolean) => void;
     onUpdateCollaborationSettings: (folderId: string, settings: any) => void;
+    isMobileScreen?: boolean;
 }> = ({ 
     t, isSelectionMode, selectedCount, totalVisibleCount, onCancelSelection, onDeleteSelected, onSelectAll,
     isViewModeCalendar, onToggleViewMode, isAiSorting, sortType, onSort, 
     filter, onFilter, categoryFilter, onCategoryFilter, userCategories, 
     onAddCategory, onRemoveCategory, onSetSelectionMode, onOpenSettings, 
     onAddGoal, currentFolderId, folders, onSyncSharedFolder, isSyncing, isSyncingData, onManualSync,
-    activeUsers, editingStates, onToggleCollaboration, onUpdateCollaborationSettings
+    activeUsers, editingStates, onToggleCollaboration, onUpdateCollaborationSettings, isMobileScreen
 }) => {
     const [isFilterPopoverOpen, setIsFilterPopoverOpen] = useState(false);
     const [isCollaborationPopoverOpen, setIsCollaborationPopoverOpen] = useState(false);
@@ -4853,12 +4912,12 @@ const Header: React.FC<{
         e.stopPropagation();
     };
 
-
     return (
         <header>
             <div className="header-left">
                 {isSelectionMode && <button onClick={onCancelSelection} className="header-action-button">{t('cancel_selection_button_label')}</button>}
             </div>
+
             <div className="header-title-group">
                 <h1>{t('my_goals_title')}</h1>
                 {!isSelectionMode && (
@@ -4912,146 +4971,10 @@ const Header: React.FC<{
                                 </div>
                             )}
                         </div>
-                        
-                        {/* 공동작업 설정 버튼 (공유 폴더에서만, 이모티콘 없이 텍스트만) */}
-                        {currentFolderId && folders.find(f => f.id === currentFolderId)?.isShared && (
-                            <div className="collaboration-settings">
-                                <button 
-                                    onClick={() => setIsCollaborationPopoverOpen(!isCollaborationPopoverOpen)}
-                                    className={`main-action-button ${isCollaborationEnabled ? 'collaboration-active' : ''}`}
-                                    aria-label="공동작업 설정"
-                                    title="공동작업 설정"
-                                    style={{ borderRadius: '999px', padding: '8px 16px', fontWeight: 500 }}
-                                >
-                                    {isCollaborationEnabled ? '공동작업' : '단독작업'}
-                                </button>
-                                {isCollaborationPopoverOpen && currentFolderId && (
-                                    <div className="profile-popover collaboration-popover" style={{ right: '60px', top: '50px' }}>
-                                        <div className="popover-section">
-                                            <h4 style={{ marginBottom: '12px' }}>공동작업 설정</h4>
-                                            
-                                            {/* 공동작업 활성화/비활성화 */}
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                                                <span>공동작업 활성화</span>
-                                                <button 
-                                                    onClick={() => onToggleCollaboration(currentFolderId, !isCollaborationEnabled)}
-                                                    style={{
-                                                        background: isCollaborationEnabled ? 'var(--primary-color)' : '#ccc',
-                                                        border: 'none',
-                                                        borderRadius: '12px',
-                                                        width: '44px',
-                                                        height: '24px',
-                                                        position: 'relative',
-                                                        cursor: 'pointer',
-                                                        transition: 'background 0.2s'
-                                                    }}
-                                                >
-                                                    <div style={{
-                                                        background: 'white',
-                                                        borderRadius: '50%',
-                                                        width: '20px',
-                                                        height: '20px',
-                                                        position: 'absolute',
-                                                        top: '2px',
-                                                        left: isCollaborationEnabled ? '22px' : '2px',
-                                                        transition: 'left 0.2s'
-                                                    }} />
-                                                </button>
-                                            </div>
-                                            
-                                            {/* 현재 접속자 표시 */}
-                                            {isCollaborationEnabled && activeUsers.length > 0 && (
-                                                <div style={{ marginBottom: '16px' }}>
-                                                    <h5 style={{ marginBottom: '8px', fontSize: '0.9rem' }}>현재 접속자 ({activeUsers.length}명)</h5>
-                                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                                                        {activeUsers.map(user => (
-                                                            <div key={user.userId} style={{
-                                                                display: 'flex',
-                                                                alignItems: 'center',
-                                                                gap: '6px',
-                                                                background: 'rgba(var(--primary-color-rgb), 0.1)',
-                                                                padding: '4px 8px',
-                                                                borderRadius: '12px',
-                                                                fontSize: '0.8rem'
-                                                            }}>
-                                                                {user.photoURL && (
-                                                                    <img src={user.photoURL} alt="" style={{
-                                                                        width: '16px',
-                                                                        height: '16px',
-                                                                        borderRadius: '50%'
-                                                                    }} />
-                                                                )}
-                                                                <span>{user.displayName}</span>
-                                                                <div style={{
-                                                                    width: '6px',
-                                                                    height: '6px',
-                                                                    background: user.isOnline ? '#34C759' : '#ccc',
-                                                                    borderRadius: '50%'
-                                                                }} />
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                            )}
-                                            
-                                            {/* 세부 설정 (공동작업 활성화시에만) */}
-                                            {isCollaborationEnabled && (
-                                                <>
-                                                    <div style={{ borderTop: '1px solid #eee', paddingTop: '16px' }}>
-                                                        <h5 style={{ marginBottom: '8px', fontSize: '0.9rem' }}>세부 설정</h5>
-                                                        
-                                                        <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', cursor: 'pointer' }}>
-                                                            <span style={{ fontSize: '0.8rem' }}>접속자 표시</span>
-                                                            <input 
-                                                                type="checkbox" 
-                                                                checked={collaborationSettings?.showPresence ?? true}
-                                                                onChange={(e) => onUpdateCollaborationSettings(currentFolderId, { showPresence: e.target.checked })}
-                                                            />
-                                                        </label>
-                                                        
-                                                        <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', cursor: 'pointer' }}>
-                                                            <span style={{ fontSize: '0.8rem' }}>편집 상태 표시</span>
-                                                            <input 
-                                                                type="checkbox" 
-                                                                checked={collaborationSettings?.showEditingState ?? true}
-                                                                onChange={(e) => onUpdateCollaborationSettings(currentFolderId, { showEditingState: e.target.checked })}
-                                                            />
-                                                        </label>
-                                                        
-                                                        <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', cursor: 'pointer' }}>
-                                                            <span style={{ fontSize: '0.8rem' }}>충돌 감지</span>
-                                                            <input 
-                                                                type="checkbox" 
-                                                                checked={collaborationSettings?.enableConflictDetection ?? true}
-                                                                onChange={(e) => onUpdateCollaborationSettings(currentFolderId, { enableConflictDetection: e.target.checked })}
-                                                            />
-                                                        </label>
-                                                    </div>
-                                                </>
-                                            )}
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                        )}
-                        
-                        {/* 공유 폴더 동기화 버튼 - 공유 폴더에서만, 이모티콘 없이 텍스트만 */}
-                        {currentFolderId && folders.find(f => f.id === currentFolderId)?.isShared && (
-                            <button 
-                                onClick={onSyncSharedFolder} 
-                                disabled={isSyncing}
-                                className="main-action-button"
-                                aria-label="동기화"
-                                title={isSyncing ? '동기화 중...' : '공유 폴더 수동 동기화\n실시간 동기화가 실패했을 때 사용하세요'}
-                                style={{ borderRadius: '999px', padding: '8px 16px', fontWeight: 500, marginLeft: 8 }}
-                            >
-                                {isSyncing ? <div className="spinner" style={{ width: '20px', height: '20px' }} /> : '동기화'}
-                            </button>
-                        )}
-                        
-                        {/* 동기화 상태 표시 - 항상 표시, 이모티콘 없이 텍스트만 */}
-                        <button 
-                            className="sync-status-indicator clickable" 
+                        {/* 동기화 아이콘 버튼 (텍스트 버튼 제거, 아이콘만 표시) */}
+                        <button
+                            className="header-icon-button"
+                            aria-label={t('sync_button_label') || '동기화'}
                             onClick={() => {
                                 if (!isSyncingData) {
                                     if (currentFolderId && folders.find(f => f.id === currentFolderId)?.isShared) {
@@ -5062,19 +4985,20 @@ const Header: React.FC<{
                                 }
                             }}
                             disabled={isSyncingData}
-                            title={isSyncingData ? "동기화 중..." : "클릭하여 수동 동기화"}
+                            style={{ marginLeft: 8 }}
                         >
-                            {isSyncingData ? (
-                                <span style={{ fontSize: '12px' }}>동기화중</span>
+                            {isSyncing ? (
+                                <span className="sync-spinner" />
                             ) : (
-                                <span style={{ fontSize: '12px' }}>동기화</span>
+                                icons.refresh
                             )}
                         </button>
-                        
+
                         <button onClick={onOpenSettings} className="header-icon-button" aria-label={t('settings_title')}>{icons.settings}</button>
                     </div>
                 )}
             </div>
+
             <div className="header-right">
                 {isSelectionMode ? (
                     <>
@@ -5095,9 +5019,12 @@ const Header: React.FC<{
                         )}
                     </>
                 ) : (
-                    <>
-                        <button onClick={onAddGoal} className="header-icon-button" aria-label={t('add_new_goal_button_label')}>{icons.add}</button>
-                    </>
+                    // 데스크탑(모바일이 아닐 때)만 +버튼을 헤더에 표시
+                    !isMobileScreen && onAddGoal && (
+                        <button onClick={onAddGoal} className="header-icon-button" aria-label={t('add_new_goal_button_label')}>
+                            {icons.add}
+                        </button>
+                    )
                 )}
             </div>
         </header>
@@ -5197,7 +5124,7 @@ const TodoItem: React.FC<{ todo: Goal; onToggleComplete: (id: number) => void; o
     );
 });
 
-const Modal: React.FC<{ onClose: () => void; children: React.ReactNode; className?: string; isClosing: boolean; size?: 'small' | 'medium' | 'large' }> = ({ onClose, children, className = '', isClosing, size = 'large' }) => {
+const Modal: React.FC<{ onClose: () => void; children: React.ReactNode; className?: string; isClosing: boolean; size?: 'small' | 'medium' | 'large'; dismissible?: boolean }> = ({ onClose, children, className = '', isClosing, size = 'large', dismissible = true }) => {
     const sizeClass = {
         'small': 'modal-content-small',
         'medium': 'modal-content-medium',
@@ -5205,7 +5132,7 @@ const Modal: React.FC<{ onClose: () => void; children: React.ReactNode; classNam
     }[size];
     
     return (
-        <div className={`modal-backdrop ${isClosing ? 'is-closing' : ''}`} onClick={onClose}>
+        <div className={`modal-backdrop ${isClosing ? 'is-closing' : ''}`} onClick={dismissible ? onClose : (e) => e.stopPropagation()}>
             <div className={`modal-content ${sizeClass} ${className} ${isClosing ? 'is-closing' : ''}`} onClick={e => e.stopPropagation()}>{children}</div>
         </div>
     );
@@ -5438,7 +5365,11 @@ const GoalAssistantModal: React.FC<{ onClose: () => void; onAddTodo?: (newTodoDa
         if (!validateStep(5)) return;
         const goalData = { wish, outcome, obstacle, plan, isRecurring, recurringDays, deadline: noDeadline ? '' : deadline, category };
         if (existingTodo && onEditTodo) onEditTodo({ ...existingTodo, ...goalData });
-        else if (onAddTodo) onAddTodo(goalData);
+        else if (onAddTodo) {
+            onAddTodo(goalData);
+            // Close modal after successful add
+            handleClose();
+        }
     };
     const handleQuickTaskSubmit = () => {
         if (!quickTaskTitle.trim()) return;
@@ -5464,9 +5395,27 @@ const GoalAssistantModal: React.FC<{ onClose: () => void; onAddTodo?: (newTodoDa
     return (
         <Modal onClose={handleClose} isClosing={isClosing} className="goal-assistant-modal">
             <div className="goal-assistant-header">
-                <div className="goal-assistant-header-left">{step > 1 && mode === 'woop' && <button onClick={handleBack} className="settings-back-button">{icons.back}</button>}</div>
+                <div className="goal-assistant-header-left">
+                    {/* WOOP 모드에서 두 번째 단계 이상이면 뒤로 동작(아이콘 + 텍스트)으로 변경 */}
+                    {step > 1 && mode === 'woop' ? (
+                        <>
+                            <button onClick={handleBack} className="settings-back-button">{icons.back}</button>
+                            <button onClick={handleBack} className="secondary header-back-text">뒤로</button>
+                        </>
+                    ) : (
+                        // 기본적으로는 텍스트형 닫기 버튼으로 통일
+                        <button onClick={handleClose} className="secondary header-close-text">닫기</button>
+                    )}
+                </div>
                 <h2>{mode === 'woop' ? '새로운 목표' : mode === 'quick' ? '새로운 할일' : mode === 'automation' ? '새로운 계획' : t('goal_assistant_title')}</h2>
-                <div className="goal-assistant-header-right"><button onClick={handleClose} className="close-button">{icons.close}</button></div>
+                <div className="goal-assistant-header-right">
+                    {mode === 'woop' && (
+                        <button onClick={handleNext} className="primary header-next-button">{step === totalSteps ? (existingTodo ? t('save_button') : t('add_button')) : t('next_button')}</button>
+                    )}
+                    {mode === 'quick' && (
+                        <button onClick={handleQuickTaskSubmit} className="primary header-next-button" disabled={!quickTaskTitle.trim()}>{t('add_button')}</button>
+                    )}
+                </div>
             </div>
             
             {!existingTodo && (
@@ -5485,14 +5434,6 @@ const GoalAssistantModal: React.FC<{ onClose: () => void; onAddTodo?: (newTodoDa
                         <div className="progress-bar-container"><div className="progress-bar" style={{ width: `${(step / totalSteps) * 100}%` }}></div></div>
                         <div className={`goal-assistant-step-content-animator ${animationDir}`} key={step}>
                             <GoalAssistantStepContent step={step} t={t} createAI={createAI} {...{ wish, setWish, outcome, setOutcome, obstacle, setObstacle, plan, setPlan, isRecurring, setIsRecurring, recurringDays, setRecurringDays, deadline, setDeadline, noDeadline, setNoDeadline, category, setCategory, userCategories, errors, language }} />
-                        </div>
-                         <div className="goal-assistant-nav">
-                            {step > 1 ? (
-                                <button onClick={handleBack} className="secondary">{t('back_button')}</button>
-                            ) : (
-                                <div /> /* Placeholder for alignment */
-                            )}
-                            <button onClick={handleNext} className="primary">{step === totalSteps ? (existingTodo ? t('save_button') : t('add_button')) : t('next_button')}</button>
                         </div>
                     </>
                 ) : mode === 'quick' ? (
@@ -5555,10 +5496,7 @@ const GoalAssistantModal: React.FC<{ onClose: () => void; onAddTodo?: (newTodoDa
                                 ))}
                             </div>
                         </div>
-                        <div className="goal-assistant-nav">
-                            <button onClick={handleClose} className="secondary">{t('cancel_button')}</button>
-                            <button onClick={handleQuickTaskSubmit} className="primary" disabled={!quickTaskTitle.trim()}>{t('add_button')}</button>
-                        </div>
+                        
                     </div>
                 ) : (
                     onAddMultipleTodos && <AutomationForm onGenerate={onAddMultipleTodos} t={t} />
@@ -5831,7 +5769,7 @@ const FolderCollaborationModal: React.FC<{
             <div className="goal-assistant-header">
                 <div className="goal-assistant-header-left" />
                 <h2>{folder.name} 폴더 공유</h2>
-                <div className="goal-assistant-header-right"><button onClick={handleClose} className="close-button">{icons.close}</button></div>
+                {/* close-button removed to prevent dismissing by X */}
             </div>
 
             <div className="goal-assistant-body">
@@ -6544,16 +6482,7 @@ const SettingsModal: React.FC<{
                             </>
                         )}
 
-                        <div className="settings-section-header">{t('settings_section_info')}</div>
-                        <div className="settings-section-body">
-                            <div className="settings-item nav-indicator" onClick={onOpenVersionInfo}>
-                                <span>{t('settings_version')}</span>
-                                <div className="settings-item-value-with-icon"><span>1.5</span>{icons.forward}</div>
-                            </div>
-                            <div className="settings-item nav-indicator" onClick={onOpenUsageGuide}><span>{t('usage_guide_title')}</span><div className="settings-item-value-with-icon">{icons.forward}</div></div>
-                            <div className="settings-item"><span>{t('settings_developer')}</span><span className="settings-item-value">{t('developer_name')}</span></div>
-                            <div className="settings-item"><span>{t('settings_copyright')}</span><span className="settings-item-value">{t('copyright_notice')}</span></div>
-                        </div>
+                        
 
                         <div className="settings-section-header">{t('settings_delete_account')}</div>
                         <div className="settings-section-body">
@@ -6569,11 +6498,11 @@ const SettingsModal: React.FC<{
     }
     
     return (
-        <Modal onClose={handleClose} isClosing={isClosing} className="settings-modal" size={modalSize}>
+        <Modal onClose={handleClose} isClosing={isClosing} className="settings-modal" size={modalSize} dismissible={false}>
             <div className="settings-modal-header">
                 <h2>{t('settings_title')}</h2>
                 <div className="settings-modal-header-right">
-                    <button onClick={handleClose} className="close-button">{icons.close}</button>
+                    <button onClick={handleClose} className="secondary header-close-text">닫기</button>
                 </div>
             </div>
             <div className="settings-modal-body">
@@ -6622,7 +6551,7 @@ const SettingsModal: React.FC<{
 
 const VersionInfoModal: React.FC<{ onClose: () => void; t: (key: string) => any; }> = ({ onClose, t }) => {
     const [isClosing, handleClose] = useModalAnimation(onClose);
-    const buildNumber = "2.0.0 (25.10.24)";
+    const buildNumber = "25.10.28B2";
 
             const changelogItems = [
         { icon: '🔔', title: '미리알림 관리', desc: 'Step-by-step 미리알림 추가. 제목, 기한(선택), 시간(선택), 반복 설정, 설명, 활성화 여부' },
@@ -6643,7 +6572,7 @@ const VersionInfoModal: React.FC<{ onClose: () => void; t: (key: string) => any;
         <Modal onClose={handleClose} isClosing={isClosing} className="version-info-modal">
             {/* 버전 정보 섹션 */}
             <div className="version-info-header">
-                <h2>🧪 Nova AI Planner v2.0 Beta</h2>
+                <h2>🧪 Nova 2.0</h2>
                 <p>{t('build_number')}: {buildNumber}</p>
             </div>
             
@@ -6828,5 +6757,4 @@ const AlertModal: React.FC<{ title: string; message: string; onConfirm: () => vo
     );
 };
 
-const root = ReactDOM.createRoot(document.getElementById('root') as HTMLElement);
-root.render(<React.StrictMode><App /></React.StrictMode>);
+export default App;

@@ -1,0 +1,534 @@
+/* 모바일 전용 스타일: body .m 의존성 제거 - 미디어 쿼리로 전환 */
+
+@media (max-width: 600px) {
+  /* Floating add button: 모바일 하단 우측 (또는 중앙으로 변경 원하면 left:50% + transform 적용) */
+  .floating-add-btn {
+    display: inline-flex !important;
+    position: fixed !important;
+    /* 중앙 정렬: 화면 가로 중앙에 고정 */
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+    bottom: calc(24px + env(safe-area-inset-bottom)) !important;
+    z-index: 2200 !important;
+    width: 64px !important;
+    height: 64px !important;
+    border-radius: 50% !important;
+    background: var(--primary-color) !important;
+    color: #fff !important;
+    border: 4px solid var(--main-bg-color) !important;
+    box-shadow: 0 8px 28px rgba(0,0,0,0.18) !important;
+    align-items: center !important;
+    justify-content: center !important;
+    cursor: pointer !important;
+    font-size: 26px !important;
+  }
+
+  /* 별도 클래스으로 모바일 전용 배치를 제어할 수 있도록 유지 */
+  .mobile-bottom-add {
+    display: flex !important;
+    position: fixed !important;
+    /* 중앙 정렬 */
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+    bottom: calc(24px + env(safe-area-inset-bottom)) !important;
+    z-index: 2200 !important;
+    width: 64px !important;
+    height: 64px !important;
+    border-radius: 50% !important;
+    align-items: center !important;
+    justify-content: center !important;
+  }
+
+  /* 모달 - 축소/모바일 최적화 */
+  .modal-content {
+    width: 95%;
+    max-width: 480px;
+    border-radius: 24px;
+    padding: 16px;
+  }
+
+  .modal-content h2 {
+    font-size: 1.2rem;
+    margin-bottom: 16px;
+  }
+
+  .modal-content p {
+    font-size: 0.95rem;
+    line-height: 1.5;
+  }
+
+  /* 폼 요소 - 축소 */
+  input, textarea {
+    padding: 12px;
+    font-size: 16px; /* iOS에서 줌 방지 */
+    border-radius: 12px;
+  }
+
+  /* 리스트 아이템 - 축소 */
+  li {
+    padding: 12px 16px;
+    border-radius: 20px;
+    margin-bottom: 8px;
+  }
+
+  .todo-text {
+    font-size: 1rem;
+  }
+
+  .todo-actions-and-meta {
+    gap: 8px;
+  }
+
+  /* 팝오버 */
+  .profile-popover, .filter-sort-popover {
+    width: 280px;
+    border-radius: 20px;
+    padding: 8px;
+    position: fixed;
+    left: 8px;
+    right: 8px;
+    top: 56px;
+    z-index: 3300;
+    box-shadow: var(--drop-shadow-popover);
+  }
+
+  .popover-action-button {
+    padding: 10px 12px;
+    font-size: 0.95rem;
+    border-radius: 16px;
+  }
+
+  /* 바텀 네비게이션 */
+  .mobile-bottom-nav {
+    position: fixed;
+    left: 16px;
+    right: 16px;
+    bottom: 20px;
+    height: 64px;
+    background: var(--main-bg-color);
+    border-radius: 32px;
+    border: 1px solid var(--border-color);
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    z-index: 100;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.13);
+    padding: 0 12px;
+  }
+
+  .mobile-bottom-nav .nav-btn {
+    background: none;
+    border: none;
+    color: var(--text-color);
+    font-size: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    flex: 1;
+    cursor: pointer;
+    padding: 0;
+    height: 100%;
+    transition: background 0.15s;
+  }
+
+  .mobile-bottom-nav .nav-btn:active {
+    background: var(--button-bg-color);
+  }
+
+  .mobile-bottom-nav .nav-btn-add {
+    background: var(--primary-color);
+    color: #fff;
+    border-radius: 50%;
+    width: 58px;
+    height: 58px;
+    margin-top: -28px;
+    font-size: 2.1rem;
+    box-shadow: 0 2px 16px rgba(0,0,0,0.13);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2;
+    border: 4px solid var(--main-bg-color);
+  }
+
+  .mobile-bottom-nav .nav-label {
+    font-size: 0.8rem;
+    font-weight: 500;
+    margin-top: 2px;
+  }
+
+  /* 플로팅 + 버튼 스타일 (대체: mobile-bottom-add 또는 floating-add-btn 사용) */
+  /* When any modal is open (backdrop present), hide floating add buttons to avoid overlapping UI */
+  .modal-backdrop ~ .mobile-right-add,
+  .modal-backdrop ~ .floating-add-btn,
+  .modal-backdrop + .mobile-right-add,
+  .modal-backdrop + .floating-add-btn,
+  .modal-backdrop .mobile-right-add,
+  .modal-backdrop .floating-add-btn {
+    display: none !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+  }
+  /* 모달 백드롭 - 모바일 */
+  .modal-backdrop {
+    align-items: stretch;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .modal-content.goal-assistant-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    max-width: 100%;
+    height: 100dvh;
+    max-height: 100dvh;
+    margin: 0;
+    border-radius: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    z-index: 4200;
+  }
+
+  /* 모바일 전용 우측 플로팅 + 버튼 (안전 영역 고려) */
+  .mobile-right-add {
+    position: fixed !important;
+    right: 18px !important;
+    bottom: calc(20px + env(safe-area-inset-bottom)) !important;
+    left: auto !important;
+    transform: none !important;
+    width: 56px !important;
+    height: 56px !important;
+    border-radius: 50% !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    background: var(--primary-color) !important;
+    color: #fff !important;
+    font-size: 26px !important;
+    z-index: 2200 !important;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.18) !important;
+    border: 4px solid var(--main-bg-color) !important;
+    cursor: pointer !important;
+  }
+
+  /* 온보딩(full-screen) - 모바일에서 세로로 꽉 차게 표시 */
+  .modal-content.onboarding-modal {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    width: 100vw !important;
+    height: 100dvh !important;
+    max-width: 100vw !important;
+    max-height: 100dvh !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
+    padding-top: env(safe-area-inset-top) !important;
+    z-index: 6000 !important;
+  }
+
+  /* New install instruction styles (사진 참조: 큰 아이콘 박스 + 강조 문구) */
+  .install-instructions {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding-top: env(safe-area-inset-top, 20px);
+  }
+
+  .install-instructions .install-icon {
+    width: 84px;
+    height: 84px;
+    background: #ffffff;
+    border-radius: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.35);
+    margin-bottom: 12px;
+  }
+
+  .install-instructions .install-more-icon {
+    margin-top: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* Ensure install text shows large and readable on the dark modal backdrop */
+  .modal-backdrop .install-instructions h2,
+  .modal-backdrop .install-instructions p,
+  .modal-backdrop .install-instructions h3 {
+    color: white !important;
+    text-align: center !important;
+  }
+
+  /* Make onboarding content visually sit on top of dark backdrop
+     - modal content itself is transparent so the dark backdrop is visible
+     - text and controls use light colors for contrast
+     - list items are simple text rows (no white pill backgrounds) */
+  .modal-backdrop > .modal-content.onboarding-modal {
+    background-color: transparent !important;
+    color: #fff !important;
+  }
+
+  .modal-content.onboarding-modal .onboarding-header h2,
+  .modal-content.onboarding-modal .onboarding-header p {
+    color: #fff !important;
+  }
+
+  .modal-content.onboarding-modal .onboarding-body ul li {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 10px 0 !important;
+    margin-bottom: 8px !important;
+    color: rgba(255,255,255,0.95) !important;
+    border-radius: 0 !important;
+  }
+
+  /* Stronger, catch-all overrides for onboarding area to prevent
+     any child elements (cards, pills, inputs) from rendering as
+     white rounded blocks. This defeats global rules like generic
+     `li` or `.card` that previously produced the white pills. */
+  .modal-content.onboarding-modal li,
+  .modal-content.onboarding-modal .onboarding-body li,
+  .modal-content.onboarding-modal .onboarding-body .card,
+  .modal-content.onboarding-modal .onboarding-body .pill,
+  .modal-content.onboarding-modal .onboarding-body .list-item,
+  .modal-content.onboarding-modal .onboarding-body .guide-step,
+  .modal-content.onboarding-modal input,
+  .modal-content.onboarding-modal textarea,
+  .modal-content.onboarding-modal .form-row {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    color: rgba(255,255,255,0.95) !important;
+    border-radius: 0 !important;
+    padding: 10px 0 !important;
+    margin-bottom: 8px !important;
+  }
+
+  /* If any children still use a background-image or gradient, unset it */
+  .modal-content.onboarding-modal * {
+    background-image: none !important;
+  }
+
+  .modal-content.onboarding-modal .onboarding-footer .primary {
+    background: var(--primary-color) !important;
+    color: #fff !important;
+  }
+
+  .modal-content.onboarding-modal > div:first-child {
+    padding: 22px 18px 10px 18px !important;
+    text-align: center !important;
+  }
+
+  .modal-content.onboarding-modal .onboarding-body,
+  .modal-content.onboarding-modal .goal-assistant-body,
+  .modal-content.onboarding-modal .modal-body {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    padding: 14px 18px 28px 18px !important;
+  }
+
+  .modal-content.onboarding-modal .modal-content > .close-button,
+  .modal-content.onboarding-modal button[aria-label="닫기"] {
+    position: absolute !important;
+    top: calc(8px + env(safe-area-inset-top)) !important;
+    right: 12px !important;
+    z-index: 7000 !important;
+  }
+
+  .goal-assistant-modal .goal-assistant-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 16px 18px 96px 18px;
+  }
+
+  /* 설정 모달 - 풀스크린 */
+  .modal-content.settings-modal,
+  .modal-content.settings-modal .settings-modal-body {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100vw;
+    height: 100vh;
+    max-width: 100vw;
+    max-height: 100vh;
+    margin: 0;
+    border-radius: 0;
+    overflow: auto;
+    display: flex;
+    flex-direction: column;
+    z-index: 9999;
+  }
+
+  /* 알림 모달 - 중앙 정렬 */
+  .alert-backdrop {
+    align-items: center;
+    padding: 16px;
+  }
+
+  .alert-backdrop > .alert-modal,
+  .alert-modal {
+    position: fixed;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: min(94vw, 420px);
+    max-width: 420px;
+    max-height: 80vh;
+    overflow: auto;
+    border-radius: 20px;
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* 모어 메뉴 - 고정 */
+  .mobile-more-menu,
+  .mobile-more-popover {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    top: 0;
+    z-index: 4000;
+  }
+
+  /* 스크롤바 숨김 */
+  ::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* 안전 영역 고려 */
+  body {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  /* 가로 스크롤 방지 */
+  html, body, #root {
+    overflow-x: hidden;
+  }
+
+  /* 토스트 알림 위치 */
+  .toast-notification {
+    bottom: calc(16px + env(safe-area-inset-bottom));
+  }
+
+  /* Strong override: ensure onboarding modal becomes true full-bleed sheet on mobile
+     Use a highly specific selector and force layout so global/desktop rules cannot win. */
+  .modal-backdrop {
+    /* ensure the backdrop does not center the dialog and allows full-bleed children */
+    align-items: stretch !important;
+    padding: 0 !important;
+    justify-content: flex-start !important;
+    /* fully opaque overlay so background is not visible */
+    background-color: rgba(0, 0, 0, 0.95) !important;
+    backdrop-filter: none !important;
+    pointer-events: auto !important;
+    z-index: 2147483647 !important;
+  }
+
+  /* direct child selector increases specificity vs .modal-content rules in global CSS */
+  .modal-backdrop > .modal-content.onboarding-modal {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    width: 100vw !important;
+    height: 100dvh !important;
+    max-width: 100vw !important;
+    max-height: 100dvh !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
+    padding-top: env(safe-area-inset-top) !important;
+    z-index: 999999 !important; /* ensure on top */
+  }
+
+  /* Ensure GoalAssistant modal also uses true full-bleed sheet on mobile and cannot be clipped */
+  .modal-backdrop > .modal-content.goal-assistant-modal {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    width: 100vw !important;
+    height: 100dvh !important;
+    max-width: 100vw !important;
+    max-height: 100dvh !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
+    padding-top: env(safe-area-inset-top) !important;
+    z-index: 999999 !important;
+  }
+
+  /* Settings header: ensure the close text button is styled and doesn't overlap the tab row */
+  .settings-modal-header .header-close-text {
+    background: transparent !important;
+    border: none !important;
+    color: var(--text-color) !important;
+    padding: 8px 12px !important;
+    border-radius: 12px !important;
+    font-size: 0.95rem !important;
+    cursor: pointer !important;
+  }
+
+  /* Goal assistant header close text styling */
+  .goal-assistant-header .header-close-text {
+    background: transparent !important;
+    border: none !important;
+    color: var(--text-secondary-color) !important;
+    padding: 6px 10px !important;
+    border-radius: 10px !important;
+    font-size: 0.95rem !important;
+    cursor: pointer !important;
+  }
+
+  /* Give the settings tabs a small top margin so they never collide with the sticky header */
+  .settings-tabs {
+    margin-top: 8px !important;
+    z-index: 4300 !important;
+  }
+
+  /* If any modal-content wrapper rules still force a max-width, explicitly unset them for onboarding */
+  .modal-backdrop > .modal-content.onboarding-modal[style],
+  .modal-backdrop > .modal-content.onboarding-modal {
+    max-width: none !important;
+    width: 100% !important;
+  }
+
+  /* Also ensure alerts use an opaque backdrop on mobile */
+  .alert-backdrop {
+    background-color: rgba(0, 0, 0, 0.95) !important;
+    backdrop-filter: none !important;
+    z-index: 2147483647 !important;
+  }
+}

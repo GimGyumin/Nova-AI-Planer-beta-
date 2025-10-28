@@ -4,11 +4,21 @@
   "private": true,
   "version": "2.0.0",
   "homepage": "https://GimGyumin.github.io/Nova-AI-Planer-beta-",
-  "keywords": ["ai", "planner", "goals", "collaboration", "cloud", "firebase", "react", "typescript"],
+  "keywords": [
+    "ai",
+    "planner",
+    "goals",
+    "collaboration",
+    "cloud",
+    "firebase",
+    "react",
+    "typescript"
+  ],
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:mobile": "node ./scripts/build-mobile.js",
     "preview": "vite preview",
     "predeploy": "npm run build",
     "deploy": "gh-pages -d dist"
@@ -19,7 +29,8 @@
     "@react-oauth/google": "^0.12.2",
     "firebase": "^12.4.0",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "serve": "^14.2.5"
   },
   "devDependencies": {
     "@types/react": "^18.2.79",
@@ -27,6 +38,6 @@
     "@vitejs/plugin-react": "^4.2.1",
     "gh-pages": "^6.1.1",
     "typescript": "^5.4.5",
-    "vite": "^5.2.10"
+    "vite": "^5.4.21"
   }
 }

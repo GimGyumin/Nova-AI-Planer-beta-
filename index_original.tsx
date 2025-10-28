@@ -1157,7 +1157,7 @@ const EditGoalModal = ({ todo, onSave, onCancel, t }) => {
                     </div>
                     <div className="form-section">
                         <label>{t('plan_label')}</label>
-                        <textarea name="plan" value={formData.plan} onChange={handleChange} rows="3" required></textarea>
+                        <textarea name="plan" value={formData.plan} onChange={handleChange} rows={3} required></textarea>
                     </div>
                     <div className="form-section">
                         <label>{t('recurrence_label')}</label>
