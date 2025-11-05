@@ -5776,8 +5776,12 @@ const GoalAssistantModal: React.FC<{ onClose: () => void; onAddTodo?: (newTodoDa
     const handleSubmit = () => {
         if (!validateStep(5)) return;
         const goalData = { wish, outcome, obstacle, plan, isRecurring, recurringDays, deadline: noDeadline ? '' : deadline, category };
-        if (existingTodo && onEditTodo) onEditTodo({ ...existingTodo, ...goalData });
-        else if (onAddTodo) onAddTodo(goalData);
+        if (existingTodo && onEditTodo) {
+            onEditTodo({ ...existingTodo, ...goalData });
+        } else if (onAddTodo) {
+            onAddTodo(goalData);
+        }
+        handleClose();
     };
     const handleQuickTaskSubmit = () => {
         if (!quickTaskTitle.trim()) return;
