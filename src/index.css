@@ -2464,6 +2464,56 @@ input:checked + .slider:before { -webkit-transform: translateX(20px); -ms-transf
   .woop-field-content {
     font-size: 12px;
   }
+
+  /* 작은 화면에서 할일 항목 세로 레이아웃 */
+  li .swipeable-content {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+    min-height: auto;
+    padding: 12px 16px;
+  }
+
+  li .todo-text-with-streak {
+    width: 100%;
+    margin-left: 0;
+    flex-grow: 1;
+  }
+
+  li .todo-text {
+    font-size: 1rem;
+    max-height: none;
+    line-height: 1.4;
+  }
+
+  li .todo-actions-and-meta {
+    width: 100%;
+    margin-left: 0;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  li .todo-meta-badges {
+    flex-wrap: wrap;
+    gap: 6px;
+    width: 100%;
+    order: 2;
+  }
+
+  li .todo-buttons {
+    order: 3;
+    width: 100%;
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  li .todo-buttons select,
+  li .todo-buttons button {
+    font-size: 0.75rem;
+    padding: 6px 8px;
+  }
 }
 
 @media (max-width: 480px) {
@@ -2483,6 +2533,25 @@ input:checked + .slider:before { -webkit-transform: translateX(20px); -ms-transf
     padding: 6px 10px;
     font-size: 11px;
     margin-top: 10px;
+  }
+
+  /* 초소형 화면에서 할일 항목 추가 조정 */
+  li .todo-text {
+    font-size: 0.95rem;
+  }
+
+  li .todo-meta-badges {
+    gap: 4px;
+  }
+
+  li .todo-buttons {
+    gap: 4px;
+  }
+
+  li .todo-buttons select,
+  li .todo-buttons button {
+    font-size: 0.7rem;
+    padding: 5px 6px;
   }
 }
 
