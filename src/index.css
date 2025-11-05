@@ -1326,9 +1326,39 @@ input:checked + .slider:before { -webkit-transform: translateX(20px); -ms-transf
 .slider.round:before { border-radius: 50%; }
 .settings-item.standalone-toggle { background: none; border: none; padding: 0; }
 
-.day-picker { display: flex; justify-content: space-between; gap: 6px; margin-top: 12px; }
-.day-button { flex: 1; aspect-ratio: 1 / 1; border-radius: 50%; background-color: var(--button-bg-color); border: 1px solid var(--border-color); color: var(--text-color); font-weight: 500; }
-.day-button.selected { background-color: var(--primary-color); border-color: var(--primary-color); color: white; }
+.day-picker { 
+  display: grid; 
+  grid-template-columns: repeat(7, 1fr); 
+  gap: 6px; 
+  margin-top: 12px; 
+}
+
+.day-button { 
+  padding: 10px 0;
+  border-radius: 8px;
+  background-color: var(--input-bg-color);
+  border: 1px solid var(--border-color);
+  color: var(--text-color);
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+}
+
+.day-button:hover {
+  border-color: var(--primary-color);
+  background-color: var(--bg-secondary-color);
+}
+
+.day-button.selected { 
+  background-color: var(--primary-color);
+  border-color: var(--primary-color);
+  color: white;
+}
 
 /* Category Button Styles */
 .category-button {

@@ -186,7 +186,12 @@ const GoalCreateModal: React.FC<GoalCreateModalProps> = ({
                     </label>
                     
                     {woopIsRecurring && (
-                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                      <div style={{ 
+                        display: 'grid', 
+                        gridTemplateColumns: 'repeat(7, 1fr)', 
+                        gap: '6px',
+                        marginTop: '8px'
+                      }}>
                         {['월', '화', '수', '목', '금', '토', '일'].map((day, index) => (
                           <button
                             key={index}
@@ -198,15 +203,19 @@ const GoalCreateModal: React.FC<GoalCreateModalProps> = ({
                               }
                             }}
                             style={{
-                              padding: '8px 12px',
+                              padding: '10px 0',
                               border: woopRecurringDays.includes(index) ? '2px solid var(--primary-color)' : '1px solid var(--border-color)',
-                              borderRadius: '6px',
-                              backgroundColor: woopRecurringDays.includes(index) ? 'var(--primary-color)' : 'transparent',
+                              borderRadius: '8px',
+                              backgroundColor: woopRecurringDays.includes(index) ? 'var(--primary-color)' : 'var(--input-bg-color)',
                               color: woopRecurringDays.includes(index) ? 'white' : 'var(--text-color)',
                               cursor: 'pointer',
-                              fontSize: '12px',
+                              fontSize: '13px',
                               fontWeight: '600',
-                              transition: 'all 0.2s ease'
+                              transition: 'all 0.2s ease',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              minHeight: '44px'
                             }}
                           >
                             {day}
