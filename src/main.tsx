@@ -738,7 +738,13 @@ const translations = {
     settings_section_data: '데이터 관리',
     settings_section_account: 'Nova AI Planner 계정',
     settings_sync_data: '지금 동기화',
-    settings_load_data: '불러오기',
+    settings_syncing: '저장중...',
+    settings_save_to_cloud: '클라우드에 저장',
+    settings_loading: '로드중...',
+    settings_load_from_cloud: '클라우드에서 불러오기',
+    settings_auto_sync: '자동 동기화',
+    settings_auto_sync_desc: '목표 변경 시 자동으로 저장',
+    settings_cloud_sync_header: '클라우드 동기화',
     settings_logout: '로그아웃',
     settings_export_data: '데이터 내보내기',
     settings_import_data: '데이터 가져오기',
@@ -1110,7 +1116,13 @@ const translations = {
     settings_bg_royal_purple: 'Royal Purple',
     settings_section_account: 'Nova AI Planner Account',
     settings_sync_data: 'Sync Data',
-    settings_load_data: 'Load Data',
+    settings_syncing: 'Saving...',
+    settings_save_to_cloud: 'Save to Cloud',
+    settings_loading: 'Loading...',
+    settings_load_from_cloud: 'Load from Cloud',
+    settings_auto_sync: 'Auto Sync',
+    settings_auto_sync_desc: 'Automatically save when goals change',
+    settings_cloud_sync_header: 'Cloud Sync',
     settings_logout: 'Sign Out',
     settings_delete_account: 'Delete All Data',
     delete_account_header: 'Delete Data',
@@ -2930,7 +2942,8 @@ const App: React.FC = () => {
         }
         
         // WOOP 목표는 리스트에서 제외 (카드 섹션에서만 표시)
-        sortedTodos = sortedTodos.filter(todo => !(todo.wish || todo.outcome || todo.obstacle || todo.plan));
+        // WOOP 목표: wish, outcome, obstacle, plan 필드가 모두 존재하는 경우만 필터링
+        sortedTodos = sortedTodos.filter(todo => !(todo.wish && todo.outcome && todo.obstacle && todo.plan));
         
         if (sortType === 'deadline') {
             sortedTodos.sort((a, b) => {
@@ -4521,7 +4534,6 @@ const App: React.FC = () => {
                     </div>
                 </Modal>
             )}
-            {isVersionInfoOpen && <VersionInfoModal onClose={() => setIsVersionInfoOpen(false)} t={t} />}
             {alertConfig && <AlertModal title={alertConfig.title} message={alertConfig.message} onConfirm={() => { alertConfig.onConfirm?.(); setAlertConfig(null); }} onCancel={alertConfig.onCancel ? () => { alertConfig.onCancel?.(); setAlertConfig(null); } : undefined} confirmText={alertConfig.confirmText} cancelText={alertConfig.cancelText} isDestructive={alertConfig.isDestructive} t={t} />}
             {toastMessage && <div className="toast-notification">{toastMessage}</div>}
             {showPWAPrompt && <PWAInstallPrompt onClose={() => setShowPWAPrompt(false)} />}
@@ -6837,18 +6849,18 @@ const SettingsModal: React.FC<{
 
                         {googleUser && (
                             <>
-                                <div className="settings-section-header">클라우드 동기화</div>
+                                <div className="settings-section-header">{t('settings_cloud_sync_header')}</div>
                                 <div className="settings-section-body">
                                     <button className="settings-item action-item" onClick={onSyncDataToFirebase} disabled={isSyncingData}>
-                                        <span className="action-text">{isSyncingData ? '저장중...' : '클라우드에 저장'}</span>
+                                        <span className="action-text">{isSyncingData ? t('settings_syncing') : t('settings_save_to_cloud')}</span>
                                     </button>
                                     <button className="settings-item action-item" onClick={onLoadDataFromFirebase} disabled={isLoadingData}>
-                                        <span className="action-text">{isLoadingData ? '로드중...' : '클라우드에서 불러오기'}</span>
+                                        <span className="action-text">{isLoadingData ? t('settings_loading') : t('settings_load_from_cloud')}</span>
                                     </button>
                                     <label className="settings-item">
                                         <div>
-                                            <span>자동 동기화</span>
-                                            <div style={{ fontSize: '12px', opacity: 0.7, marginTop: '4px' }}>목표 변경 시 자동으로 저장</div>
+                                            <span>{t('settings_auto_sync')}</span>
+                                            <div style={{ fontSize: '12px', opacity: 0.7, marginTop: '4px' }}>{t('settings_auto_sync_desc')}</div>
                                         </div>
                                         <div className="theme-toggle-switch">
                                             <input type="checkbox" checked={isAutoSyncEnabled} onChange={(e) => setIsAutoSyncEnabled(e.target.checked)} />
