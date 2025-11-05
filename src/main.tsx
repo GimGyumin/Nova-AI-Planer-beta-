@@ -352,7 +352,7 @@ const PWAInstallPrompt: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             앱으로 설치하기
           </h2>
           <p className="text-gray-600 dark:text-gray-300 text-sm">
-            Nova Beta를 홈 화면에 추가하여 더 편리하게 사용하세요.
+            Nova AI Planner를 홈 화면에 추가하여 더 편리하게 사용하세요.
           </p>
         </div>
 
@@ -736,7 +736,7 @@ const translations = {
     delete_all_data_button: '모든 데이터 및 설정 지우기',
     settings_done_button: '완료',
     settings_section_data: '데이터 관리',
-    settings_section_account: 'Nova Beta 계정',
+    settings_section_account: 'Nova AI Planner 계정',
     settings_sync_data: '지금 동기화',
     settings_load_data: '불러오기',
     settings_logout: '로그아웃',
@@ -1110,7 +1110,7 @@ const translations = {
     settings_bg_forest_green: 'Forest',
     settings_bg_purple: 'Purple',
     settings_bg_royal_purple: 'Royal Purple',
-    settings_section_account: 'Nova Beta Account',
+    settings_section_account: 'Nova AI Planner Account',
     settings_sync_data: 'Sync Data',
     settings_load_data: 'Load Data',
     settings_logout: 'Sign Out',
@@ -6741,7 +6741,7 @@ const SettingsModal: React.FC<{
                             <div className="settings-item nav-indicator" onClick={onOpenVersionInfo}>
                                 <span>{t('settings_version')}</span>
                                 <div className="settings-item-value-with-icon">
-                                    <span>1.5</span>
+                                    <span>2.0</span>
                                     {icons.forward}
                                 </div>
                             </div>
@@ -6885,7 +6885,7 @@ const SettingsModal: React.FC<{
                         <div className="settings-section-body">
                             <div className="settings-item nav-indicator" onClick={onOpenVersionInfo}>
                                 <span>{t('settings_version')}</span>
-                                <div className="settings-item-value-with-icon"><span>1.5</span>{icons.forward}</div>
+                                <div className="settings-item-value-with-icon"><span>2.0</span>{icons.forward}</div>
                             </div>
                             <div className="settings-item nav-indicator" onClick={onOpenUsageGuide}><span>{t('usage_guide_title')}</span><div className="settings-item-value-with-icon">{icons.forward}</div></div>
                             <div className="settings-item"><span>{t('settings_developer')}</span><span className="settings-item-value">{t('developer_name')}</span></div>
@@ -6985,22 +6985,33 @@ const VersionInfoModal: React.FC<{ onClose: () => void; t: (key: string) => any;
 
     return (
         <Modal onClose={handleClose} isClosing={isClosing} className="version-info-modal">
-            {/* 버전 정보 섹션 */}
-            <div className="version-info-header">
-                <h2>🧪 Nova AI Planner v2.0 Beta</h2>
-                <p>{t('build_number')}: {buildNumber}</p>
-            </div>
-            
-            <div className="version-info-body">
-                {changelogItems.map((item, index) => (
-                    <div className="changelog-item" key={index}>
-                        <div className="changelog-icon" style={{'--icon-bg': 'var(--primary-color)'} as React.CSSProperties}>{item.icon}</div>
-                        <div className="changelog-text">
-                            <h3>{item.title}</h3>
-                            <p>{item.desc}</p>
+            {/* 버전 정보 섹션 - 헤더 고정 */}
+            <div style={{ 
+                display: 'flex', 
+                flexDirection: 'column', 
+                height: '100%',
+                overflow: 'hidden'
+            }}>
+                <div className="version-info-header" style={{
+                    flexShrink: 0,
+                    paddingBottom: '16px',
+                    borderBottom: '1px solid var(--border-color)'
+                }}>
+                    <h2>🎯 Nova AI Planner v2.0</h2>
+                    <p>{t('build_number')}: {buildNumber}</p>
+                </div>
+                
+                <div className="version-info-body">
+                    {changelogItems.map((item, index) => (
+                        <div className="changelog-item" key={index}>
+                            <div className="changelog-icon" style={{'--icon-bg': 'var(--primary-color)'} as React.CSSProperties}>{item.icon}</div>
+                            <div className="changelog-text">
+                                <h3>{item.title}</h3>
+                                <p>{item.desc}</p>
+                            </div>
                         </div>
-                    </div>
-                ))}
+                    ))}
+                </div>
             </div>
             <div className="modal-buttons">
                 <button onClick={handleClose} className="primary">{t('settings_done_button')}</button>
