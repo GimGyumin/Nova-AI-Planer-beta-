@@ -3008,46 +3008,52 @@ const App: React.FC = () => {
     }, [currentFolderId, folders, googleUser?.uid]);
     
     const handleAddTodo = async (newTodoData: Omit<Goal, 'id' | 'completed' | 'lastCompletedDate' | 'streak'>) => {
-        // 활동 기록
-        recordActivity();
-        
-        const newTodo: Goal = { 
-            ...newTodoData, 
-            id: Date.now(), 
-            completed: false, 
-            lastCompletedDate: null, 
-            streak: 0,
-            folderId: (currentFolderId === 'all' || currentFolderId === null) ? undefined : currentFolderId  // "전체"나 "나의 목표" 선택 시 폴더 없음
-        };
-        
-        // Firestore에 저장 - 무조건 저장
-        if (googleUser) {
-            try {
-                const folder = folders.find(f => f.id === currentFolderId);
-                // 소유자: 자신의 Firestore에 저장
-                // 협업자: 폴더 소유자의 Firestore에 저장 (동기화를 위해)
-                const targetOwnerUid = folder?.ownerId || googleUser.uid;
-                
-                const todosRef = collection(db, 'users', targetOwnerUid, 'todos');
-                const todoDocRef = doc(todosRef, newTodo.id.toString());
-                
-                // 강력한 데이터 정제
-                const sanitizedTodo = sanitizeFirestoreData(newTodo);
-                
-                if (sanitizedTodo) {
-                    await setDoc(todoDocRef, sanitizedTodo);
-                    console.log('✅ 목표 Firestore 저장:', { targetOwnerUid, newTodo: sanitizedTodo });
-                } else {
-                    console.warn('⚠️ 정제 후 저장할 데이터가 없음');
+        try {
+            // 활동 기록
+            recordActivity();
+            
+            const newTodo: Goal = { 
+                ...newTodoData, 
+                id: Date.now(), 
+                completed: false, 
+                lastCompletedDate: null, 
+                streak: 0,
+                folderId: (currentFolderId === 'all' || currentFolderId === null) ? undefined : currentFolderId  // "전체"나 "나의 목표" 선택 시 폴더 없음
+            };
+            
+            // UI 업데이트를 먼저 수행
+            setTodos(prev => [newTodo, ...prev]);
+            
+            // Firestore에 저장 - 비동기 처리
+            if (googleUser) {
+                try {
+                    const folder = folders.find(f => f.id === currentFolderId);
+                    // 소유자: 자신의 Firestore에 저장
+                    // 협업자: 폴더 소유자의 Firestore에 저장 (동기화를 위해)
+                    const targetOwnerUid = folder?.ownerId || googleUser.uid;
+                    
+                    const todosRef = collection(db, 'users', targetOwnerUid, 'todos');
+                    const todoDocRef = doc(todosRef, newTodo.id.toString());
+                    
+                    // 강력한 데이터 정제
+                    const sanitizedTodo = sanitizeFirestoreData(newTodo);
+                    
+                    if (sanitizedTodo) {
+                        await setDoc(todoDocRef, sanitizedTodo);
+                        console.log('✅ 목표 Firestore 저장:', { targetOwnerUid, newTodo: sanitizedTodo });
+                    } else {
+                        console.warn('⚠️ 정제 후 저장할 데이터가 없음');
+                    }
+                } catch (error) {
+                    console.error('❌ 목표 Firestore 저장 실패:', error);
                 }
-            } catch (error) {
-                console.error('❌ 목표 Firestore 저장 실패:', error);
             }
+            
+            // 모달 닫기
+            setIsGoalAssistantOpen(false);
+        } catch (error) {
+            console.error('❌ 목표 추가 실패:', error);
         }
-        
-        // UI 업데이트
-        setTodos(prev => [newTodo, ...prev]);
-        setIsGoalAssistantOpen(false);
     };
     
     const handleAddMultipleTodos = async (newTodosData: Omit<Goal, 'id' | 'completed' | 'lastCompletedDate' | 'streak'>[]) => {
@@ -6880,17 +6886,6 @@ const SettingsModal: React.FC<{
                                 </div>
                             </>
                         )}
-
-                        <div className="settings-section-header">{t('settings_section_info')}</div>
-                        <div className="settings-section-body">
-                            <div className="settings-item nav-indicator" onClick={onOpenVersionInfo}>
-                                <span>{t('settings_version')}</span>
-                                <div className="settings-item-value-with-icon"><span>2.0</span>{icons.forward}</div>
-                            </div>
-                            <div className="settings-item nav-indicator" onClick={onOpenUsageGuide}><span>{t('usage_guide_title')}</span><div className="settings-item-value-with-icon">{icons.forward}</div></div>
-                            <div className="settings-item"><span>{t('settings_developer')}</span><span className="settings-item-value">{t('developer_name')}</span></div>
-                            <div className="settings-item"><span>{t('settings_copyright')}</span><span className="settings-item-value">{t('copyright_notice')}</span></div>
-                        </div>
 
                         <div className="settings-section-header">{t('settings_delete_account')}</div>
                         <div className="settings-section-body">
