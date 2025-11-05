@@ -445,42 +445,58 @@ const WOOPCardsSection: React.FC<{
   
   if (!hasWOOP) return null;
 
-  const renderWOOPCard = (label: string, content: string | undefined, todo: Goal | undefined) => (
-    <div className="woop-card" onClick={() => todo && onEditTodo(todo)}>
-      <div className="woop-card-label">🎯 {label}</div>
-      <div className="woop-card-content">
-        {content ? (
-          content.length > 150 ? `${content.substring(0, 150)}...` : content
-        ) : (
-          <span className="woop-card-empty">미설정</span>
-        )}
-      </div>
-      {todo && (
-        <div className="woop-card-actions">
-          <button
-            className="woop-card-btn"
-            onClick={(e) => {
-              e.stopPropagation();
-              onEditTodo(todo);
-            }}
-          >
-            수정
-          </button>
-        </div>
-      )}
-    </div>
-  );
+  // 첫 번째 WOOP 목표를 선택 (편집용)
+  const firstWoopTodo = woopItems.wish || woopItems.outcome || woopItems.obstacle || woopItems.plan;
 
   return (
     <div className="woop-section">
       <div className="woop-title">
         ✨ WOOP 프레임워크 (Wish, Outcome, Obstacle, Plan)
       </div>
-      <div className="woop-cards-container">
-        {renderWOOPCard('Wish (소망)', woopItems.wish?.wish, woopItems.wish)}
-        {renderWOOPCard('Outcome (결과)', woopItems.outcome?.outcome, woopItems.outcome)}
-        {renderWOOPCard('Obstacle (장애물)', woopItems.obstacle?.obstacle, woopItems.obstacle)}
-        {renderWOOPCard('Plan (계획)', woopItems.plan?.plan, woopItems.plan)}
+      <div className="woop-card" onClick={() => firstWoopTodo && onEditTodo(firstWoopTodo)}>
+        <div className="woop-card-content">
+          <div style={{ marginBottom: '16px' }}>
+            <div className="woop-card-label" style={{ marginBottom: '8px' }}>🎯 WISH (소망)</div>
+            <div style={{ fontSize: '14px', color: 'var(--text-color)', lineHeight: '1.5' }}>
+              {woopItems.wish?.wish || <span className="woop-card-empty">미설정</span>}
+            </div>
+          </div>
+          
+          <div style={{ marginBottom: '16px' }}>
+            <div className="woop-card-label" style={{ marginBottom: '8px' }}>🎯 OUTCOME (결과)</div>
+            <div style={{ fontSize: '14px', color: 'var(--text-color)', lineHeight: '1.5' }}>
+              {woopItems.outcome?.outcome || <span className="woop-card-empty">미설정</span>}
+            </div>
+          </div>
+          
+          <div style={{ marginBottom: '16px' }}>
+            <div className="woop-card-label" style={{ marginBottom: '8px' }}>🎯 OBSTACLE (장애물)</div>
+            <div style={{ fontSize: '14px', color: 'var(--text-color)', lineHeight: '1.5' }}>
+              {woopItems.obstacle?.obstacle || <span className="woop-card-empty">미설정</span>}
+            </div>
+          </div>
+          
+          <div>
+            <div className="woop-card-label" style={{ marginBottom: '8px' }}>🎯 PLAN (계획)</div>
+            <div style={{ fontSize: '14px', color: 'var(--text-color)', lineHeight: '1.5' }}>
+              {woopItems.plan?.plan || <span className="woop-card-empty">미설정</span>}
+            </div>
+          </div>
+        </div>
+        
+        {firstWoopTodo && (
+          <div className="woop-card-actions">
+            <button
+              className="woop-card-btn"
+              onClick={(e) => {
+                e.stopPropagation();
+                onEditTodo(firstWoopTodo);
+              }}
+            >
+              수정
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
