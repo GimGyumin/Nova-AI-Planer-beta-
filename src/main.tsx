@@ -461,7 +461,7 @@ const WOOPCardsSection: React.FC<{
                     {todo.wish}
                   </div>
                 ) : (
-                  <span className="woop-empty">미설정</span>
+                  <span className="woop-empty">{t('woop_not_set')}</span>
                 )}
               </div>
             </div>
@@ -481,7 +481,7 @@ const WOOPCardsSection: React.FC<{
                     {todo.outcome}
                   </div>
                 ) : (
-                  <span className="woop-empty">미설정</span>
+                  <span className="woop-empty">{t('woop_not_set')}</span>
                 )}
               </div>
             </div>
@@ -501,7 +501,7 @@ const WOOPCardsSection: React.FC<{
                     {todo.obstacle}
                   </div>
                 ) : (
-                  <span className="woop-empty">미설정</span>
+                  <span className="woop-empty">{t('woop_not_set')}</span>
                 )}
               </div>
             </div>
@@ -521,7 +521,7 @@ const WOOPCardsSection: React.FC<{
                     {todo.plan}
                   </div>
                 ) : (
-                  <span className="woop-empty">미설정</span>
+                  <span className="woop-empty">{t('woop_not_set')}</span>
                 )}
               </div>
             </div>
@@ -654,7 +654,8 @@ const translations = {
 
     // Main Page
     my_goals_title: '나의 목표',
-    all_goals_label: '나의 목표',
+    all_goals_label: '전체',
+    all_goals_button: '🌐 전체',
     sort_label_manual: '사용자화',
     sort_label_deadline: '마감일순',
     sort_label_newest: '최신순',
@@ -745,6 +746,7 @@ const translations = {
     settings_auto_sync: '자동 동기화',
     settings_auto_sync_desc: '목표 변경 시 자동으로 저장',
     settings_cloud_sync_header: '클라우드 동기화',
+    woop_not_set: '미설정',
     settings_logout: '로그아웃',
     settings_export_data: '데이터 내보내기',
     settings_import_data: '데이터 가져오기',
@@ -951,7 +953,8 @@ const translations = {
 
     // Main Page
     my_goals_title: 'My Goals',
-    all_goals_label: '나의 목표',
+    all_goals_label: 'All',
+    all_goals_button: '🌐 All',
     sort_label_manual: 'Manual',
     sort_label_deadline: 'Deadline',
     sort_label_newest: 'Newest',
@@ -1123,6 +1126,7 @@ const translations = {
     settings_auto_sync: 'Auto Sync',
     settings_auto_sync_desc: 'Automatically save when goals change',
     settings_cloud_sync_header: 'Cloud Sync',
+    woop_not_set: 'Not Set',
     settings_logout: 'Sign Out',
     settings_delete_account: 'Delete All Data',
     delete_account_header: 'Delete Data',
@@ -4446,17 +4450,21 @@ const App: React.FC = () => {
                     {isViewModeCalendar ? (
                         <CalendarView todos={todos} t={t} onGoalClick={setInfoTodo} language={language} />
                     ) : (
-                        <>
-                            {/* WOOP 카드 섹션 */}
-                            <WOOPCardsSection
-                                todos={filteredTodos}
-                                onEditTodo={setEditingTodo}
-                                t={t}
-                            />
+                        <div className="goals-split-layout">
+                            {/* 좌측: WOOP 카드 섹션 */}
+                            <div className="woop-section">
+                                <WOOPCardsSection
+                                    todos={filteredTodos}
+                                    onEditTodo={setEditingTodo}
+                                    t={t}
+                                />
+                            </div>
                             
-                            {/* 할일 리스트 */}
-                            <TodoList todos={filteredTodos} onToggleComplete={handleToggleComplete} onDelete={handleDeleteTodo} onEdit={setEditingTodo} onInfo={setInfoTodo} t={t} filter={filter} randomEncouragement={randomEncouragement} isSelectionMode={isSelectionMode} selectedTodoIds={selectedTodoIds} onSelectTodo={handleSelectTodo} folders={folders} onMoveToFolder={handleMoveToFolder} />
-                        </>
+                            {/* 우측: 할일 리스트 */}
+                            <div className="todos-section">
+                                <TodoList todos={filteredTodos} onToggleComplete={handleToggleComplete} onDelete={handleDeleteTodo} onEdit={setEditingTodo} onInfo={setInfoTodo} t={t} filter={filter} randomEncouragement={randomEncouragement} isSelectionMode={isSelectionMode} selectedTodoIds={selectedTodoIds} onSelectTodo={handleSelectTodo} folders={folders} onMoveToFolder={handleMoveToFolder} />
+                            </div>
+                        </div>
                     )}
                 </div>
 
@@ -4825,7 +4833,7 @@ const FolderNavigator: React.FC<{
                     textAlign: 'center'
                 }}
             >
-                🌐 전체
+                {t('all_goals_button')}
             </button>
             
             {/* Folder list */}
@@ -5055,15 +5063,15 @@ const FolderNavigator: React.FC<{
                 <div className="modal-backdrop alert-backdrop">
                     <div className="modal-content alert-modal">
                         <div className="alert-content">
-                            <h2>폴더 삭제</h2>
-                            <p style={{ fontSize: '0.9rem' }}>"{folders.find(f => f.id === deletingFolderId)?.name}" 폴더를 삭제하시겠습니까?<br/>폴더 내 목표는 "나의 목표"로 이동됩니다.</p>
+                            <h2>{t('folder_delete')}</h2>
+                            <p style={{ fontSize: '0.9rem' }}>"{folders.find(f => f.id === deletingFolderId)?.name}" {t('folder_delete_confirm')}</p>
                         </div>
                         <div className="modal-buttons">
                             <button 
                                 onClick={() => setDeletingFolderId(null)}
                                 className="secondary"
                             >
-                                취소
+                                {t('cancel_button')}
                             </button>
                             <button 
                                 onClick={() => {
