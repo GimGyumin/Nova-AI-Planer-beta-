@@ -2248,8 +2248,8 @@ input:checked + .slider:before { -webkit-transform: translateX(20px); -ms-transf
 
 .woop-cards-container {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
   margin-bottom: 8px;
 }
 
@@ -2257,21 +2257,58 @@ input:checked + .slider:before { -webkit-transform: translateX(20px); -ms-transf
   background: var(--button-bg-color);
   border: 1px solid var(--border-color);
   border-radius: 12px;
-  padding: 12px;
+  padding: 16px;
   cursor: pointer;
   transition: all 0.2s ease;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  min-height: 200px;
+  gap: 0;
+  min-height: auto;
 }
 
 .woop-card-item:hover {
   background: var(--bg-secondary-color);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
   transform: translateY(-2px);
 }
 
+/* WOOP 필드 (카드 내부에서 세로로 배열) */
+.woop-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.woop-field:last-of-type {
+  border-bottom: none;
+  padding-bottom: 8px;
+}
+
+.woop-field-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--primary-color);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.woop-field-content {
+  font-size: 13px;
+  color: var(--text-color);
+  font-weight: 500;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.woop-empty {
+  color: var(--text-secondary-color);
+  font-style: italic;
+  font-size: 12px;
+}
+
+/* 구 스타일 호환성 */
 .woop-card-label {
   font-size: 12px;
   font-weight: 700;
@@ -2303,8 +2340,7 @@ input:checked + .slider:before { -webkit-transform: translateX(20px); -ms-transf
 }
 
 .woop-card-btn {
-  flex: 1;
-  padding: 6px 8px;
+  padding: 8px 12px;
   font-size: 12px;
   border: none;
   border-radius: 6px;
@@ -2313,6 +2349,7 @@ input:checked + .slider:before { -webkit-transform: translateX(20px); -ms-transf
   cursor: pointer;
   font-weight: 600;
   transition: all 0.2s ease;
+  margin-top: 12px;
 }
 
 .woop-card-btn:hover {
@@ -2333,30 +2370,56 @@ input:checked + .slider:before { -webkit-transform: translateX(20px); -ms-transf
 /* 다크모드 */
 .dark-mode .woop-card-item:hover {
   background: rgba(255, 255, 255, 0.1);
-  box-shadow: 0 2px 8px rgba(255, 255, 255, 0.1);
+  box-shadow: 0 4px 12px rgba(255, 255, 255, 0.1);
 }
 
 /* 반응형 */
 @media (max-width: 1200px) {
   .woop-cards-container {
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   }
 }
 
 @media (max-width: 768px) {
   .woop-cards-container {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   }
 
   .woop-section {
     padding: 12px 0;
     margin-bottom: 20px;
   }
+
+  .woop-field {
+    padding-bottom: 10px;
+  }
+
+  .woop-field-label {
+    font-size: 10px;
+  }
+
+  .woop-field-content {
+    font-size: 12px;
+  }
 }
 
 @media (max-width: 480px) {
   .woop-cards-container {
     grid-template-columns: 1fr;
+  }
+
+  .woop-card-item {
+    padding: 12px;
+  }
+
+  .woop-field {
+    padding-bottom: 10px;
+  }
+
+  .woop-card-btn {
+    padding: 6px 10px;
+    font-size: 11px;
+    margin-top: 10px;
   }
 }
 

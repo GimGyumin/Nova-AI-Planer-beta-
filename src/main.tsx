@@ -433,43 +433,6 @@ const WOOPCardsSection: React.FC<{
   // WOOP 항목이 하나라도 있으면 섹션 표시
   if (woopTodos.length === 0) return null;
 
-  const renderWOOPCard = (label: string, content: string | undefined, todo: Goal | undefined) => (
-    <div 
-      className="woop-card-item" 
-      onClick={() => todo && onEditTodo(todo)}
-      style={{ cursor: todo ? 'pointer' : 'default' }}
-    >
-      <div className="woop-card-label">🎯 {label}</div>
-      <div className="woop-card-content">
-        {content ? (
-          <div style={{ 
-            display: '-webkit-box',
-            WebkitLineClamp: 5,
-            WebkitBoxOrient: 'vertical',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis'
-          }}>
-            {content}
-          </div>
-        ) : (
-          <span className="woop-card-empty">미설정</span>
-        )}
-      </div>
-      {todo && (
-        <button
-          className="woop-card-btn"
-          onClick={(e) => {
-            e.stopPropagation();
-            onEditTodo(todo);
-          }}
-          style={{ marginTop: 'auto' }}
-        >
-          수정
-        </button>
-      )}
-    </div>
-  );
-
   return (
     <div className="woop-section">
       <div className="woop-title">
@@ -477,12 +440,103 @@ const WOOPCardsSection: React.FC<{
       </div>
       <div className="woop-cards-container">
         {woopTodos.map(todo => (
-          <React.Fragment key={todo.id}>
-            {todo.wish && renderWOOPCard('WISH (소망)', todo.wish, todo)}
-            {todo.outcome && renderWOOPCard('OUTCOME (결과)', todo.outcome, todo)}
-            {todo.obstacle && renderWOOPCard('OBSTACLE (장애물)', todo.obstacle, todo)}
-            {todo.plan && renderWOOPCard('PLAN (계획)', todo.plan, todo)}
-          </React.Fragment>
+          <div 
+            key={todo.id}
+            className="woop-card-item" 
+            onClick={() => onEditTodo(todo)}
+            style={{ cursor: 'pointer' }}
+          >
+            {/* WISH */}
+            <div className="woop-field">
+              <div className="woop-field-label">🎯 WISH (소망)</div>
+              <div className="woop-field-content">
+                {todo.wish ? (
+                  <div style={{ 
+                    display: '-webkit-box',
+                    WebkitLineClamp: 2,
+                    WebkitBoxOrient: 'vertical',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis'
+                  }}>
+                    {todo.wish}
+                  </div>
+                ) : (
+                  <span className="woop-empty">미설정</span>
+                )}
+              </div>
+            </div>
+
+            {/* OUTCOME */}
+            <div className="woop-field">
+              <div className="woop-field-label">✅ OUTCOME (결과)</div>
+              <div className="woop-field-content">
+                {todo.outcome ? (
+                  <div style={{ 
+                    display: '-webkit-box',
+                    WebkitLineClamp: 2,
+                    WebkitBoxOrient: 'vertical',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis'
+                  }}>
+                    {todo.outcome}
+                  </div>
+                ) : (
+                  <span className="woop-empty">미설정</span>
+                )}
+              </div>
+            </div>
+
+            {/* OBSTACLE */}
+            <div className="woop-field">
+              <div className="woop-field-label">⚠️ OBSTACLE (장애물)</div>
+              <div className="woop-field-content">
+                {todo.obstacle ? (
+                  <div style={{ 
+                    display: '-webkit-box',
+                    WebkitLineClamp: 2,
+                    WebkitBoxOrient: 'vertical',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis'
+                  }}>
+                    {todo.obstacle}
+                  </div>
+                ) : (
+                  <span className="woop-empty">미설정</span>
+                )}
+              </div>
+            </div>
+
+            {/* PLAN */}
+            <div className="woop-field">
+              <div className="woop-field-label">📋 PLAN (계획)</div>
+              <div className="woop-field-content">
+                {todo.plan ? (
+                  <div style={{ 
+                    display: '-webkit-box',
+                    WebkitLineClamp: 2,
+                    WebkitBoxOrient: 'vertical',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis'
+                  }}>
+                    {todo.plan}
+                  </div>
+                ) : (
+                  <span className="woop-empty">미설정</span>
+                )}
+              </div>
+            </div>
+
+            <button
+              className="woop-card-btn"
+              onClick={(e) => {
+                e.stopPropagation();
+                onEditTodo(todo);
+              }}
+              style={{ marginTop: 'auto', width: '100%' }}
+            >
+              수정
+            </button>
+          </div>
         ))}
       </div>
     </div>
