@@ -2796,3 +2796,82 @@ input:checked + .slider:before { -webkit-transform: translateX(20px); -ms-transf
     font-size: 30px;
   }
 }
+
+/* ============================================
+   배경 테마 설정 (data-bg-theme 속성 기반)
+   ============================================ */
+
+/* 라이트 모드 배경 테마 */
+:root[data-bg-theme="default"],
+:root[data-bg-theme="default_dark"] {
+  --main-bg-color: #fff;
+}
+
+:root.dark-mode[data-bg-theme="default"],
+:root.dark-mode[data-bg-theme="default_dark"] {
+  --main-bg-color: #000;
+}
+
+:root[data-bg-theme="pink"] {
+  --main-bg-color: #fff5f7;
+}
+
+:root.dark-mode[data-bg-theme="pink"] {
+  --main-bg-color: #2a1f21;
+}
+
+:root[data-bg-theme="cherry_noir"] {
+  --main-bg-color: #ffe0e6;
+}
+
+:root.dark-mode[data-bg-theme="cherry_noir"] {
+  --main-bg-color: #3d1a21;
+}
+
+:root[data-bg-theme="blue"] {
+  --main-bg-color: #e3f2fd;
+}
+
+:root.dark-mode[data-bg-theme="blue"] {
+  --main-bg-color: #1a2a3f;
+}
+
+:root[data-bg-theme="deep_ocean"] {
+  --main-bg-color: #e0f2f1;
+}
+
+:root.dark-mode[data-bg-theme="deep_ocean"] {
+  --main-bg-color: #1a3a38;
+}
+
+:root[data-bg-theme="green"] {
+  --main-bg-color: #e8f5e9;
+}
+
+:root.dark-mode[data-bg-theme="green"] {
+  --main-bg-color: #1f3a1f;
+}
+
+:root[data-bg-theme="forest_green"] {
+  --main-bg-color: #dceee8;
+}
+
+:root.dark-mode[data-bg-theme="forest_green"] {
+  --main-bg-color: #243629;
+}
+
+:root[data-bg-theme="purple"] {
+  --main-bg-color: #f3e5f5;
+}
+
+:root.dark-mode[data-bg-theme="purple"] {
+  --main-bg-color: #3a1f5a;
+}
+
+:root[data-bg-theme="royal_purple"] {
+  --main-bg-color: #ede7f6;
+}
+
+:root.dark-mode[data-bg-theme="royal_purple"] {
+  --main-bg-color: #2d1a52;
+}

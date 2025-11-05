@@ -2154,6 +2154,22 @@ const App: React.FC = () => {
         console.log('🚀 클라우드 기반 앱 시작 - localStorage 사용 안 함');
     }, []);
 
+    // 🎨 배경 테마 및 다크 모드 적용
+    useEffect(() => {
+        // 다크 모드 적용
+        const isDark = themeMode === 'dark' || (themeMode === 'system' && getSystemTheme() === 'dark');
+        if (isDark) {
+            document.documentElement.classList.add('dark-mode');
+        } else {
+            document.documentElement.classList.remove('dark-mode');
+        }
+        
+        // 배경 테마 적용
+        document.documentElement.setAttribute('data-bg-theme', backgroundTheme);
+        
+        console.log('🎨 테마 적용:', { themeMode, backgroundTheme, isDark });
+    }, [themeMode, backgroundTheme]);
+
     // 잘못된 폴더 정리 (임시 owner ID를 가진 폴더 제거)
     useEffect(() => {
         const cleanupInvalidFolders = () => {
