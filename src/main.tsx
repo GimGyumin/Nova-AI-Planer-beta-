@@ -820,8 +820,6 @@ const translations = {
     settings_bg_purple: '퍼플',
     settings_bg_royal_purple: '딥 퍼플',
     settings_version: '버전',
-    test_long_alert: '긴 알림 테스트',
-    test_long_alert_desc: '긴 내용의 알림 팝업 테스트',
     
     // 폴더 관리
     folder_manage_title: '폴더 관리',
@@ -1119,8 +1117,6 @@ const translations = {
     delete_account_header_desc: 'This action is irreversible and will permanently delete all your goals and data.',
     data_deleting: 'Deleting...',
     settings_version: 'Version',
-    test_long_alert: 'Test Long Alert',
-    test_long_alert_desc: 'Test alert popup with long content',
     settings_developer: 'Developer',
     developer_name: 'GimGyuMin',
     settings_copyright: 'Copyright',
