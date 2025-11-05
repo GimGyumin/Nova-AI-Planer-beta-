@@ -2933,6 +2933,9 @@ const App: React.FC = () => {
             sortedTodos = sortedTodos.filter(todo => todo.folderId === currentFolderId);
         }
         
+        // WOOP 목표는 리스트에서 제외 (카드 섹션에서만 표시)
+        sortedTodos = sortedTodos.filter(todo => !(todo.wish || todo.outcome || todo.obstacle || todo.plan));
+        
         if (sortType === 'deadline') {
             sortedTodos.sort((a, b) => {
                 if (!a.deadline && !b.deadline) return 0;
@@ -5794,7 +5797,7 @@ const GoalAssistantModal: React.FC<{ onClose: () => void; onAddTodo?: (newTodoDa
     return (
         <Modal onClose={handleClose} isClosing={isClosing} className="goal-assistant-modal">
             <div className="goal-assistant-header">
-                <div className="goal-assistant-header-left">{step > 1 && mode === 'woop' && <button onClick={handleBack} className="settings-back-button">{icons.back}</button>}</div>
+                <div className="goal-assistant-header-left"></div>
                 <h2>{mode === 'woop' ? '새로운 목표' : mode === 'quick' ? '새로운 할일' : mode === 'automation' ? '새로운 계획' : t('goal_assistant_title')}</h2>
                 <div className="goal-assistant-header-right" style={{ width: '40px' }}>
                     {/* 빈 공간으로 타이틀 중앙 정렬 유지 */}

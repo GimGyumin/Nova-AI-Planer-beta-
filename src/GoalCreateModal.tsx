@@ -33,6 +33,9 @@ const GoalCreateModal: React.FC<GoalCreateModalProps> = ({
   const [woopOutcome, setWoopOutcome] = useState('');
   const [woopObstacle, setWoopObstacle] = useState('');
   const [woopPlan, setWoopPlan] = useState('');
+  const [woopIsRecurring, setWoopIsRecurring] = useState(false);
+  const [woopRecurringDays, setWoopRecurringDays] = useState<number[]>([]);
+  const [woopDeadline, setWoopDeadline] = useState('');
   const [quickInput, setQuickInput] = useState('');
   const [todoInput, setTodoInput] = useState('');
 
@@ -49,9 +52,12 @@ const GoalCreateModal: React.FC<GoalCreateModalProps> = ({
       }
       // Reset WOOP fields if needed
       setWoopWish(existingTodo.title);
-      setWoopOutcome(existingTodo.woop?.outcome || '');
-      setWoopObstacle(existingTodo.woop?.obstacle || '');
-      setWoopPlan(existingTodo.woop?.plan || '');
+      setWoopOutcome(existingTodo.outcome || '');
+      setWoopObstacle(existingTodo.obstacle || '');
+      setWoopPlan(existingTodo.plan || '');
+      setWoopIsRecurring(existingTodo.isRecurring || false);
+      setWoopRecurringDays(existingTodo.recurringDays || []);
+      setWoopDeadline(existingTodo.deadline || '');
 
     } else {
       // Reset fields for new goal
@@ -59,6 +65,9 @@ const GoalCreateModal: React.FC<GoalCreateModalProps> = ({
       setWoopOutcome('');
       setWoopObstacle('');
       setWoopPlan('');
+      setWoopIsRecurring(false);
+      setWoopRecurringDays([]);
+      setWoopDeadline('');
       setQuickInput('');
       setTodoInput('');
       setActiveTab('woop');
@@ -79,9 +88,9 @@ const GoalCreateModal: React.FC<GoalCreateModalProps> = ({
           obstacle: woopObstacle,
           plan: woopPlan,
           title: woopWish,
-          isRecurring: false,
-          recurringDays: [],
-          deadline: '',
+          isRecurring: woopIsRecurring,
+          recurringDays: woopRecurringDays,
+          deadline: woopDeadline,
           category: '',
           subGoals: [],
           memo: '',
@@ -100,45 +109,9 @@ const GoalCreateModal: React.FC<GoalCreateModalProps> = ({
   const handlePrevWoopStep = () => {
     if (woopStep > 1) {
       setWoopStep(woopStep - 1);
-    }
-  };
-
-  const renderWoopContent = () => {
-    switch (woopStep) {
-      case 1:
-        return (
-          <>
-            <h3>목표</h3>
-            <p>측정 가능하고, 구체적이며, 도전적이면서도 현실적인 목표를 설정하세요.</p>
-            <textarea placeholder="예: 3개월 안에 5kg 감량하기, 이번 학기에 A+ 받기" value={woopWish} onChange={(e) => setWoopWish(e.target.value)} />
-          </>
-        );
-      case 2:
-        return (
-          <>
-            <h3>최상의 결과</h3>
-            <p>목표 달성 시 얻게 될 가장 긍정적인 결과를 생생하게 상상해 보세요.</p>
-            <textarea placeholder="예: 더 건강하고 자신감 있는 모습, 성적 장학금 수령" value={woopOutcome} onChange={(e) => setWoopOutcome(e.target.value)} />
-          </>
-        );
-      case 3:
-        return (
-          <>
-            <h3>장애물</h3>
-            <p>목표 달성을 방해할 수 있는 내면의 장애물(습관, 감정 등)은 무엇인가요?</p>
-            <textarea placeholder="예: 퇴근 후 피곤해서 운동 가기 싫은 마음, 어려운 과제를 미루는 습관" value={woopObstacle} onChange={(e) => setWoopObstacle(e.target.value)} />
-          </>
-        );
-      case 4:
-        return (
-          <>
-            <h3>If-Then 계획</h3>
-            <p>"만약 ~라면, ~하겠다" 형식으로 장애물에 대한 구체적인 대응 계획을 세워보세요.</p>
-            <textarea placeholder="예: 만약 퇴근 후 운동 가기 싫다면, 일단 운동복으로 갈아입고 10분만 스트레칭한다." value={woopPlan} onChange={(e) => setWoopPlan(e.target.value)} />
-          </>
-        );
-      default:
-        return null;
+    } else {
+      // 1단계에서는 모달 닫기
+      onClose();
     }
   };
 
@@ -146,33 +119,184 @@ const GoalCreateModal: React.FC<GoalCreateModalProps> = ({
     <div className="modal-overlay">
       <div className="modal-content goal-create-modal light">
         <div className="modal-topbar">
-          <div style={{ width: '40px' }}></div>
-          <div className="modal-title">새로운 목표</div>
-          <button className="toplink right" onClick={onClose} style={{ fontSize: '17px', color: 'var(--link-color)' }}>닫기</button>
+          <div style={{ width: '40px' }}>
+            {woopStep > 1 && (
+              <button 
+                className="toplink" 
+                onClick={handlePrevWoopStep}
+                style={{ fontSize: '17px', color: 'var(--link-color)' }}
+              >
+                뒤로
+              </button>
+            )}
+          </div>
+          <div className="modal-title">
+            {woopStep === 1 ? '새로운 목표' : `${woopStep}. WOOP 프레임워크`}
+          </div>
+          <button 
+            className="toplink right" 
+            onClick={woopStep === 1 ? onClose : handlePrevWoopStep}
+            style={{ fontSize: '17px', color: 'var(--link-color)' }}
+          >
+            {woopStep === 1 ? '닫기' : '취소'}
+          </button>
         </div>
 
         <div className="modal-body">
           <a className="breadcrumb">WOOP 새로운 할일장기 계획</a>
           <div className="woop-card">
             <div className="woop-card-content">
-              <h3>목표</h3>
-              <p>측정 가능하고, 구체적이며, 도전적이면서도 현실적인 목표를 설정하세요.</p>
-              <textarea className="large-input" placeholder="예: 3개월 안에 5kg 감량하기, 이번 학기에 A+ 받기" value={woopWish} onChange={(e) => setWoopWish(e.target.value)} />
-              <h3>최상의 결과</h3>
-              <p>목표 달성 시 얻게 될 가장 긍정적인 결과를 생생하게 상상해 보세요.</p>
-              <textarea className="large-input" placeholder="예: 더 건강하고 자신감 있는 모습, 성적 장학금 수령" value={woopOutcome} onChange={(e) => setWoopOutcome(e.target.value)} />
-              <h3>장애물</h3>
-              <p>목표 달성을 방해할 수 있는 내면의 장애물(습관, 감정 등)은 무엇인가요?</p>
-              <textarea className="large-input" placeholder="예: 퇴근 후 피곤해서 운동 가기 싫은 마음, 어려운 과제를 미루는 습관" value={woopObstacle} onChange={(e) => setWoopObstacle(e.target.value)} />
-              <h3>If-Then 계획</h3>
-              <p>"만약 ~라면, ~하겠다" 형식으로 장애물에 대한 구체적인 대응 계획을 세워보세요.</p>
-              <textarea className="large-input" placeholder="예: 만약 퇴근 후 운동 가기 싫다면, 일단 운동복으로 갈아입고 10분만 스트레칭한다." value={woopPlan} onChange={(e) => setWoopPlan(e.target.value)} />
+              {woopStep === 1 && (
+                <>
+                  <h3>목표</h3>
+                  <p>측정 가능하고, 구체적이며, 도전적이면서도 현실적인 목표를 설정하세요.</p>
+                  <textarea className="large-input" placeholder="예: 3개월 안에 5kg 감량하기, 이번 학기에 A+ 받기" value={woopWish} onChange={(e) => setWoopWish(e.target.value)} />
+                </>
+              )}
+              {woopStep === 2 && (
+                <>
+                  <h3>최상의 결과</h3>
+                  <p>목표 달성 시 얻게 될 가장 긍정적인 결과를 생생하게 상상해 보세요.</p>
+                  <textarea className="large-input" placeholder="예: 더 건강하고 자신감 있는 모습, 성적 장학금 수령" value={woopOutcome} onChange={(e) => setWoopOutcome(e.target.value)} />
+                </>
+              )}
+              {woopStep === 3 && (
+                <>
+                  <h3>장애물</h3>
+                  <p>목표 달성을 방해할 수 있는 내면의 장애물(습관, 감정 등)은 무엇인가요?</p>
+                  <textarea className="large-input" placeholder="예: 퇴근 후 피곤해서 운동 가기 싫은 마음, 어려운 과제를 미루는 습관" value={woopObstacle} onChange={(e) => setWoopObstacle(e.target.value)} />
+                </>
+              )}
+              {woopStep === 4 && (
+                <>
+                  <h3>If-Then 계획</h3>
+                  <p>"만약 ~라면, ~하겠다" 형식으로 장애물에 대한 구체적인 대응 계획을 세워보세요.</p>
+                  <textarea className="large-input" placeholder="예: 만약 퇴근 후 운동 가기 싫다면, 일단 운동복으로 갈아입고 10분만 스트레칭한다." value={woopPlan} onChange={(e) => setWoopPlan(e.target.value)} />
+                  
+                  <div style={{ marginTop: '24px', paddingTop: '20px', borderTop: '1px solid var(--border-color)' }}>
+                    <h3>반복 설정 (선택사항)</h3>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', cursor: 'pointer' }}>
+                      <input 
+                        type="checkbox" 
+                        checked={woopIsRecurring} 
+                        onChange={(e) => setWoopIsRecurring(e.target.checked)}
+                        style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                      />
+                      <span>반복 목표로 설정</span>
+                    </label>
+                    
+                    {woopIsRecurring && (
+                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                        {['월', '화', '수', '목', '금', '토', '일'].map((day, index) => (
+                          <button
+                            key={index}
+                            onClick={() => {
+                              if (woopRecurringDays.includes(index)) {
+                                setWoopRecurringDays(woopRecurringDays.filter(d => d !== index));
+                              } else {
+                                setWoopRecurringDays([...woopRecurringDays, index]);
+                              }
+                            }}
+                            style={{
+                              padding: '8px 12px',
+                              border: woopRecurringDays.includes(index) ? '2px solid var(--primary-color)' : '1px solid var(--border-color)',
+                              borderRadius: '6px',
+                              backgroundColor: woopRecurringDays.includes(index) ? 'var(--primary-color)' : 'transparent',
+                              color: woopRecurringDays.includes(index) ? 'white' : 'var(--text-color)',
+                              cursor: 'pointer',
+                              fontSize: '12px',
+                              fontWeight: '600',
+                              transition: 'all 0.2s ease'
+                            }}
+                          >
+                            {day}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    <div style={{ marginTop: '16px' }}>
+                      <label style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <span style={{ fontSize: '14px', fontWeight: '600' }}>목표 기한 (선택사항)</span>
+                        <input 
+                          type="date" 
+                          value={woopDeadline} 
+                          onChange={(e) => setWoopDeadline(e.target.value)}
+                          style={{
+                            padding: '8px 12px',
+                            borderRadius: '6px',
+                            border: '1px solid var(--border-color)',
+                            backgroundColor: 'var(--input-bg-color)',
+                            color: 'var(--text-color)',
+                            fontSize: '14px'
+                          }}
+                        />
+                      </label>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           </div>
           <div className="ai-summary">
             <span className="robot">🤖</span>
             <button className="summary-link">요약보기</button>
           </div>
+        </div>
+
+        <div style={{ padding: '16px', display: 'flex', gap: '8px', borderTop: '1px solid var(--border-color)' }}>
+          {woopStep === 1 ? (
+            <button 
+              onClick={onClose}
+              style={{
+                flex: 1,
+                padding: '10px 16px',
+                borderRadius: '8px',
+                border: '1px solid var(--border-color)',
+                backgroundColor: 'transparent',
+                color: 'var(--text-color)',
+                cursor: 'pointer',
+                fontSize: '14px',
+                fontWeight: '600'
+              }}
+            >
+              취소
+            </button>
+          ) : (
+            <button 
+              onClick={handlePrevWoopStep}
+              style={{
+                flex: 1,
+                padding: '10px 16px',
+                borderRadius: '8px',
+                border: '1px solid var(--border-color)',
+                backgroundColor: 'transparent',
+                color: 'var(--text-color)',
+                cursor: 'pointer',
+                fontSize: '14px',
+                fontWeight: '600'
+              }}
+            >
+              뒤로
+            </button>
+          )}
+          <button 
+            onClick={handleNextWoopStep}
+            disabled={woopStep === 1 && !woopWish}
+            style={{
+              flex: 1,
+              padding: '10px 16px',
+              borderRadius: '8px',
+              backgroundColor: (woopStep === 1 && !woopWish) ? 'var(--border-color)' : 'var(--primary-color)',
+              color: 'white',
+              border: 'none',
+              cursor: (woopStep === 1 && !woopWish) ? 'not-allowed' : 'pointer',
+              fontSize: '14px',
+              fontWeight: '600'
+            }}
+          >
+            {woopStep === 4 ? '완료' : '다음'}
+          </button>
         </div>
       </div>
     </div>
