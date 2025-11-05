@@ -2263,6 +2263,8 @@ input:checked + .slider:before { -webkit-transform: translateX(20px); -ms-transf
   display: flex;
   flex-direction: column;
   gap: 8px;
+  max-width: 800px;
+  margin: 0 auto;
 }
 
 .woop-card:hover {
