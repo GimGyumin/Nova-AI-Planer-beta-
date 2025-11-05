@@ -5769,13 +5769,17 @@ const GoalAssistantModal: React.FC<{ onClose: () => void; onAddTodo?: (newTodoDa
             setStep(s => s - 1);
         }
     };
-    const handleSubmit = () => {
+    const handleSubmit = async () => {
         if (!validateStep(5)) return;
         const goalData = { wish, outcome, obstacle, plan, isRecurring, recurringDays, deadline: noDeadline ? '' : deadline, category };
-        if (existingTodo && onEditTodo) {
-            onEditTodo({ ...existingTodo, ...goalData });
-        } else if (onAddTodo) {
-            onAddTodo(goalData);
+        try {
+            if (existingTodo && onEditTodo) {
+                await onEditTodo({ ...existingTodo, ...goalData });
+            } else if (onAddTodo) {
+                await onAddTodo(goalData);
+            }
+        } catch (error) {
+            console.error('목표 저장 중 오류:', error);
         }
         handleClose();
     };
@@ -5823,9 +5827,11 @@ const GoalAssistantModal: React.FC<{ onClose: () => void; onAddTodo?: (newTodoDa
             <div className="goal-assistant-body">
                 {mode === 'woop' ? (
                     <>
-                        <div className="progress-bar-container"><div className="progress-bar" style={{ width: `${(step / totalSteps) * 100}%` }}></div></div>
-                        <div className={`goal-assistant-step-content-animator ${animationDir}`} key={step}>
-                            <GoalAssistantStepContent step={step} t={t} createAI={createAI} {...{ wish, setWish, outcome, setOutcome, obstacle, setObstacle, plan, setPlan, isRecurring, setIsRecurring, recurringDays, setRecurringDays, deadline, setDeadline, noDeadline, setNoDeadline, category, setCategory, userCategories, errors, language }} />
+                        <div style={{ padding: '24px 16px', flex: 1, overflowY: 'auto' }}>
+                            <div className="progress-bar-container"><div className="progress-bar" style={{ width: `${(step / totalSteps) * 100}%` }}></div></div>
+                            <div className={`goal-assistant-step-content-animator ${animationDir}`} key={step}>
+                                <GoalAssistantStepContent step={step} t={t} createAI={createAI} {...{ wish, setWish, outcome, setOutcome, obstacle, setObstacle, plan, setPlan, isRecurring, setIsRecurring, recurringDays, setRecurringDays, deadline, setDeadline, noDeadline, setNoDeadline, category, setCategory, userCategories, errors, language }} />
+                            </div>
                         </div>
                          <div className="goal-assistant-nav">
                             {step > 1 ? (
