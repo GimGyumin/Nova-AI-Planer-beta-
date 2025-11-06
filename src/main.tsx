@@ -4,7 +4,7 @@ import { GoogleOAuthProvider, useGoogleLogin } from '@react-oauth/google';
 import { GoogleGenAI, Type } from "@google/genai";
 import { auth, googleProvider, db } from './firebase-config';
 import { signInWithPopup, signOut, onAuthStateChanged, User } from 'firebase/auth';
-import { collection, doc, updateDoc, setDoc, onSnapshot, getDoc, deleteDoc, query, where, getDocs } from 'firebase/firestore';
+import { collection, doc, updateDoc, setDoc, onSnapshot, getDoc, deleteDoc, query, where, getDocs, getFirestore } from 'firebase/firestore';
 import { httpsCallable, getFunctions } from 'firebase/functions';
 import './index.css';
 
@@ -927,7 +927,7 @@ const translations = {
     deadline_tip: '현실적인 마감일을 설정하여 동기를 부여하세요. 마감일이 없는 장기 목표도 좋습니다.',
     deadline_option_no_deadline: '마감일 없음',
     day_names_short_picker: ["월", "화", "수", "목", "금", "토", "일"],
-    settings_delete_account: '모든 데이터 삭제',
+    settings_delete_account: '내 데이터 완전 삭제',
     delete_account_header: '데이터 삭제',
     delete_account_header_desc: '이 작업은 되돌릴 수 없으며, 모든 목표와 데이터가 영구적으로 제거됩니다.',
     version_update_title: '새로운 기능',
@@ -1131,7 +1131,7 @@ const translations = {
     settings_cloud_sync_header: 'Cloud Sync',
     woop_not_set: 'Not Set',
     settings_logout: 'Sign Out',
-    settings_delete_account: 'Delete All Data',
+    settings_delete_account: 'Delete My Data',
     delete_account_header: 'Delete Data',
     delete_account_header_desc: 'This action is irreversible and will permanently delete all your goals and data.',
     data_deleting: 'Deleting...',
@@ -2143,7 +2143,6 @@ const App: React.FC = () => {
             setIsLoadingData(false);
         }
     }, [googleUser, loadAllDataFromFirebase]);
-
 
     const t = useCallback((key: string): any => {
         return translations[language][key] || key;
@@ -7102,6 +7101,12 @@ const SettingsModal: React.FC<{
 
                         <div className="settings-section-header">{t('settings_delete_account')}</div>
                         <div className="settings-section-body">
+                            <div style={{ fontSize: '12px', opacity: 0.7, marginBottom: '12px', padding: '8px', backgroundColor: 'var(--bg-color-secondary)', borderRadius: '8px' }}>
+                                {googleUser ? 
+                                    '내 계정과 연결된 모든 클라우드 및 로컬 데이터를 완전히 삭제합니다. 다른 사용자의 데이터는 영향받지 않습니다.' : 
+                                    '로컬에 저장된 모든 데이터를 삭제합니다.'
+                                }
+                            </div>
                             <button className="settings-item action-item" onClick={handleDeleteClick} disabled={dataActionStatus !== 'idle'}>
                                 <span className="action-text destructive">{dataActionStatus === 'deleting' ? t('data_deleting') : t('settings_delete_account')}</span>
                             </button>
