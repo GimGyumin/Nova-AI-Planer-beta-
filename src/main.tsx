@@ -408,9 +408,14 @@ const WOOPCardsSection: React.FC<{
   onEditTodo: (todo: Goal) => void;
   t: (key: string) => any;
 }> = ({ todos, onEditTodo, t }) => {
-  // 모든 WOOP 목표 수집 (wish, outcome, obstacle, plan 모두)
+  // 모든 WOOP 목표 수집 (wish, outcome, obstacle, plan 중 실제 내용이 있는 것만)
   const woopTodos = useMemo(() => {
-    return todos.filter(todo => todo.wish || todo.outcome || todo.obstacle || todo.plan);
+    return todos.filter(todo => 
+      (todo.wish && todo.wish.trim()) || 
+      (todo.outcome && todo.outcome.trim()) || 
+      (todo.obstacle && todo.obstacle.trim()) || 
+      (todo.plan && todo.plan.trim())
+    );
   }, [todos]);
 
   // WOOP 항목이 하나라도 있으면 섹션 표시
@@ -3901,6 +3906,15 @@ const App: React.FC = () => {
             isSharedTodo: isMovingToSharedFolder
         };
         
+        // WOOP 속성이 없는 일반 할일인 경우, WOOP 속성이 추가되지 않도록 확인
+        if (!todo.wish && !todo.outcome && !todo.obstacle && !todo.plan) {
+            // 일반 할일이므로 WOOP 속성을 명시적으로 제거
+            delete updatedTodo.wish;
+            delete updatedTodo.outcome;
+            delete updatedTodo.obstacle;
+            delete updatedTodo.plan;
+        }
+        
         // Firestore에 저장
         if (googleUser) {
             try {
@@ -5683,7 +5697,7 @@ const TodoItem: React.FC<{ todo: Goal; onToggleComplete: (id: number) => void; o
         <li className={`${todo.completed ? 'completed' : ''} ${isSelectionMode ? 'selection-mode' : ''} ${isSelected ? 'selected' : ''}`} onClick={handleItemClick}>
             <div className="swipeable-content">
                 <label className="checkbox-container" onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={todo.completed} onChange={() => onToggleComplete(todo.id)} /><span className="checkmark"></span></label>
-                <div className="todo-text-with-streak"><span className="todo-text">{todo.wish}</span>{todo.isRecurring && todo.streak > 0 && <div className="streak-indicator">{icons.flame}<span>{todo.streak}</span></div>}</div>
+                <div className="todo-text-with-streak"><span className="todo-text">{todo.title || todo.wish}</span>{todo.isRecurring && todo.streak > 0 && <div className="streak-indicator">{icons.flame}<span>{todo.streak}</span></div>}</div>
                 <div className="todo-actions-and-meta">
                     <div className="todo-meta-badges">
                         {todo.category && (
@@ -5995,8 +6009,9 @@ const GoalAssistantModal: React.FC<{ onClose: () => void; onAddTodo?: (newTodoDa
         if (!quickTaskTitle.trim()) return;
         if (onAddTodo) {
             onAddTodo({
-                wish: quickTaskTitle.trim(),
-                outcome: quickTaskTitle.trim(),
+                title: quickTaskTitle.trim(),
+                wish: '',
+                outcome: '',
                 obstacle: '',
                 plan: '',
                 isRecurring: false,
