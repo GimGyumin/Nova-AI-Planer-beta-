@@ -8,6 +8,68 @@ import { collection, doc, updateDoc, setDoc, onSnapshot, getDoc, deleteDoc, quer
 import { httpsCallable, getFunctions } from 'firebase/functions';
 import './index.css';
 
+// --- FCM 및 Service Worker 관련 함수들 ---
+const initializeServiceWorker = async () => {
+  if ('serviceWorker' in navigator) {
+    try {
+      const registration = await navigator.serviceWorker.register('/sw.js');
+      console.log('Service Worker 등록 성공:', registration);
+      return registration;
+    } catch (error) {
+      console.error('Service Worker 등록 실패:', error);
+      return null;
+    }
+  }
+  return null;
+};
+
+const requestNotificationPermission = async () => {
+  if (!('Notification' in window)) {
+    console.log('이 브라우저는 알림을 지원하지 않습니다.');
+    return 'denied';
+  }
+  
+  if (Notification.permission === 'granted') {
+    return 'granted';
+  }
+
+  if (Notification.permission !== 'denied') {
+    const permission = await Notification.requestPermission();
+    return permission;
+  }
+
+  return 'denied';
+};
+
+const registerFCMToken = async (user: User) => {
+  try {
+    // Service Worker 등록
+    const registration = await initializeServiceWorker();
+    if (!registration) return;
+    
+    // FCM 토큰 생성 (실제 환경에서는 Firebase SDK 사용)
+    const token = `fcm_token_${user.uid}_${Date.now()}`;
+    
+    // Firestore에 토큰 저장
+    const userRef = doc(db, 'users', user.uid);
+    const userDoc = await getDoc(userRef);
+    const userData = userDoc.data() || {};
+    const currentTokens = userData.fcmTokens || [];
+    
+    if (!currentTokens.includes(token)) {
+      await setDoc(userRef, {
+        ...userData,
+        fcmTokens: [...currentTokens, token],
+        isDeadlineNotificationEnabled: userData.isDeadlineNotificationEnabled ?? true
+      }, { merge: true });
+    }
+    
+    console.log('FCM 토큰 등록 완료:', token);
+  } catch (error) {
+    console.error('FCM 토큰 등록 실패:', error);
+  }
+};
+
 // --- 타입 정의 ---
 
 // --- PWA 유틸리티 함수 ---
@@ -91,23 +153,84 @@ const isMobileSafari = () => {
   return /iphone|ipad|ipod/.test(userAgent) && /safari/.test(userAgent) && !/crios|fxios/.test(userAgent);
 };
 
-// --- 알림 권한 요청 함수 ---
-const requestNotificationPermission = async () => {
-  if (!('Notification' in window)) {
-    console.log('This browser does not support notifications');
-    return false;
-  }
+// 마감일 임박 알림 체크 및 전송 함수
+const checkDeadlineNotifications = (todos: Goal[], isDeadlineNotificationEnabled: boolean = true) => {
+    if (!isDeadlineNotificationEnabled || Notification.permission !== 'granted') {
+        return;
+    }
 
-  if (Notification.permission === 'granted') {
-    return true;
-  }
+    const now = new Date();
+    
+    todos.forEach(todo => {
+        if (!todo.deadline || todo.completed || !todo.deadlineNotifications?.length) {
+            return;
+        }
 
-  if (Notification.permission !== 'denied') {
-    const permission = await Notification.requestPermission();
-    return permission === 'granted';
-  }
+        const deadline = new Date(todo.deadline);
+        const timeDiff = deadline.getTime() - now.getTime();
+        
+        // 각 알림 간격별로 체크
+        todo.deadlineNotifications.forEach(interval => {
+            let shouldNotify = false;
+            let notificationTitle = '';
+            let notificationBody = '';
 
-  return false;
+            switch (interval) {
+                case '1hour':
+                    shouldNotify = timeDiff <= 3600000 && timeDiff > 0; // 1시간 = 3600000ms
+                    notificationTitle = '⏰ 마감 1시간 전!';
+                    break;
+                case '3hours':
+                    shouldNotify = timeDiff <= 10800000 && timeDiff > 3600000; // 3시간 = 10800000ms
+                    notificationTitle = '⏰ 마감 3시간 전!';
+                    break;
+                case '5hours':
+                    shouldNotify = timeDiff <= 18000000 && timeDiff > 10800000; // 5시간
+                    notificationTitle = '⏰ 마감 5시간 전!';
+                    break;
+                case '12hours':
+                    shouldNotify = timeDiff <= 43200000 && timeDiff > 18000000; // 12시간
+                    notificationTitle = '⏰ 마감 12시간 전!';
+                    break;
+                case '1day':
+                    shouldNotify = timeDiff <= 86400000 && timeDiff > 43200000; // 1일 = 86400000ms
+                    notificationTitle = '📅 마감 1일 전!';
+                    break;
+                case '2days':
+                    shouldNotify = timeDiff <= 172800000 && timeDiff > 86400000; // 2일
+                    notificationTitle = '📅 마감 2일 전!';
+                    break;
+                case '3days':
+                    shouldNotify = timeDiff <= 259200000 && timeDiff > 172800000; // 3일
+                    notificationTitle = '📅 마감 3일 전!';
+                    break;
+                case '7days':
+                    shouldNotify = timeDiff <= 604800000 && timeDiff > 259200000; // 7일
+                    notificationTitle = '📅 마감 7일 전!';
+                    break;
+            }
+
+            if (shouldNotify) {
+                notificationBody = `"${todo.wish || todo.title}" 목표의 마감일이 다가오고 있습니다.`;
+                
+                // 중복 알림 방지를 위해 localStorage 체크
+                const notificationKey = `notification_${todo.id}_${interval}`;
+                const lastNotified = localStorage.getItem(notificationKey);
+                const today = new Date().toDateString();
+                
+                if (lastNotified !== today) {
+                    new Notification(notificationTitle, {
+                        body: notificationBody,
+                        icon: '/favicon.ico',
+                        tag: `deadline_${todo.id}_${interval}`,
+                        requireInteraction: false
+                    });
+                    
+                    localStorage.setItem(notificationKey, today);
+                }
+            }
+        });
+    });
 };
 
 // --- 푸시 알림 구독 함수 ---
@@ -261,7 +384,7 @@ const PWAInstallPrompt: React.FC<{ onClose: () => void }> = ({ onClose }) => {
               <div>
                 <div className="pwa-instruction-box mb-6">
                   <p className="text-white font-semibold mb-4">
-                    🍎 iOS 설치 방법:
+                     iOS 설치 방법:
                   </p>
                 </div>
                 <ol className="pwa-instruction-steps">
@@ -292,7 +415,7 @@ const PWAInstallPrompt: React.FC<{ onClose: () => void }> = ({ onClose }) => {
               <div>
                 <div className="pwa-instruction-box mb-6">
                   <p className="text-white font-semibold mb-4">
-                    🤖 Android 설치 방법:
+                    Android 설치 방법:
                   </p>
                 </div>
                 <ol className="pwa-instruction-steps">
@@ -436,7 +559,7 @@ const WOOPCardsSection: React.FC<{
   return (
     <div className="woop-section">
       <div className="woop-title">
-        ✨ WOOP 프레임워크 (Wish, Outcome, Obstacle, Plan)
+        WOOP 목표
       </div>
       <div className="woop-cards-container">
         {woopTodos.map(todo => (
@@ -448,7 +571,7 @@ const WOOPCardsSection: React.FC<{
           >
             {/* WISH */}
             <div className="woop-field">
-              <div className="woop-field-label">🎯 WISH (소망)</div>
+              <div className="woop-field-label"> Wish (소망)</div>
               <div className="woop-field-content">
                 {todo.wish ? (
                   <div style={{ 
@@ -468,7 +591,7 @@ const WOOPCardsSection: React.FC<{
 
             {/* OUTCOME */}
             <div className="woop-field">
-              <div className="woop-field-label">✅ OUTCOME (결과)</div>
+              <div className="woop-field-label">Outcome (결과)</div>
               <div className="woop-field-content">
                 {todo.outcome ? (
                   <div style={{ 
@@ -488,7 +611,7 @@ const WOOPCardsSection: React.FC<{
 
             {/* OBSTACLE */}
             <div className="woop-field">
-              <div className="woop-field-label">⚠️ OBSTACLE (장애물)</div>
+              <div className="woop-field-label">Obstacle (장애물)</div>
               <div className="woop-field-content">
                 {todo.obstacle ? (
                   <div style={{ 
@@ -508,7 +631,7 @@ const WOOPCardsSection: React.FC<{
 
             {/* PLAN */}
             <div className="woop-field">
-              <div className="woop-field-label">📋 PLAN (계획)</div>
+              <div className="woop-field-label">plan (계획)</div>
               <div className="woop-field-content">
                 {todo.plan ? (
                   <div style={{ 
@@ -534,7 +657,7 @@ const WOOPCardsSection: React.FC<{
               }}
               style={{ marginTop: 'auto', width: '100%' }}
             >
-              수정
+              편집
             </button>
           </div>
         ))}
@@ -579,6 +702,7 @@ interface Goal {
   completed: boolean;
   lastCompletedDate: string | null;
   streak: number;
+  title?: string; // 목표 제목
   // 폴더 관련 필드
   folderId?: string;  // 폴더 ID (없으면 최상위)
   // 협업 관련 필드
@@ -591,6 +715,12 @@ interface Goal {
   lastModified?: Date;  // 마지막 수정 시간
   lastModifiedBy?: string;  // 마지막 수정자 ID
   version?: number;  // 버전 번호 (충돌 감지용)
+  // 알림 관련 필드
+  deadlineNotifications?: string[]; // ['1hour', '3hours', '1day', '3days', '7days']
+  notificationSettings?: {
+    enabled: boolean;
+    intervals: string[];
+  };
 }
 
 
@@ -645,59 +775,59 @@ const translations = {
   ko: {
     // Auth
     language_selection_title: '언어',
-    error_wish_required: '목표를 입력해주세요.',
-    error_outcome_required: '결과를 입력해주세요.',
-    error_obstacle_required: '장애물을 입력해주세요.',
-    error_plan_required: "If-Then 계획을 입력해주세요.",
-    error_deadline_required: '마감일을 선택해주세요.',
-    error_day_required: '하나 이상의 요일을 선택해주세요.',
+    error_wish_required: '목표를 입력하세요',
+    error_outcome_required: '결과를 입력하세요',
+    error_obstacle_required: '장애물을 입력하세요',
+    error_plan_required: "계획을 입력하세요",
+    error_deadline_required: '날짜를 선택하세요',
+    error_day_required: '요일을 선택하세요',
 
     // Main Page
-    my_goals_title: '나의 목표',
-    all_goals_label: '전체',
-    all_goals_button: '🌐 전체',
-    sort_label_manual: '사용자화',
-    sort_label_deadline: '마감일순',
+    my_goals_title: '목표',
+    all_goals_label: '모두',
+    all_goals_button: '모두',
+    sort_label_manual: '수동',
+    sort_label_deadline: '날짜순',
     sort_label_newest: '최신순',
     sort_label_alphabetical: '이름순',
-    sort_label_ai: '우선순위로 정렬',
-    ai_sorting_button: '정렬 중...',
-    add_new_goal_button_label: '새로운 목표 추가',
-    filter_all: '나의 목표',
-    filter_active: '진행중',
-    filter_completed: '완료됨',
+    sort_label_ai: '중요도순',
+    ai_sorting_button: '정렬 중',
+    add_new_goal_button_label: '목표 추가',
+    filter_all: '모든 목표',
+    filter_active: '진행 중',
+    filter_completed: '완료',
     // 카테고리 필터
     filter_category: '카테고리',
     category_all: '모든 카테고리',
     category_school: '학교',
-    category_work: '회사',
+    category_work: '직장',
     category_personal: '개인',
     category_other: '기타',
-    category_label: '카테고리 선택',
-    empty_message_all: '+ 버튼으로 목표를 추가해보세요',
-    empty_message_active: '진행중인 목표가 없습니다.',
-    empty_message_completed: '아직 완료된 목표가 없습니다.',
-    empty_encouragement_1: '새로운 여정의 첫 걸음을 내딛어보세요.',
-    empty_encouragement_2: '작은 변화가 큰 성취로 이어집니다.',
-    empty_encouragement_3: '오늘 하는 일이 내일을 만듭니다.',
-    empty_encouragement_4: '당신의 목표가 현실이 되는 순간을 만나보세요.',
+    category_label: '카테고리',
+    empty_message_all: '목표를 추가해 시작하세요',
+    empty_message_active: '진행 중인 목표가 없습니다',
+    empty_message_completed: '완료된 목표가 없습니다',
+    empty_encouragement_1: '첫 걸음을 내딛어보세요',
+    empty_encouragement_2: '작은 변화가 큰 성취가 됩니다',
+    empty_encouragement_3: '오늘이 바로 시작하는 날입니다',
+    empty_encouragement_4: '목표를 현실로 만들어보세요',
     delete_button: '삭제',
     edit_button_aria: '편집',
     info_button_aria: '정보',
     filter_title: '필터',
     sort_title: '정렬',
     filter_sort_button_aria: '필터 및 정렬',
-    calendar_view_button_aria: '달력 보기',
-    list_view_button_aria: '목록 보기',
+    calendar_view_button_aria: '캘린더',
+    list_view_button_aria: '목록',
     more_options_button_aria: '더보기',
     select_button_label: '선택',
     cancel_selection_button_label: '취소',
     delete_selected_button_label: '{count}개 삭제',
-    select_all_button_label: '전체선택',
+    select_all_button_label: '모두 선택',
     delete_selected_confirm_title: '목표 삭제',
-    delete_selected_confirm_message: '선택한 {count}개의 목표가 영구적으로 삭제됩니다. 이 작업은 되돌릴 수 없습니다.',
+    delete_selected_confirm_message: '{count}개 목표를 삭제합니다. 이 작업은 되돌릴 수 없습니다.',
     days_left: '{count}일 남음',
-    d_day: '오늘',
+    d_day: '오늘까지',
     days_overdue: '{count}일 지남',
 
     // Calendar
@@ -711,69 +841,72 @@ const translations = {
     
     // Modals & Alerts
     settings_title: '설정',
-    sort_alert_title: '정렬 실패',
-    sort_alert_message: '우선순위 정렬을 사용하려면<br/>2개 이상의 목표가 필요합니다.',
+    sort_alert_title: '정렬할 수 없음',
+    sort_alert_message: '2개 이상의 목표가 필요합니다',
     ai_sort_error_title: '정렬 오류',
-    ai_sort_error_message: '서버에 연결할 수 없습니다. 나중에 다시 시도해주세요.',
+    ai_sort_error_message: '연결할 수 없습니다. 다시 시도하세요.',
     confirm_button: '확인',
-    new_goal_modal_title: '새로운 목표',
+    new_goal_modal_title: '새 목표',
     edit_goal_modal_title: '목표 편집',
     wish_label: '목표',
-    outcome_label: '최상의 결과',
+    outcome_label: '성과',
     obstacle_label: '장애물',
-    plan_label: "If-Then 계획",
+    plan_label: "계획",
     deadline_label: '마감일',
     cancel_button: '취소',
     add_button: '추가',
     save_button: '저장',
-    goal_details_modal_title: '목표 상세 정보',
-    ai_coach_suggestion: '요약보기',
-    ai_analyzing: '분석 중...',
+    goal_details_modal_title: '목표 정보',
+    ai_coach_suggestion: '요약 보기',
+    ai_analyzing: '분석 중',
     close_button: '닫기',
-    ai_sort_reason_modal_title: 'AI 정렬 재안',
-    ai_sort_criteria: 'AI 정렬 기준',
-    delete_account_final_confirm_title: '모든 데이터 및 설정 지우기',
-    delete_account_final_confirm_message: '모든 목표와 데이터가 영구적으로 삭제되며, 이 작업은 되돌릴 수 없습니다.',
-    delete_all_data_button: '모든 데이터 및 설정 지우기',
+    ai_sort_reason_modal_title: 'AI 정렬',
+    ai_sort_criteria: '정렬 결과',
+    delete_account_final_confirm_title: '모든 데이터 삭제',
+    delete_account_final_confirm_message: '모든 목표와 데이터가 삭제됩니다. 이 작업은 되돌릴 수 없습니다.',
+    delete_all_data_button: '모든 데이터 삭제',
     settings_done_button: '완료',
-    settings_section_data: '데이터 관리',
-    settings_section_account: 'Nova AI Planner 계정',
+    settings_section_data: '데이터',
+    settings_section_account: '계정',
     settings_sync_data: '지금 동기화',
-    settings_syncing: '저장중...',
-    settings_save_to_cloud: '클라우드에 저장',
-    settings_loading: '로드중...',
-    settings_load_from_cloud: '클라우드에서 불러오기',
+    settings_syncing: '저장 중',
+    settings_save_to_cloud: 'Google에 저장',
+    settings_loading: '로딩 중',
+    settings_load_from_cloud: '클라우드에서 가져오기',
     settings_auto_sync: '자동 동기화',
-    settings_auto_sync_desc: '목표 변경 시 자동으로 저장',
-    settings_cloud_sync_header: '클라우드 동기화',
+    settings_auto_sync_desc: '변경사항 자동 저장',
+    settings_cloud_sync_header: 'Google 동기화',
     woop_not_set: '미설정',
     settings_logout: '로그아웃',
-    settings_export_data: '데이터 내보내기',
-    settings_import_data: '데이터 가져오기',
+    settings_export_data: '내보내기',
+    settings_import_data: '가져오기',
     import_confirm_title: '데이터 가져오기',
-    import_confirm_message: '현재 목표를 새로운 데이터로 교체합니다. 이 작업은 되돌릴 수 없습니다.',
-    import_success_toast: '데이터를 성공적으로 가져왔습니다.',
+    import_confirm_message: '현재 데이터를 새 데이터로 바꿉니다. 되돌릴 수 없습니다.',
+    import_success_toast: '가져오기 완료',
     import_error_alert_title: '가져오기 실패',
-    import_error_alert_message: '파일을 읽는 중 오류가 발생했거나 파일 형식이 올바르지 않습니다. 나중에 다시 시도히십시오.',
+    import_error_alert_message: '파일을 읽을 수 없습니다. 다시 시도하세요.',
     settings_section_general: '일반',
     settings_section_info: '정보',
-    settings_section_help: '사용방법',
-    settings_theme_mode: '테마 모드',
-    theme_mode_light: '라이트 모드',
-    theme_mode_light_desc: '항상 밝은 테마 사용',
-    theme_mode_dark: '다크 모드',
-    theme_mode_dark_desc: '항상 어두운 테마 사용',
+    settings_section_help: '도움말',
+    settings_theme_mode: '화면',
+    theme_mode_light: '라이트',
+    theme_mode_light_desc: '밝은 테마',
+    theme_mode_dark: '다크',
+    theme_mode_dark_desc: '어두운 테마',
     theme_mode_system: '자동',
-    theme_mode_system_desc: '기기의 설정에에 동기화 됩니다.',
+    theme_mode_system_desc: '시스템 설정 따라가기',
     settings_dark_mode: '다크 모드',
     settings_language: '언어',
-    settings_api_key: 'Gemini AI 설정',
-    settings_api_key_placeholder: 'Gemini API 키 입력',
-    settings_offline_mode: '오프라인 사용',
-    settings_offline_mode_desc: 'AI 기능 없이 기본 기능 사용',
+    settings_api_key: 'AI 설정',
+    settings_api_key_placeholder: 'API 키 입력',
+    settings_offline_mode: '오프라인 모드',
+    settings_offline_mode_desc: 'AI 기능 비활성화',
     settings_notifications: '알림',
-    settings_notifications_desc: 'PWA 알림 설정',
-    notification_settings_title: '어떤 알림을 받을까요?',
+    settings_notifications_desc: '알림 설정',
+    notification_settings_title: '알림 받기',
+    notification_permission_denied: '알림이 차단되었습니다',
+    notification_permission_denied_desc: '설정에서 알림을 허용해야 사용할 수 있습니다',
+    notification_permission_request: '알림 권한 요청',
     // Reminder UI
     reminder_add_title: '미리알림 추가',
     reminder_step_title: '{step}/5 단계',
@@ -804,11 +937,11 @@ const translations = {
     recurring_type_weekly: '매주',
     recurring_type_monthly: '매월',
     notification_deadline: '마감일 임박 알림',
-    notification_deadline_desc: '마감이 가까운 목표에 대해 알려줍니다.',
-    notification_suggestion: '지금할일 제안',
-    notification_suggestion_desc: '오늘 해야할 목표를 제안해줍니다.',
-    notification_achievement: '목표 달성 축하',
-    notification_achievement_desc: '목표를 달성했을 때 축하해줍니다.',
+    notification_deadline_desc: '마김일이 설정된 목표의 마감일에 알림을 받습니다.',
+    notification_suggestion: '할일 제안',
+    notification_suggestion_desc: '오늘 할일을 알림으로 받습니다.',
+    notification_achievement: '목표 달성 알림',
+    notification_achievement_desc: '목표를 달성했을 때 알림을 받습니다.',
     notification_reminder: '일반 미리알림',
     notification_reminder_desc: '설정한 시간에 미리알림을 받습니다.',
     reminder_time_settings_title: '미리알림 시간 설정',
@@ -836,8 +969,8 @@ const translations = {
     folder_manage_settings: '설정',
     folder_name_edit: '폴더 이름 편집',
     folder_invite_new: '새 협업자 초대',
-    folder_invite_email: '이메일 주소',
-    folder_invite_role: '역할',
+    folder_invite_email: '협업자의 이메일 주소 입력',
+    folder_invite_role: '권한',
     folder_role_owner: '소유자',
     folder_role_editor: '편집자',
     folder_role_viewer: '뷰어',
@@ -848,7 +981,7 @@ const translations = {
     folder_share_link_desc: '이 링크로 다른 사용자를 초대할 수 있습니다',
     folder_copy_link: '링크 복사',
     folder_leave_confirm: '폴더에서 나가시겠습니까?',
-    folder_delete_confirm: '폴더를 삭제하시겠습니까? 나의 목표로 이동됩니다.',
+    folder_delete_confirm: '폴더를 삭제하시겠습니까? 현재 폴더에 있는 목표는 나의 목표로 이동됩니다.',
     settings_developer: '개발자',
     developer_name: 'Kim Kyumin',
     settings_copyright: '저작권',
@@ -857,22 +990,22 @@ const translations = {
     settings_data_header: '데이터 관리',
     settings_data_header_desc: '목표 데이터를 파일로 내보내거나, 파일에서 가져옵니다.',
     settings_background_header: '배경화면',
-    settings_background_header_desc: '앱의 배경화면 스타일을 변경하여 개성을 표현해 보세요.',
+    settings_background_header_desc: '앱의 배경화면 스타일을 변경할 수 있습니다.',
     data_importing: '가져오는 중...',
     data_exporting: '내보내는 중...',
     data_deleting: '삭제 중...',
     url_import_title: 'URL에서 데이터 불러오기',
-    url_import_message: 'URL의 데이터로 현재 목표 목록을 병합하시겠습니까?',
+    url_import_message: 'URL의 데이터로 현재 목표 목록을 대체하시겠습니까?',
     url_import_confirm: '불러오기',
     url_import_success: 'URL에서 데이터를 성공적으로 가져왔습니다!',
     url_import_error: 'URL의 데이터가 올바르지 않습니다.',
     settings_share_link_header: '링크로 공유',
     settings_generate_link: '공유 링크 생성',
     settings_copy_link: '복사',
-    link_copied_toast: '링크가 클립보드에 복사되었습니다.',
-    short_url_created: '📎 단축 URL이 생성되었습니다!',
-    share_link_created: '🔗 공유 링크가 생성되었습니다!',
-    short_url_failed: '⚠️ 단축 URL 생성에 실패하여 기본 링크를 사용합니다.',
+    link_copied_toast: '링크가 복사되었습니다.',
+    short_url_created: 'URL이 생성되었습니다!',
+    share_link_created: 'URL이 생성되었습니다',
+    short_url_failed: 'URL 생성에 실패하여 기본 링크를 사용합니다.',
     no_data_to_share: '공유할 목표가 없습니다.',
 
     // 사용방법
@@ -914,9 +1047,9 @@ const translations = {
     next_button: '다음',
     back_button: '이전',
     wish_tip: '측정 가능하고 구체적인, 도전적이면서도 현실적인 목표를 설정하세요.',
-    wish_example: '예: 3개월 안에 5kg 감량하기, 이번 학기에 A+ 받기',
+    wish_example: '예: 3개월 안에 5kg 감량하기, 이번 학기에 90점 이상 받기',
     outcome_tip: '목표 달성 시 얻게 될 가장 긍정적인 결과를 생생하게 상상해 보세요.',
-    outcome_example: '예: 더 건강하고 자신감 있는 모습, 성적 장학금 수령',
+    outcome_example: '예: 더 건강하고 자신감 있는 모습, 성적 우수생 선발',
     obstacle_tip: '목표 달성을 방해할 수 있는 내면의 장애물(습관, 감정 등)은 무엇인가요?',
     obstacle_example: '예: 퇴근 후 피곤해서 운동 가기 싫은 마음, 어려운 과제를 미루는 습관',
     plan_tip: "'만약 ~라면, ~하겠다' 형식으로 장애물에 대한 구체적인 대응 계획을 세워보세요.",
@@ -930,7 +1063,7 @@ const translations = {
     day_names_short_picker: ["월", "화", "수", "목", "금", "토", "일"],
     settings_delete_account: '모든 데이터 삭제',
     delete_account_header: '데이터 삭제',
-    delete_account_header_desc: '이 작업은 되돌릴 수 없으며, 모든 목표와 데이터가 영구적으로 삭제됩니다.',
+    delete_account_header_desc: '이 작업은 되돌릴 수 없으며, 모든 목표와 데이터가 영구적으로 제거됩니다.',
     version_update_title: '새로운 기능',
     version_update_1_title: 'Firebase 클라우드 동기화',
     version_update_1_desc: 'Google 로그인으로 목표와 설정값을 클라우드에 저장하고 불러올 수 있습니다. 목표는 같은 Google 계정으로 로그인된 여러 기기에서 동기화됩니다.',
@@ -944,27 +1077,27 @@ const translations = {
   en: {
     // Auth
     language_selection_title: 'Language',
-    error_wish_required: 'Please enter your wish.',
-    error_outcome_required: 'Please enter the outcome.',
-    error_obstacle_required: 'Please enter the obstacle.',
-    error_plan_required: "Please enter your If-Then plan.",
-    error_deadline_required: 'Please select a deadline.',
-    error_day_required: 'Please select at least one day.',
+    error_wish_required: 'Enter your goal',
+    error_outcome_required: 'Enter the outcome',
+    error_obstacle_required: 'Enter the obstacle',
+    error_plan_required: "Enter your plan",
+    error_deadline_required: 'Select a date',
+    error_day_required: 'Select a day',
 
     // Main Page
-    my_goals_title: 'My Goals',
+    my_goals_title: 'Goals',
     all_goals_label: 'All',
-    all_goals_button: '🌐 All',
+    all_goals_button: 'All',
     sort_label_manual: 'Manual',
-    sort_label_deadline: 'Deadline',
-    sort_label_newest: 'Newest',
-    sort_label_alphabetical: 'Alphabetical',
-    sort_label_ai: 'Priority Order',
-    ai_sorting_button: 'Sorting...',
-    add_new_goal_button_label: 'Add New Goal',
-    filter_all: '나의 목표',
+    sort_label_deadline: 'By Date',
+    sort_label_newest: 'Recent',
+    sort_label_alphabetical: 'Name',
+    sort_label_ai: 'Priority',
+    ai_sorting_button: 'Sorting',
+    add_new_goal_button_label: 'Add Goal',
+    filter_all: 'All Goals',
     filter_active: 'In Progress',
-    filter_completed: 'Completed',
+    filter_completed: 'Complete',
     // Category Filters
     filter_category: 'Category',
     category_all: 'All Categories',
@@ -972,31 +1105,31 @@ const translations = {
     category_work: 'Work',
     category_personal: 'Personal',
     category_other: 'Other',
-    category_label: 'Select Category',
-    empty_message_all: 'Add a goal with the + button',
-    empty_message_active: 'No goals in progress.',
-    empty_message_completed: 'No completed goals yet.',
-    empty_encouragement_1: 'Take the first step toward something amazing.',
-    empty_encouragement_2: 'Small changes lead to big achievements.',
-    empty_encouragement_3: 'What you do today shapes tomorrow.',
-    empty_encouragement_4: 'Your goals are waiting to become reality.',
+    category_label: 'Category',
+    empty_message_all: 'Add your first goal',
+    empty_message_active: 'No goals in progress',
+    empty_message_completed: 'No completed goals',
+    empty_encouragement_1: 'Take the first step',
+    empty_encouragement_2: 'Small changes lead to big achievements',
+    empty_encouragement_3: 'Today is the perfect day to start',
+    empty_encouragement_4: 'Turn your goals into reality',
     delete_button: 'Delete',
-    edit_button_aria: 'Edit Goal',
-    info_button_aria: 'Details',
+    edit_button_aria: 'Edit',
+    info_button_aria: 'Info',
     filter_title: 'Filter',
     sort_title: 'Sort',
-    filter_sort_button_aria: 'Filter and Sort',
-    calendar_view_button_aria: 'Calendar View',
-    list_view_button_aria: 'List View',
+    filter_sort_button_aria: 'Filter & Sort',
+    calendar_view_button_aria: 'Calendar',
+    list_view_button_aria: 'List',
     more_options_button_aria: 'More',
     select_button_label: 'Select',
     cancel_selection_button_label: 'Cancel',
     delete_selected_button_label: 'Delete {count}',
     select_all_button_label: 'Select All',
     delete_selected_confirm_title: 'Delete Goals',
-    delete_selected_confirm_message: 'The {count} selected goals will be permanently deleted.',
+    delete_selected_confirm_message: '{count} goals will be deleted. This cannot be undone.',
     days_left: '{count} days left',
-    d_day: 'D-DAY',
+    d_day: 'Due Today',
     days_overdue: '{count} days overdue',
 
     // Calendar
@@ -1062,6 +1195,9 @@ const translations = {
     settings_notifications: 'Notifications',
     settings_notifications_desc: 'PWA notification settings',
     notification_settings_title: 'What notifications would you like?',
+    notification_permission_denied: 'Notifications Blocked',
+    notification_permission_denied_desc: 'Enable notifications in settings to use this feature',
+    notification_permission_request: 'Request Permission',
     notification_deadline: 'Deadline Alerts',
     notification_deadline_desc: 'Get notified when deadlines are approaching.',
     notification_suggestion: 'Today\'s Suggestions',
@@ -1411,6 +1547,8 @@ const App: React.FC = () => {
     const [apiKey, setApiKey] = useState<string>('');
     const [isOfflineMode, setIsOfflineMode] = useState<boolean>(false);
     const [isAutoSyncEnabled, setIsAutoSyncEnabled] = useState<boolean>(true); // 기본값: true
+    const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>('default');
+    const [isDeadlineNotificationEnabled, setIsDeadlineNotificationEnabled] = useState<boolean>(true); // 마감일 임박 알림 설정
     const [googleUser, setGoogleUser] = useState<User | null>(null);
     const [shareableLink, setShareableLink] = useState<string>('');
     const [isGeneratingLink, setIsGeneratingLink] = useState<boolean>(false);
@@ -1430,6 +1568,40 @@ const App: React.FC = () => {
     const [realtimeSyncEnabled, setRealtimeSyncEnabled] = useState<boolean>(false); // 공유 폴더에서만 true
     const [isSharedFolder, setIsSharedFolder] = useState<boolean>(false); // 현재 폴더가 공유 폴더인지 여부
 
+    // 알림 권한 상태 확인
+    useEffect(() => {
+        const checkNotificationPermission = () => {
+            if ('Notification' in window) {
+                setNotificationPermission(Notification.permission);
+            }
+        };
+        
+        checkNotificationPermission();
+        
+        // 페이지 포커스 시 권한 상태 재확인
+        const handleFocus = () => {
+            checkNotificationPermission();
+        };
+        
+        window.addEventListener('focus', handleFocus);
+        return () => window.removeEventListener('focus', handleFocus);
+    }, []);
+
+    // 마감일 임박 알림 체크 (30분마다)
+    useEffect(() => {
+        const checkNotifications = () => {
+            checkDeadlineNotifications(todos, isDeadlineNotificationEnabled);
+        };
+
+        // 즉시 체크
+        checkNotifications();
+
+        // 30분마다 체크
+        const interval = setInterval(checkNotifications, 30 * 60 * 1000); // 30분 = 1800000ms
+
+        return () => clearInterval(interval);
+    }, [todos, isDeadlineNotificationEnabled]);
+
     // Firebase 로그인 상태 감시 및 데이터 자동 로드 + 실시간 리스너
     useEffect(() => {
         let todosUnsubscribe: (() => void) | null = null;
@@ -1444,6 +1616,9 @@ const App: React.FC = () => {
                 // 로그인 성공 시 Firebase에서 모든 데이터 자동 로드
                 console.log('🔑 사용자 로그인 감지 - Firebase 데이터 로드 시작');
                 await loadAllDataFromFirebase(user);
+                
+                // FCM 토큰 등록
+                await registerFCMToken(user);
                 
                 // 🔥 실시간 데이터 동기화 리스너 설정
                 console.log('📡 실시간 데이터 동기화 리스너 설정 중...');
@@ -2939,6 +3114,15 @@ const App: React.FC = () => {
     const filteredTodos = useMemo(() => {
         let sortedTodos = [...todos];
         
+        // 디버그: 현재 상태 로그
+        console.log('🔍 목표 필터링 디버그:', {
+            totalTodos: todos.length,
+            currentFolderId,
+            filter,
+            categoryFilter,
+            sortType
+        });
+        
         // 현재 폴더에 속한 목표만 필터링
         if (currentFolderId === null) {
             // "나의 목표": 개인 전용 영역 - 공유되지 않은 목표들만 표시
@@ -2961,9 +3145,9 @@ const App: React.FC = () => {
             sortedTodos = sortedTodos.filter(todo => todo.folderId === currentFolderId);
         }
         
-        // WOOP 목표는 리스트에서 제외 (카드 섹션에서만 표시)
-        // WOOP 목표: wish, outcome, obstacle, plan 필드가 모두 존재하는 경우만 필터링
-        sortedTodos = sortedTodos.filter(todo => !(todo.wish && todo.outcome && todo.obstacle && todo.plan));
+        // 특별한 카드 섹션 전용 목표가 있다면 여기서 필터링
+        // 현재는 모든 목표를 목록에 표시
+        // sortedTodos = sortedTodos.filter(todo => !(todo.wish && todo.outcome && todo.obstacle && todo.plan));
         
         if (sortType === 'deadline') {
             sortedTodos.sort((a, b) => {
@@ -2986,6 +3170,11 @@ const App: React.FC = () => {
         if (categoryFilter !== 'all') {
             sortedTodos = sortedTodos.filter(todo => (todo.category || 'other') === categoryFilter);
         }
+        
+        console.log('✅ 최종 필터링된 목표:', {
+            finalCount: sortedTodos.length,
+            todos: sortedTodos.map(t => ({ id: t.id, wish: t.wish, folderId: t.folderId, completed: t.completed }))
+        });
         
         return sortedTodos;
     }, [todos, filter, sortType, categoryFilter, currentFolderId]);
@@ -3055,6 +3244,7 @@ const App: React.FC = () => {
             
             // Firestore에 저장 - 비동기 처리
             if (googleUser) {
+                setIsSyncingData(true); // 🔄 로딩 상태 시작
                 try {
                     const folder = folders.find(f => f.id === currentFolderId);
                     // 소유자: 자신의 Firestore에 저장
@@ -3075,6 +3265,8 @@ const App: React.FC = () => {
                     }
                 } catch (error) {
                     console.error('❌ 목표 Firestore 저장 실패:', error);
+                } finally {
+                    setIsSyncingData(false); // 🔄 로딩 상태 종료
                 }
             }
             
@@ -3082,22 +3274,25 @@ const App: React.FC = () => {
             setIsGoalAssistantOpen(false);
         } catch (error) {
             console.error('❌ 목표 추가 실패:', error);
+            setIsSyncingData(false); // 🔄 오류 시에도 로딩 상태 종료
         }
     };
     
     const handleAddMultipleTodos = async (newTodosData: Omit<Goal, 'id' | 'completed' | 'lastCompletedDate' | 'streak'>[]) => {
-        const newTodos: Goal[] = newTodosData.map((goalData, index) => ({
-            ...goalData,
-            id: Date.now() + index,
-            completed: false,
-            lastCompletedDate: null,
-            streak: 0,
-            folderId: currentFolderId || undefined  // 현재 폴더에 추가
-        })).reverse(); // So the first goal appears at the top
-        
-        // Firestore에 저장 - 무조건 저장
-        if (googleUser) {
-            try {
+        try {
+            const newTodos: Goal[] = newTodosData.map((goalData, index) => ({
+                ...goalData,
+                id: Date.now() + index,
+                completed: false,
+                lastCompletedDate: null,
+                streak: 0,
+                folderId: currentFolderId || undefined  // 현재 폴더에 추가
+            })).reverse(); // So the first goal appears at the top
+            
+            // Firestore에 저장 - 무조건 저장
+            if (googleUser) {
+                setIsSyncingData(true); // 🔄 로딩 상태 시작
+                try {
                 const folder = folders.find(f => f.id === currentFolderId);
                 const targetOwnerUid = folder?.ownerId || googleUser.uid;
                 
@@ -3115,23 +3310,31 @@ const App: React.FC = () => {
                     }
                 }
                 console.log('✅ 여러 목표 Firestore 저장:', { targetOwnerUid, count: newTodos.length });
-            } catch (error) {
-                console.error('❌ 여러 목표 Firestore 저장 실패:', error);
+                } catch (error) {
+                    console.error('❌ 여러 목표 Firestore 저장 실패:', error);
+                } finally {
+                    setIsSyncingData(false); // 🔄 로딩 상태 종료
+                }
             }
+            
+            // UI 업데이트
+            setTodos(prev => [...newTodos, ...prev]);
+            setIsGoalAssistantOpen(false);
+        } catch (error) {
+            console.error('❌ 여러 목표 추가 실패:', error);
+            setIsSyncingData(false); // 🔄 오류 시에도 로딩 상태 종료
         }
-        
-        // UI 업데이트
-        setTodos(prev => [...newTodos, ...prev]);
-        setIsGoalAssistantOpen(false);
     };
 
     const handleEditTodo = async (updatedTodo: Goal) => {
-        // 활동 기록
-        recordActivity();
-        
-        // Firestore에 저장 - 무조건 저장
-        if (googleUser) {
-            try {
+        try {
+            // 활동 기록
+            recordActivity();
+            
+            // Firestore에 저장 - 무조건 저장
+            if (googleUser) {
+                setIsSyncingData(true); // 🔄 로딩 상태 시작
+                try {
                 const folder = folders.find(f => f.id === updatedTodo.folderId);
                 // 소유자: 자신의 Firestore에 저장
                 // 협업자: 폴더 소유자의 Firestore에 저장 (동기화를 위해)
@@ -3149,14 +3352,20 @@ const App: React.FC = () => {
                 } else {
                     console.warn('⚠️ 정제 후 저장할 데이터가 없음');
                 }
-            } catch (error) {
-                console.error('❌ 목표 업데이트 Firestore 저장 실패:', error);
+                } catch (error) {
+                    console.error('❌ 목표 업데이트 Firestore 저장 실패:', error);
+                } finally {
+                    setIsSyncingData(false); // 🔄 로딩 상태 종료
+                }
             }
+            
+            // UI 업데이트
+            setTodos(todos.map(todo => (todo.id === updatedTodo.id ? updatedTodo : todo)));
+            setEditingTodo(null);
+        } catch (error) {
+            console.error('❌ 목표 수정 실패:', error);
+            setIsSyncingData(false); // 🔄 오류 시에도 로딩 상태 종료
         }
-        
-        // UI 업데이트
-        setTodos(todos.map(todo => (todo.id === updatedTodo.id ? updatedTodo : todo)));
-        setEditingTodo(null);
     };
 
     const handleDeleteTodo = async (id: number) => {
@@ -4462,6 +4671,19 @@ const App: React.FC = () => {
                             
                             {/* 우측: 할일 리스트 */}
                             <div className="todos-section">
+                                {/* 일반 목표 제목 */}
+                                {filteredTodos.length > 0 && (
+                                    <div className="section-title" style={{ 
+                                        fontSize: '18px', 
+                                        fontWeight: 'bold', 
+                                        marginBottom: '16px',
+                                        color: 'var(--text-color)',
+                                        borderBottom: '2px solid var(--primary-color)',
+                                        paddingBottom: '8px'
+                                    }}>
+                                    미리 알림
+                                    </div>
+                                )}
                                 <TodoList todos={filteredTodos} onToggleComplete={handleToggleComplete} onDelete={handleDeleteTodo} onEdit={setEditingTodo} onInfo={setInfoTodo} t={t} filter={filter} randomEncouragement={randomEncouragement} isSelectionMode={isSelectionMode} selectedTodoIds={selectedTodoIds} onSelectTodo={handleSelectTodo} folders={folders} onMoveToFolder={handleMoveToFolder} />
                             </div>
                         </div>
@@ -4542,6 +4764,10 @@ const App: React.FC = () => {
                 isAutoSyncEnabled={isAutoSyncEnabled}
                 setIsAutoSyncEnabled={setIsAutoSyncEnabled}
                 onDiagnoseFirebase={diagnoseFirebaseSetup}
+                notificationPermission={notificationPermission}
+                setNotificationPermission={setNotificationPermission}
+                isDeadlineNotificationEnabled={isDeadlineNotificationEnabled}
+                setIsDeadlineNotificationEnabled={setIsDeadlineNotificationEnabled}
             />}
             {isVersionInfoOpen && <VersionInfoModal onClose={() => setIsVersionInfoOpen(false)} t={t} />}
             {isUsageGuideOpen && <UsageGuideModal onClose={() => setIsUsageGuideOpen(false)} t={t} />}
@@ -6587,6 +6813,10 @@ const SettingsModal: React.FC<{
     isAutoSyncEnabled: boolean;
     setIsAutoSyncEnabled: (enabled: boolean) => void;
     onDiagnoseFirebase: () => void;
+    notificationPermission: NotificationPermission;
+    setNotificationPermission: (permission: NotificationPermission) => void;
+    isDeadlineNotificationEnabled: boolean;
+    setIsDeadlineNotificationEnabled: (enabled: boolean) => void;
 }> = ({
     onClose, isDarkMode, onToggleDarkMode, themeMode, onThemeChange, backgroundTheme, onSetBackgroundTheme,
     onExportData, onImportData, setAlertConfig, onDeleteAllData, dataActionStatus,
@@ -6594,7 +6824,8 @@ const SettingsModal: React.FC<{
     apiKey, onSetApiKey, isOfflineMode, onToggleOfflineMode,
     googleUser, onGoogleLogin, onGoogleLogout, onSyncDataToFirebase, onLoadDataFromFirebase,
     isGoogleLoggingIn = false, isGoogleLoggingOut = false, isSyncingData = false, isLoadingData = false,
-    isAutoSyncEnabled, setIsAutoSyncEnabled, onDiagnoseFirebase
+    isAutoSyncEnabled, setIsAutoSyncEnabled, onDiagnoseFirebase,
+    notificationPermission, setNotificationPermission, isDeadlineNotificationEnabled, setIsDeadlineNotificationEnabled
 
 }) => {
     const [isClosing, handleClose] = useModalAnimation(onClose);
@@ -6707,28 +6938,58 @@ const SettingsModal: React.FC<{
                     </>
                 );
             case 'notifications':
+                const isNotificationEnabled = notificationPermission === 'granted';
+                const isNotificationDenied = notificationPermission === 'denied';
+                
                 return (
                     <>
+                        {isNotificationDenied && (
+                            <div className="settings-section-body" style={{ marginBottom: '16px' }}>
+                                <div className="notification-warning">
+                                    <div className="notification-warning-title">
+                                        {t('notification_permission_denied')}
+                                    </div>
+                                    <div className="notification-warning-desc">
+                                        {t('notification_permission_denied_desc')}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                        
                         <div className="settings-section-header">{t('notification_settings_title')}</div>
                         <div className="settings-section-body">
-                            <label className="settings-item">
+                            <label className={`settings-item ${!isNotificationEnabled ? 'disabled' : ''}`}>
                                 <div>
-                                    <span>{t('notification_deadline')}</span>
-                                    <div style={{ fontSize: '12px', opacity: 0.7, marginTop: '4px' }}>{t('notification_deadline_desc')}</div>
+                                    <span style={{ opacity: isNotificationEnabled ? 1 : 0.5 }}>{t('notification_deadline')}</span>
+                                    <div style={{ fontSize: '12px', opacity: isNotificationEnabled ? 0.7 : 0.3, marginTop: '4px' }}>{t('notification_deadline_desc')}</div>
                                 </div>
                                 <div className="theme-toggle-switch">
-                                    <input type="checkbox" defaultChecked={true} onChange={() => {}} />
-                                    <span className="slider round"></span>
+                                    <input 
+                                        type="checkbox" 
+                                        checked={isNotificationEnabled && isDeadlineNotificationEnabled} 
+                                        disabled={!isNotificationEnabled}
+                                        onChange={(e) => {
+                                            if (isNotificationEnabled) {
+                                                setIsDeadlineNotificationEnabled(e.target.checked);
+                                            }
+                                        }} 
+                                    />
+                                    <span className="slider round" style={{ opacity: isNotificationEnabled ? 1 : 0.5 }}></span>
                                 </div>
                             </label>
-                            <label className="settings-item">
+                            <label className={`settings-item ${!isNotificationEnabled ? 'disabled' : ''}`}>
                                 <div>
-                                    <span>{t('notification_suggestion')}</span>
-                                    <div style={{ fontSize: '12px', opacity: 0.7, marginTop: '4px' }}>지정된 시간에 할일을 제안합니다.</div>
+                                    <span style={{ opacity: isNotificationEnabled ? 1 : 0.5 }}>{t('notification_suggestion')}</span>
+                                    <div style={{ fontSize: '12px', opacity: isNotificationEnabled ? 0.7 : 0.3, marginTop: '4px' }}>지정된 시간에 할일을 제안합니다.</div>
                                 </div>
                                 <div className="theme-toggle-switch">
-                                    <input type="checkbox" defaultChecked={true} onChange={() => {}} />
-                                    <span className="slider round"></span>
+                                    <input 
+                                        type="checkbox" 
+                                        checked={isNotificationEnabled} 
+                                        disabled={!isNotificationEnabled}
+                                        onChange={() => {}} 
+                                    />
+                                    <span className="slider round" style={{ opacity: isNotificationEnabled ? 1 : 0.5 }}></span>
                                 </div>
                             </label>
                         </div>
@@ -6739,17 +7000,22 @@ const SettingsModal: React.FC<{
                                 onClick={async () => {
                                     const granted = await requestNotificationPermission();
                                     if (granted) {
+                                        setNotificationPermission('granted');
                                         setToastMessage('알림 권한이 허용되었습니다.');
                                         await subscribeToPushNotifications();
                                     } else {
-                                        setToastMessage('알림 권한을 거부했습니다.');
+                                        setNotificationPermission('denied');
+                                        setToastMessage('알림 권한이 거부되었습니다.');
                                     }
                                 }}
                             >
-                                <span className="action-text">알림 권한 요청</span>
+                                <span className="action-text">
+                                    {isNotificationEnabled ? '알림 권한 허용됨' : t('notification_permission_request')}
+                                </span>
+                                {isNotificationEnabled && <span style={{ color: 'var(--success-color)' }}>✓</span>}
                             </button>
                             <div style={{ fontSize: '12px', opacity: 0.7, padding: '12px', marginTop: '8px' }}>
-                                현재 권한: {Notification.permission === 'granted' ? '✓ 허용됨' : Notification.permission === 'denied' ? '✗ 거부됨' : '? 미정'}
+                                현재 권한: {notificationPermission === 'granted' ? '✓ 허용됨' : notificationPermission === 'denied' ? '✗ 거부됨' : '? 미정'}
                             </div>
                         </div>
                     </>
@@ -6875,8 +7141,24 @@ const SettingsModal: React.FC<{
                             <>
                                 <div className="settings-section-header">{t('settings_cloud_sync_header')}</div>
                                 <div className="settings-section-body">
-                                    <button className="settings-item action-item" onClick={onSyncDataToFirebase} disabled={isSyncingData}>
-                                        <span className="action-text">{isSyncingData ? t('settings_syncing') : t('settings_save_to_cloud')}</span>
+                                    <button className="settings-item action-item sync-button" onClick={onSyncDataToFirebase} disabled={isSyncingData}>
+                                        <div className="sync-button-container">
+                                            <div className={`circular-progress ${isSyncingData ? 'active' : ''}`}>
+                                                <svg className="progress-ring" width="24" height="24">
+                                                    <circle
+                                                        className="progress-ring-circle"
+                                                        stroke="currentColor"
+                                                        strokeWidth="2"
+                                                        fill="transparent"
+                                                        r="10"
+                                                        cx="12"
+                                                        cy="12"
+                                                    />
+                                                </svg>
+                                                <span className="sync-icon-center">{isSyncingData ? '' : '↗'}</span>
+                                            </div>
+                                            <span className="action-text">{isSyncingData ? t('settings_syncing') : t('settings_sync_data')}</span>
+                                        </div>
                                     </button>
                                     <button className="settings-item action-item" onClick={onLoadDataFromFirebase} disabled={isLoadingData}>
                                         <span className="action-text">{isLoadingData ? t('settings_loading') : t('settings_load_from_cloud')}</span>

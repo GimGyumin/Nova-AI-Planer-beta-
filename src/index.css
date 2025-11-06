@@ -2977,3 +2977,112 @@ input:checked + .slider:before { -webkit-transform: translateX(20px); -ms-transf
 :root.dark-mode[data-bg-theme="royal_purple"] {
   --main-bg-color: #2d1a52;
 }
+
+/* Sync Button Styles */
+.sync-button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sync-button-container {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.circular-progress {
+  position: relative;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.progress-ring {
+  transform: rotate(-90deg);
+  transition: all 0.3s ease;
+}
+
+.progress-ring-circle {
+  stroke: var(--primary-color);
+  stroke-dasharray: 62.83; /* 2 * π * 10 */
+  stroke-dashoffset: 62.83;
+  transition: stroke-dashoffset 0.3s ease;
+  opacity: 0;
+}
+
+.circular-progress.active .progress-ring-circle {
+  opacity: 1;
+  stroke-dashoffset: 0;
+  animation: progress-rotate 1.5s linear infinite;
+}
+
+.sync-icon-center {
+  position: absolute;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--primary-color);
+  transition: all 0.3s ease;
+}
+
+.circular-progress.active .sync-icon-center {
+  opacity: 0;
+}
+
+@keyframes progress-rotate {
+  0% {
+    stroke-dashoffset: 62.83;
+    transform: rotate(0deg);
+  }
+  50% {
+    stroke-dashoffset: 31.4;
+    transform: rotate(180deg);
+  }
+  100% {
+    stroke-dashoffset: 62.83;
+    transform: rotate(360deg);
+  }
+}
+
+.sync-icon {
+  font-size: 16px;
+  display: inline-block;
+  transition: transform 0.2s ease;
+}
+
+.sync-icon.syncing {
+  animation: rotate 1s linear infinite;
+}
+
+@keyframes rotate {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 알림 권한 거부 경고 스타일 */
+.notification-warning {
+  padding: 12px;
+  border-radius: 8px;
+  font-size: 14px;
+  background-color: var(--danger-color);
+  color: white;
+  border: 1px solid var(--danger-color-hover);
+  box-shadow: 0 2px 8px rgba(255, 59, 48, 0.2);
+}
+
+.notification-warning-title {
+  font-weight: bold;
+  margin-bottom: 4px;
+  color: white;
+}
+
+.notification-warning-desc {
+  opacity: 0.95;
+  color: white;
+}

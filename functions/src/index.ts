@@ -21,6 +21,155 @@ interface InviteRequest {
   role: "editor" | "viewer";
 }
 
+// 마감일 알림 스케줄러 (매시간 실행)
+export const checkDeadlineNotifications = functions
+  .region("asia-northeast1")
+  .pubsub.schedule("0 * * * *") // 매시간 정각에 실행
+  .timeZone("Asia/Seoul")
+  .onRun(async (context) => {
+    try {
+      console.log("⏰ 마감일 알림 체크 시작");
+      
+      // 모든 사용자의 목표 데이터 가져오기
+      const usersSnapshot = await admin.firestore().collection("users").get();
+      
+      const now = new Date();
+      let notificationsSent = 0;
+      
+      for (const userDoc of usersSnapshot.docs) {
+        const userId = userDoc.id;
+        const userData = userDoc.data();
+        
+        // 사용자의 알림 설정 확인
+        if (!userData.isDeadlineNotificationEnabled) {
+          continue;
+        }
+        
+        // 사용자의 목표들 가져오기
+        const todosSnapshot = await admin
+          .firestore()
+          .collection("users")
+          .doc(userId)
+          .collection("todos")
+          .where("completed", "==", false)
+          .where("deadline", "!=", "")
+          .get();
+        
+        for (const todoDoc of todosSnapshot.docs) {
+          const todo = todoDoc.data();
+          
+          if (!todo.deadline || !todo.deadlineNotifications?.length) {
+            continue;
+          }
+          
+          const deadline = new Date(todo.deadline);
+          const timeDiff = deadline.getTime() - now.getTime();
+          
+          // 각 알림 간격별로 체크
+          for (const interval of todo.deadlineNotifications) {
+            let shouldNotify = false;
+            let notificationTitle = "";
+            
+            switch (interval) {
+              case "1hour":
+                shouldNotify = timeDiff <= 3600000 && timeDiff > 0;
+                notificationTitle = "⏰ 마감 1시간 전!";
+                break;
+              case "3hours":
+                shouldNotify = timeDiff <= 10800000 && timeDiff > 3600000;
+                notificationTitle = "⏰ 마감 3시간 전!";
+                break;
+              case "5hours":
+                shouldNotify = timeDiff <= 18000000 && timeDiff > 10800000;
+                notificationTitle = "⏰ 마감 5시간 전!";
+                break;
+              case "12hours":
+                shouldNotify = timeDiff <= 43200000 && timeDiff > 18000000;
+                notificationTitle = "⏰ 마감 12시간 전!";
+                break;
+              case "1day":
+                shouldNotify = timeDiff <= 86400000 && timeDiff > 43200000;
+                notificationTitle = "📅 마감 1일 전!";
+                break;
+              case "2days":
+                shouldNotify = timeDiff <= 172800000 && timeDiff > 86400000;
+                notificationTitle = "📅 마감 2일 전!";
+                break;
+              case "3days":
+                shouldNotify = timeDiff <= 259200000 && timeDiff > 172800000;
+                notificationTitle = "📅 마감 3일 전!";
+                break;
+              case "7days":
+                shouldNotify = timeDiff <= 604800000 && timeDiff > 259200000;
+                notificationTitle = "📅 마감 7일 전!";
+                break;
+            }
+            
+            if (shouldNotify) {
+              // 중복 알림 방지 체크
+              const notificationKey = `${userId}_${todo.id}_${interval}`;
+              const today = now.toDateString();
+              
+              const lastNotificationDoc = await admin
+                .firestore()
+                .collection("notification_logs")
+                .doc(notificationKey)
+                .get();
+              
+              const lastNotified = lastNotificationDoc.data()?.date;
+              
+              if (lastNotified !== today) {
+                // 사용자의 FCM 토큰 가져오기
+                const userTokens = userData.fcmTokens || [];
+                
+                if (userTokens.length > 0) {
+                  const message = {
+                    notification: {
+                      title: notificationTitle,
+                      body: `"${todo.wish || todo.title}" 목표의 마감일이 다가오고 있습니다.`,
+                      icon: "/favicon.ico",
+                    },
+                    data: {
+                      todoId: todo.id,
+                      type: "deadline_reminder",
+                      interval: interval,
+                    },
+                    tokens: userTokens,
+                  };
+                  
+                  // FCM 메시지 전송
+                  const response = await admin.messaging().sendMulticast(message);
+                  console.log(`📨 알림 전송: ${userId}, 성공: ${response.successCount}, 실패: ${response.failureCount}`);
+                  
+                  // 알림 로그 저장
+                  await admin
+                    .firestore()
+                    .collection("notification_logs")
+                    .doc(notificationKey)
+                    .set({
+                      userId,
+                      todoId: todo.id,
+                      interval,
+                      date: today,
+                      timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                    });
+                  
+                  notificationsSent++;
+                }
+              }
+            }
+          }
+        }
+      }
+      
+      console.log(`✅ 마감일 알림 체크 완료. 전송된 알림: ${notificationsSent}개`);
+      return null;
+    } catch (error) {
+      console.error("❌ 마감일 알림 체크 실패:", error);
+      throw error;
+    }
+  });
+
 /**
  * 협업자 초대 이메일 발송 함수
  */
