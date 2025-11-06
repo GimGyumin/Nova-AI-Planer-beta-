@@ -21,6 +21,8 @@ interface InviteRequest {
   role: "editor" | "viewer";
 }
 
+// 협업자 초대 함수
+
 // 마감일 알림 스케줄러 (매시간 실행)
 export const checkDeadlineNotifications = functions
   .region("asia-northeast1")

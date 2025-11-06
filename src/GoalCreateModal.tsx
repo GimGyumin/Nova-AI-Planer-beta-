@@ -27,12 +27,6 @@ interface Goal {
   isPrivate?: boolean;
   createdAt?: string;
   updatedAt?: string;
-  // 알림 관련 필드 추가
-  deadlineNotifications?: string[]; // ['1hour', '3hours', '1day', '3days', '7days']
-  notificationSettings?: {
-    enabled: boolean;
-    intervals: string[];
-  };
 }
 
 interface GoalCreateModalProps {
@@ -70,10 +64,6 @@ const GoalCreateModal: React.FC<GoalCreateModalProps> = ({
   const [woopDeadline, setWoopDeadline] = useState('');
   const [quickInput, setQuickInput] = useState('');
   const [todoInput, setTodoInput] = useState('');
-  
-  // 알림 설정 상태 추가
-  const [deadlineNotifications, setDeadlineNotifications] = useState<string[]>(['1day', '3hours']);
-  const [showNotificationSettings, setShowNotificationSettings] = useState(false);
 
   useEffect(() => {
     if (existingTodo) {
@@ -135,13 +125,7 @@ const GoalCreateModal: React.FC<GoalCreateModalProps> = ({
           sharedWith: [],
           folderId: undefined,
           createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          // 알림 설정 추가
-          deadlineNotifications: woopDeadline ? deadlineNotifications : [],
-          notificationSettings: {
-            enabled: !!woopDeadline && deadlineNotifications.length > 0,
-            intervals: deadlineNotifications
-          }
+          updatedAt: new Date().toISOString()
         });
       }
       onClose();
@@ -274,7 +258,6 @@ const GoalCreateModal: React.FC<GoalCreateModalProps> = ({
                           value={woopDeadline} 
                           onChange={(e) => {
                             setWoopDeadline(e.target.value);
-                            setShowNotificationSettings(!!e.target.value);
                           }}
                           style={{
                             padding: '8px 12px',
@@ -287,78 +270,6 @@ const GoalCreateModal: React.FC<GoalCreateModalProps> = ({
                         />
                       </label>
                     </div>
-
-                    {/* 마감일 알림 설정 */}
-                    {woopDeadline && (
-                      <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid var(--border-color)' }}>
-                        <h4 style={{ fontSize: '14px', fontWeight: '600', marginBottom: '12px', color: 'var(--text-color)' }}>
-                          📢 마감일 알림 설정
-                        </h4>
-                        <p style={{ fontSize: '12px', color: 'var(--text-secondary-color)', marginBottom: '12px' }}>
-                          마감일까지 남은 시간에 따라 알림을 받을 수 있습니다.
-                        </p>
-                        
-                        <div style={{ 
-                          display: 'grid', 
-                          gridTemplateColumns: 'repeat(2, 1fr)', 
-                          gap: '8px',
-                          marginTop: '8px'
-                        }}>
-                          {[
-                            { id: '1hour', label: '1시간 전' },
-                            { id: '3hours', label: '3시간 전' },
-                            { id: '5hours', label: '5시간 전' },
-                            { id: '12hours', label: '12시간 전' },
-                            { id: '1day', label: '1일 전' },
-                            { id: '2days', label: '2일 전' },
-                            { id: '3days', label: '3일 전' },
-                            { id: '7days', label: '7일 전' }
-                          ].map((option) => (
-                            <label
-                              key={option.id}
-                              style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '8px',
-                                padding: '8px',
-                                borderRadius: '6px',
-                                backgroundColor: deadlineNotifications.includes(option.id) ? 'var(--primary-color)' : 'var(--input-bg-color)',
-                                color: deadlineNotifications.includes(option.id) ? 'white' : 'var(--text-color)',
-                                cursor: 'pointer',
-                                fontSize: '12px',
-                                fontWeight: '500',
-                                transition: 'all 0.2s ease',
-                                border: '1px solid var(--border-color)'
-                              }}
-                              onClick={() => {
-                                if (deadlineNotifications.includes(option.id)) {
-                                  setDeadlineNotifications(deadlineNotifications.filter(id => id !== option.id));
-                                } else {
-                                  setDeadlineNotifications([...deadlineNotifications, option.id]);
-                                }
-                              }}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={deadlineNotifications.includes(option.id)}
-                                onChange={() => {}} // 클릭 이벤트로 처리
-                                style={{ pointerEvents: 'none' }}
-                              />
-                              <span>{option.label}</span>
-                            </label>
-                          ))}
-                        </div>
-                        
-                        <div style={{ 
-                          marginTop: '8px', 
-                          fontSize: '11px', 
-                          color: 'var(--text-secondary-color)',
-                          fontStyle: 'italic'
-                        }}>
-                          💡 알림 설정에서 "마감일 임박 알림"이 활성화되어야 작동합니다.
-                        </div>
-                      </div>
-                    )}
                   </div>
                 </>
               )}

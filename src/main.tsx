@@ -8,68 +8,6 @@ import { collection, doc, updateDoc, setDoc, onSnapshot, getDoc, deleteDoc, quer
 import { httpsCallable, getFunctions } from 'firebase/functions';
 import './index.css';
 
-// --- FCM 및 Service Worker 관련 함수들 ---
-const initializeServiceWorker = async () => {
-  if ('serviceWorker' in navigator) {
-    try {
-      const registration = await navigator.serviceWorker.register('/sw.js');
-      console.log('Service Worker 등록 성공:', registration);
-      return registration;
-    } catch (error) {
-      console.error('Service Worker 등록 실패:', error);
-      return null;
-    }
-  }
-  return null;
-};
-
-const requestNotificationPermission = async () => {
-  if (!('Notification' in window)) {
-    console.log('이 브라우저는 알림을 지원하지 않습니다.');
-    return 'denied';
-  }
-  
-  if (Notification.permission === 'granted') {
-    return 'granted';
-  }
-
-  if (Notification.permission !== 'denied') {
-    const permission = await Notification.requestPermission();
-    return permission;
-  }
-
-  return 'denied';
-};
-
-const registerFCMToken = async (user: User) => {
-  try {
-    // Service Worker 등록
-    const registration = await initializeServiceWorker();
-    if (!registration) return;
-    
-    // FCM 토큰 생성 (실제 환경에서는 Firebase SDK 사용)
-    const token = `fcm_token_${user.uid}_${Date.now()}`;
-    
-    // Firestore에 토큰 저장
-    const userRef = doc(db, 'users', user.uid);
-    const userDoc = await getDoc(userRef);
-    const userData = userDoc.data() || {};
-    const currentTokens = userData.fcmTokens || [];
-    
-    if (!currentTokens.includes(token)) {
-      await setDoc(userRef, {
-        ...userData,
-        fcmTokens: [...currentTokens, token],
-        isDeadlineNotificationEnabled: userData.isDeadlineNotificationEnabled ?? true
-      }, { merge: true });
-    }
-    
-    console.log('FCM 토큰 등록 완료:', token);
-  } catch (error) {
-    console.error('FCM 토큰 등록 실패:', error);
-  }
-};
-
 // --- 타입 정의 ---
 
 // --- PWA 유틸리티 함수 ---
@@ -153,85 +91,7 @@ const isMobileSafari = () => {
   return /iphone|ipad|ipod/.test(userAgent) && /safari/.test(userAgent) && !/crios|fxios/.test(userAgent);
 };
 
-// 마감일 임박 알림 체크 및 전송 함수
-const checkDeadlineNotifications = (todos: Goal[], isDeadlineNotificationEnabled: boolean = true) => {
-    if (!isDeadlineNotificationEnabled || Notification.permission !== 'granted') {
-        return;
-    }
-
-    const now = new Date();
-    
-    todos.forEach(todo => {
-        if (!todo.deadline || todo.completed || !todo.deadlineNotifications?.length) {
-            return;
-        }
-
-        const deadline = new Date(todo.deadline);
-        const timeDiff = deadline.getTime() - now.getTime();
-        
-        // 각 알림 간격별로 체크
-        todo.deadlineNotifications.forEach(interval => {
-            let shouldNotify = false;
-            let notificationTitle = '';
-            let notificationBody = '';
-
-            switch (interval) {
-                case '1hour':
-                    shouldNotify = timeDiff <= 3600000 && timeDiff > 0; // 1시간 = 3600000ms
-                    notificationTitle = '⏰ 마감 1시간 전!';
-                    break;
-                case '3hours':
-                    shouldNotify = timeDiff <= 10800000 && timeDiff > 3600000; // 3시간 = 10800000ms
-                    notificationTitle = '⏰ 마감 3시간 전!';
-                    break;
-                case '5hours':
-                    shouldNotify = timeDiff <= 18000000 && timeDiff > 10800000; // 5시간
-                    notificationTitle = '⏰ 마감 5시간 전!';
-                    break;
-                case '12hours':
-                    shouldNotify = timeDiff <= 43200000 && timeDiff > 18000000; // 12시간
-                    notificationTitle = '⏰ 마감 12시간 전!';
-                    break;
-                case '1day':
-                    shouldNotify = timeDiff <= 86400000 && timeDiff > 43200000; // 1일 = 86400000ms
-                    notificationTitle = '📅 마감 1일 전!';
-                    break;
-                case '2days':
-                    shouldNotify = timeDiff <= 172800000 && timeDiff > 86400000; // 2일
-                    notificationTitle = '📅 마감 2일 전!';
-                    break;
-                case '3days':
-                    shouldNotify = timeDiff <= 259200000 && timeDiff > 172800000; // 3일
-                    notificationTitle = '📅 마감 3일 전!';
-                    break;
-                case '7days':
-                    shouldNotify = timeDiff <= 604800000 && timeDiff > 259200000; // 7일
-                    notificationTitle = '📅 마감 7일 전!';
-                    break;
-            }
-
-            if (shouldNotify) {
-                notificationBody = `"${todo.wish || todo.title}" 목표의 마감일이 다가오고 있습니다.`;
-                
-                // 중복 알림 방지를 위해 localStorage 체크
-                const notificationKey = `notification_${todo.id}_${interval}`;
-                const lastNotified = localStorage.getItem(notificationKey);
-                const today = new Date().toDateString();
-                
-                if (lastNotified !== today) {
-                    new Notification(notificationTitle, {
-                        body: notificationBody,
-                        icon: '/favicon.ico',
-                        tag: `deadline_${todo.id}_${interval}`,
-                        requireInteraction: false
-                    });
-                    
-                    localStorage.setItem(notificationKey, today);
-                }
-            }
-        });
-    });
-};
+// --- 타입 정의 ---
 
 // --- 푸시 알림 구독 함수 ---
 const subscribeToPushNotifications = async () => {
@@ -784,8 +644,8 @@ const translations = {
 
     // Main Page
     my_goals_title: '목표',
-    all_goals_label: '모두',
-    all_goals_button: '모두',
+    all_goals_label: '나의 목표',
+    all_goals_button: '전체',
     sort_label_manual: '수동',
     sort_label_deadline: '날짜순',
     sort_label_newest: '최신순',
@@ -817,6 +677,7 @@ const translations = {
     filter_title: '필터',
     sort_title: '정렬',
     filter_sort_button_aria: '필터 및 정렬',
+    category_filter_button_aria: '카테고리 필터',
     calendar_view_button_aria: '캘린더',
     list_view_button_aria: '목록',
     more_options_button_aria: '더보기',
@@ -908,10 +769,10 @@ const translations = {
     notification_permission_denied_desc: '설정에서 알림을 허용해야 사용할 수 있습니다',
     notification_permission_request: '알림 권한 요청',
     // Reminder UI
-    reminder_add_title: '미리알림 추가',
+    reminder_add_title: '할일 추가',
     reminder_step_title: '{step}/5 단계',
     reminder_step1_title: '🔔 제목',
-    reminder_step1_desc: '미리알림의 제목을 입력하세요',
+    reminder_step1_desc: '할일의 제목을 입력하세요',
     reminder_step2_title: '📅 기한 & ⏰ 시간',
     reminder_step2_desc: '기한 날짜와 시간을 설정하세요 (선택사항)',
     reminder_step2_date_toggle: '기한 설정',
@@ -922,7 +783,7 @@ const translations = {
     reminder_step4_title: '📝 설명',
     reminder_step4_desc: '추가 설명을 입력하세요 (선택사항)',
     reminder_step5_title: '✅ 활성화',
-    reminder_step5_desc: '미리알림 활성화 여부를 선택하세요',
+    reminder_step5_desc: '할일 활성화 여부를 선택하세요',
     reminder_next_button: '다음',
     reminder_back_button: '이전',
     reminder_submit_button: '추가',
@@ -942,9 +803,9 @@ const translations = {
     notification_suggestion_desc: '오늘 할일을 알림으로 받습니다.',
     notification_achievement: '목표 달성 알림',
     notification_achievement_desc: '목표를 달성했을 때 알림을 받습니다.',
-    notification_reminder: '일반 미리알림',
-    notification_reminder_desc: '설정한 시간에 미리알림을 받습니다.',
-    reminder_time_settings_title: '미리알림 시간 설정',
+    notification_reminder: '일반 할일',
+    notification_reminder_desc: '설정한 시간에 할일 알림을 받습니다.',
+    reminder_time_settings_title: '할일 시간 설정',
     reminder_start_time: '시작 시간',
     reminder_end_time: '종료 시간',
     language_name: '한국어 (대한민국)',
@@ -1119,6 +980,7 @@ const translations = {
     filter_title: 'Filter',
     sort_title: 'Sort',
     filter_sort_button_aria: 'Filter & Sort',
+    category_filter_button_aria: 'Category Filter',
     calendar_view_button_aria: 'Calendar',
     list_view_button_aria: 'List',
     more_options_button_aria: 'More',
@@ -1204,18 +1066,18 @@ const translations = {
     notification_suggestion_desc: 'Get suggestions on what to do today.',
     notification_achievement: 'Achievement Celebration',
     notification_achievement_desc: 'Celebrate when you achieve a goal.',
-    notification_reminder: 'General Reminder',
-    notification_reminder_desc: 'Get reminded at scheduled times.',
-    reminder_time_settings_title: 'Reminder Time Settings',
+    notification_reminder: 'General Todo',
+    notification_reminder_desc: 'Get notified at scheduled times.',
+    reminder_time_settings_title: 'Todo Time Settings',
     reminder_start_time: 'Start Time',
     reminder_end_time: 'End Time',
     // Reminder UI
-    reminder_add_title: 'Add Reminder',
+    reminder_add_title: 'Add Todo',
     reminder_step_title: 'Step {step}/5',
     reminder_step1_title: '🔔 Title',
-    reminder_step1_desc: 'Enter the reminder title',
+    reminder_step1_desc: 'Enter the todo title',
     reminder_step2_title: '📅 Date & ⏰ Time',
-    reminder_step2_desc: 'Set the reminder date and time (optional)',
+    reminder_step2_desc: 'Set the todo date and time (optional)',
     reminder_step2_date_toggle: 'Set Date',
     reminder_step2_time_toggle: 'Set Time',
     reminder_step3_title: '🔄 Recurring',
@@ -1224,7 +1086,7 @@ const translations = {
     reminder_step4_title: '📝 Description',
     reminder_step4_desc: 'Add optional description',
     reminder_step5_title: '✅ Enable',
-    reminder_step5_desc: 'Choose whether to enable reminder',
+    reminder_step5_desc: 'Choose whether to enable todo',
     reminder_next_button: 'Next',
     reminder_back_button: 'Back',
     reminder_submit_button: 'Add',
@@ -1498,7 +1360,7 @@ const App: React.FC = () => {
     const [language, setLanguage] = useState<string>('ko'); // localStorage 제거
     const [todos, setTodos] = useState<Goal[]>([]); // localStorage 제거
     const [folders, setFolders] = useState<Folder[]>([]); // localStorage 제거
-    const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);  // 현재 폴더
+    const [currentFolderId, setCurrentFolderId] = useState<string | null>('my-goals');  // 현재 폴더
     const [filter, setFilter] = useState<string>('all');
     const [categoryFilter, setCategoryFilter] = useState<string>('all');  // 카테고리 필터
     const [sortType, setSortType] = useState<string>('manual');
@@ -1548,7 +1410,6 @@ const App: React.FC = () => {
     const [isOfflineMode, setIsOfflineMode] = useState<boolean>(false);
     const [isAutoSyncEnabled, setIsAutoSyncEnabled] = useState<boolean>(true); // 기본값: true
     const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>('default');
-    const [isDeadlineNotificationEnabled, setIsDeadlineNotificationEnabled] = useState<boolean>(true); // 마감일 임박 알림 설정
     const [googleUser, setGoogleUser] = useState<User | null>(null);
     const [shareableLink, setShareableLink] = useState<string>('');
     const [isGeneratingLink, setIsGeneratingLink] = useState<boolean>(false);
@@ -1559,6 +1420,7 @@ const App: React.FC = () => {
     const [isSyncingData, setIsSyncingData] = useState<boolean>(false);
     const [isLoadingData, setIsLoadingData] = useState<boolean>(false);
     const [isAuthLoading, setIsAuthLoading] = useState<boolean>(true); // 인증 상태 로딩
+    const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState<boolean>(false); // 카테고리 드롭다운 상태
 
     // 🔄 활동 감지 기반 동기화 시스템
     const [lastActivityTime, setLastActivityTime] = useState<number>(0);
@@ -1587,21 +1449,6 @@ const App: React.FC = () => {
         return () => window.removeEventListener('focus', handleFocus);
     }, []);
 
-    // 마감일 임박 알림 체크 (30분마다)
-    useEffect(() => {
-        const checkNotifications = () => {
-            checkDeadlineNotifications(todos, isDeadlineNotificationEnabled);
-        };
-
-        // 즉시 체크
-        checkNotifications();
-
-        // 30분마다 체크
-        const interval = setInterval(checkNotifications, 30 * 60 * 1000); // 30분 = 1800000ms
-
-        return () => clearInterval(interval);
-    }, [todos, isDeadlineNotificationEnabled]);
-
     // Firebase 로그인 상태 감시 및 데이터 자동 로드 + 실시간 리스너
     useEffect(() => {
         let todosUnsubscribe: (() => void) | null = null;
@@ -1616,9 +1463,6 @@ const App: React.FC = () => {
                 // 로그인 성공 시 Firebase에서 모든 데이터 자동 로드
                 console.log('🔑 사용자 로그인 감지 - Firebase 데이터 로드 시작');
                 await loadAllDataFromFirebase(user);
-                
-                // FCM 토큰 등록
-                await registerFCMToken(user);
                 
                 // 🔥 실시간 데이터 동기화 리스너 설정
                 console.log('📡 실시간 데이터 동기화 리스너 설정 중...');
@@ -3045,16 +2889,7 @@ const App: React.FC = () => {
                     const isInStandalone = isStandalone();
                     const isMobileDevice = isMobile();
                     
-                    if (isInStandalone && isMobileDevice) {
-                        // PWA로 설치된 모바일 앱에서만 알림 권한 요청
-                        setTimeout(() => {
-                            requestNotificationPermission().then((granted) => {
-                                if (granted) {
-                                    subscribeToPushNotifications();
-                                }
-                            });
-                        }, 2000);
-                    }
+                    // PWA 환경에서는 추가 설정 없음
                 })
                 .catch((registrationError) => {
                     console.log('SW registration failed: ', registrationError);
@@ -3132,6 +2967,14 @@ const App: React.FC = () => {
                 // 3. folderId가 undefined이거나 개인 폴더인 목표들
                 if (todo.isSharedTodo === true) return false; // 공유 목표 제외
                 
+                const folder = folders.find(f => f.id === todo.folderId);
+                if (!folder) return true; // 폴더에 속하지 않은 목표는 개인 목표
+                
+                return folder.isShared !== true; // 공유 폴더가 아닌 폴더의 목표만 포함
+            });
+        } else if (currentFolderId === 'my-goals') {
+            // "나의 목표": 사용자의 개인 목표만 표시 (공유되지 않은 폴더의 목표들 + 폴더에 속하지 않은 목표들)
+            sortedTodos = sortedTodos.filter(todo => {
                 const folder = folders.find(f => f.id === todo.folderId);
                 if (!folder) return true; // 폴더에 속하지 않은 목표는 개인 목표
                 
@@ -4675,13 +4518,15 @@ const App: React.FC = () => {
                                 {filteredTodos.length > 0 && (
                                     <div className="section-title" style={{ 
                                         fontSize: '18px', 
-                                        fontWeight: 'bold', 
+                                        fontWeight: '600', 
                                         marginBottom: '16px',
                                         color: 'var(--text-color)',
                                         borderBottom: '2px solid var(--primary-color)',
-                                        paddingBottom: '8px'
+                                        paddingBottom: '8px',
+                                        display: 'inline-block',
+                                        position: 'relative'
                                     }}>
-                                    미리 알림
+                                    할일
                                     </div>
                                 )}
                                 <TodoList todos={filteredTodos} onToggleComplete={handleToggleComplete} onDelete={handleDeleteTodo} onEdit={setEditingTodo} onInfo={setInfoTodo} t={t} filter={filter} randomEncouragement={randomEncouragement} isSelectionMode={isSelectionMode} selectedTodoIds={selectedTodoIds} onSelectTodo={handleSelectTodo} folders={folders} onMoveToFolder={handleMoveToFolder} />
@@ -4766,8 +4611,6 @@ const App: React.FC = () => {
                 onDiagnoseFirebase={diagnoseFirebaseSetup}
                 notificationPermission={notificationPermission}
                 setNotificationPermission={setNotificationPermission}
-                isDeadlineNotificationEnabled={isDeadlineNotificationEnabled}
-                setIsDeadlineNotificationEnabled={setIsDeadlineNotificationEnabled}
             />}
             {isVersionInfoOpen && <VersionInfoModal onClose={() => setIsVersionInfoOpen(false)} t={t} />}
             {isUsageGuideOpen && <UsageGuideModal onClose={() => setIsUsageGuideOpen(false)} t={t} />}
@@ -5022,13 +4865,13 @@ const FolderNavigator: React.FC<{
         <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', overflowX: 'auto', display: 'flex', gap: '8px', alignItems: 'center', backgroundColor: 'var(--card-bg-color)' }}>
             {/* Root folder button */}
             <button 
-                onClick={() => onSetCurrentFolder(null)}
+                onClick={() => onSetCurrentFolder('my-goals')}
                 style={{
                     padding: '6px 12px',
                     borderRadius: '8px',
                     border: 'none',
-                    backgroundColor: currentFolderId === null ? 'var(--primary-color)' : 'transparent',
-                    color: currentFolderId === null ? 'white' : 'var(--text-color)',
+                    backgroundColor: currentFolderId === 'my-goals' ? 'var(--primary-color)' : 'transparent',
+                    color: currentFolderId === 'my-goals' ? 'white' : 'var(--text-color)',
                     cursor: 'pointer',
                     fontSize: '0.9rem',
                     fontWeight: 500,
@@ -5422,6 +5265,9 @@ const Header: React.FC<{
 }) => {
     const [isFilterPopoverOpen, setIsFilterPopoverOpen] = useState(false);
     const [isCollaborationPopoverOpen, setIsCollaborationPopoverOpen] = useState(false);
+    const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState(false);
+    const [isAddCategoryModalOpen, setIsAddCategoryModalOpen] = useState(false);
+    const [newCategoryName, setNewCategoryName] = useState('');
 
     const currentFolder = currentFolderId ? folders.find(f => f.id === currentFolderId) : null;
     const collaborationSettings = currentFolder?.collaborationSettings;
@@ -5431,6 +5277,8 @@ const Header: React.FC<{
         const closePopovers = () => {
             setIsFilterPopoverOpen(false);
             setIsCollaborationPopoverOpen(false);
+            setIsCategoryDropdownOpen(false);
+            setIsAddCategoryModalOpen(false);
         };
         document.addEventListener('click', closePopovers);
         document.addEventListener('touchstart', closePopovers);
@@ -5449,8 +5297,22 @@ const Header: React.FC<{
         e.stopPropagation();
     };
 
+    const handleAddCategory = () => {
+        if (newCategoryName.trim() && !userCategories.includes(newCategoryName.trim())) {
+            onAddCategory(newCategoryName.trim());
+            setNewCategoryName('');
+            setIsAddCategoryModalOpen(false);
+        }
+    };
+
+    const handleCancelAddCategory = () => {
+        setNewCategoryName('');
+        setIsAddCategoryModalOpen(false);
+    };
+
 
     return (
+        <>
         <header>
             <div className="header-left">
                 {isSelectionMode && <button onClick={onCancelSelection} className="header-action-button">{t('cancel_selection_button_label')}</button>}
@@ -5459,6 +5321,67 @@ const Header: React.FC<{
                 <h1>{t('my_goals_title')}</h1>
                 {!isSelectionMode && (
                     <div className="header-inline-actions">
+                        {/* 카테고리 드롭다운 */}
+                        <div className="category-dropdown-container">
+                            <button 
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setIsCategoryDropdownOpen(!isCategoryDropdownOpen);
+                                }} 
+                                className="category-dropdown-button"
+                                aria-label={t('category_filter_button_aria')}
+                            >
+                                <span>{categoryFilter === 'all' ? t('category_all') : categoryFilter}</span>
+                                <span className="dropdown-arrow">▼</span>
+                            </button>
+                            {isCategoryDropdownOpen && (
+                                <div className="category-dropdown-menu" onClick={stopPropagation}>
+                                    <div className="dropdown-header">
+                                        <span>{t('filter_category')}</span>
+                                        <button 
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setIsAddCategoryModalOpen(true);
+                                                setIsCategoryDropdownOpen(false);
+                                            }} 
+                                            className="add-category-button"
+                                            title="새 카테고리 추가"
+                                        >
+                                            +
+                                        </button>
+                                    </div>
+                                    <div className="dropdown-items">
+                                        <button 
+                                            onClick={() => { onCategoryFilter('all'); setIsCategoryDropdownOpen(false); }} 
+                                            className={`dropdown-item ${categoryFilter === 'all' ? 'active' : ''}`}
+                                        >
+                                            <span>{t('category_all')}</span>
+                                            {categoryFilter === 'all' && <span className="check-icon">✓</span>}
+                                        </button>
+                                        {userCategories.map((cat) => (
+                                            <div key={cat} className="dropdown-item-container">
+                                                <button 
+                                                    onClick={() => { onCategoryFilter(cat); setIsCategoryDropdownOpen(false); }} 
+                                                    className={`dropdown-item ${categoryFilter === cat ? 'active' : ''}`}
+                                                >
+                                                    <span>{cat}</span>
+                                                    {categoryFilter === cat && <span className="check-icon">✓</span>}
+                                                </button>
+                                                {!['school', 'work', 'personal', 'other'].includes(cat) && (
+                                                    <button 
+                                                        onClick={() => onRemoveCategory(cat)} 
+                                                        className="remove-category-button"
+                                                        title="카테고리 삭제"
+                                                    >
+                                                        ×
+                                                    </button>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
                         <button onClick={onToggleViewMode} className="header-icon-button" aria-label={isViewModeCalendar ? t('list_view_button_aria') : t('calendar_view_button_aria')}>{isViewModeCalendar ? icons.list : icons.calendar}</button>
                         <div className="filter-sort-container">
                             <button onClick={toggleFilterPopover} onTouchStart={toggleFilterPopover} className="header-icon-button" aria-label={t('filter_sort_button_aria')}>{isAiSorting ? <div className="spinner" /> : icons.filter}</button>
@@ -5472,29 +5395,6 @@ const Header: React.FC<{
                                         <button onClick={() => { onFilter('all'); }} className={`popover-action-button ${filter === 'all' ? 'active' : ''}`}><span>{t('filter_all')}</span>{filter === 'all' && icons.check}</button>
                                         <button onClick={() => { onFilter('active'); }} className={`popover-action-button ${filter === 'active' ? 'active' : ''}`}><span>{t('filter_active')}</span>{filter === 'active' && icons.check}</button>
                                         <button onClick={() => { onFilter('completed'); }} className={`popover-action-button ${filter === 'completed' ? 'active' : ''}`}><span>{t('filter_completed')}</span>{filter === 'completed' && icons.check}</button>
-                                    </div>
-                                    <div className="popover-section">
-                                        <h4 style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                                            <span>{t('filter_category')}</span>
-                                            <button onClick={() => {
-                                                const newCat = prompt('새 카테고리 이름: (New category name:)');
-                                                if (newCat && newCat.trim() && !userCategories.includes(newCat.trim())) {
-                                                    onAddCategory(newCat.trim());
-                                                }
-                                            }} style={{ background: 'none', border: 'none', color: 'var(--primary-color)', cursor: 'pointer', fontSize: '1.2rem', padding: '0' }}>+</button>
-                                        </h4>
-                                        <button onClick={() => { onCategoryFilter('all'); }} className={`popover-action-button ${categoryFilter === 'all' ? 'active' : ''}`}><span>{t('category_all')}</span>{categoryFilter === 'all' && icons.check}</button>
-                                        {userCategories.map((cat) => (
-                                            <div key={cat} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                <button onClick={() => { onCategoryFilter(cat); }} className={`popover-action-button ${categoryFilter === cat ? 'active' : ''}`} style={{ flex: 1, justifyContent: 'space-between' }}>
-                                                    <span>{cat}</span>
-                                                    {categoryFilter === cat && icons.check}
-                                                </button>
-                                                {!['school', 'work', 'personal', 'other'].includes(cat) && (
-                                                    <button onClick={() => onRemoveCategory(cat)} style={{ background: 'rgba(255, 59, 48, 0.1)', border: 'none', color: 'var(--danger-color)', borderRadius: '4px', padding: '4px 8px', cursor: 'pointer', fontSize: '0.8rem' }}>✕</button>
-                                                )}
-                                            </div>
-                                        ))}
                                     </div>
                                     <div className="popover-section">
                                         <h4>{t('sort_title')}</h4>
@@ -5697,6 +5597,52 @@ const Header: React.FC<{
                 )}
             </div>
         </header>
+        
+        {/* 카테고리 추가 모달 */}
+        {isAddCategoryModalOpen && (
+            <div className="modal-backdrop alert-backdrop">
+                <div className="modal-content alert-modal">
+                    <div className="alert-content">
+                        <h2>새 카테고리 추가</h2>
+                        <input
+                            type="text"
+                            value={newCategoryName}
+                            onChange={(e) => setNewCategoryName(e.target.value)}
+                            placeholder="카테고리 이름을 입력하세요"
+                            style={{
+                                width: '100%',
+                                padding: '12px',
+                                border: '1px solid var(--border-color)',
+                                borderRadius: '8px',
+                                backgroundColor: 'var(--input-bg-color)',
+                                color: 'var(--text-color)',
+                                fontSize: '16px',
+                                marginTop: '16px'
+                            }}
+                            onKeyPress={(e) => {
+                                if (e.key === 'Enter') {
+                                    handleAddCategory();
+                                }
+                            }}
+                            autoFocus
+                        />
+                    </div>
+                    <div className="modal-buttons">
+                        <button onClick={handleCancelAddCategory} className="secondary">
+                            취소
+                        </button>
+                        <button 
+                            onClick={handleAddCategory} 
+                            className="primary"
+                            disabled={!newCategoryName.trim() || userCategories.includes(newCategoryName.trim())}
+                        >
+                            추가
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
+        </>
     );
 };
 
@@ -6815,8 +6761,6 @@ const SettingsModal: React.FC<{
     onDiagnoseFirebase: () => void;
     notificationPermission: NotificationPermission;
     setNotificationPermission: (permission: NotificationPermission) => void;
-    isDeadlineNotificationEnabled: boolean;
-    setIsDeadlineNotificationEnabled: (enabled: boolean) => void;
 }> = ({
     onClose, isDarkMode, onToggleDarkMode, themeMode, onThemeChange, backgroundTheme, onSetBackgroundTheme,
     onExportData, onImportData, setAlertConfig, onDeleteAllData, dataActionStatus,
@@ -6825,7 +6769,7 @@ const SettingsModal: React.FC<{
     googleUser, onGoogleLogin, onGoogleLogout, onSyncDataToFirebase, onLoadDataFromFirebase,
     isGoogleLoggingIn = false, isGoogleLoggingOut = false, isSyncingData = false, isLoadingData = false,
     isAutoSyncEnabled, setIsAutoSyncEnabled, onDiagnoseFirebase,
-    notificationPermission, setNotificationPermission, isDeadlineNotificationEnabled, setIsDeadlineNotificationEnabled
+    notificationPermission, setNotificationPermission
 
 }) => {
     const [isClosing, handleClose] = useModalAnimation(onClose);
@@ -6838,7 +6782,6 @@ const SettingsModal: React.FC<{
     
     const tabs = [
         { id: 'appearance', label: t('settings_section_background'), icon: icons.background },
-        { id: 'notifications', label: t('settings_notifications'), icon: icons.settings },
         { id: 'general', label: t('settings_section_general'), icon: icons.settings },
         { id: 'data', label: t('settings_section_data'), icon: icons.data },
     ];
@@ -6937,89 +6880,6 @@ const SettingsModal: React.FC<{
                         </div>
                     </>
                 );
-            case 'notifications':
-                const isNotificationEnabled = notificationPermission === 'granted';
-                const isNotificationDenied = notificationPermission === 'denied';
-                
-                return (
-                    <>
-                        {isNotificationDenied && (
-                            <div className="settings-section-body" style={{ marginBottom: '16px' }}>
-                                <div className="notification-warning">
-                                    <div className="notification-warning-title">
-                                        {t('notification_permission_denied')}
-                                    </div>
-                                    <div className="notification-warning-desc">
-                                        {t('notification_permission_denied_desc')}
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-                        
-                        <div className="settings-section-header">{t('notification_settings_title')}</div>
-                        <div className="settings-section-body">
-                            <label className={`settings-item ${!isNotificationEnabled ? 'disabled' : ''}`}>
-                                <div>
-                                    <span style={{ opacity: isNotificationEnabled ? 1 : 0.5 }}>{t('notification_deadline')}</span>
-                                    <div style={{ fontSize: '12px', opacity: isNotificationEnabled ? 0.7 : 0.3, marginTop: '4px' }}>{t('notification_deadline_desc')}</div>
-                                </div>
-                                <div className="theme-toggle-switch">
-                                    <input 
-                                        type="checkbox" 
-                                        checked={isNotificationEnabled && isDeadlineNotificationEnabled} 
-                                        disabled={!isNotificationEnabled}
-                                        onChange={(e) => {
-                                            if (isNotificationEnabled) {
-                                                setIsDeadlineNotificationEnabled(e.target.checked);
-                                            }
-                                        }} 
-                                    />
-                                    <span className="slider round" style={{ opacity: isNotificationEnabled ? 1 : 0.5 }}></span>
-                                </div>
-                            </label>
-                            <label className={`settings-item ${!isNotificationEnabled ? 'disabled' : ''}`}>
-                                <div>
-                                    <span style={{ opacity: isNotificationEnabled ? 1 : 0.5 }}>{t('notification_suggestion')}</span>
-                                    <div style={{ fontSize: '12px', opacity: isNotificationEnabled ? 0.7 : 0.3, marginTop: '4px' }}>지정된 시간에 할일을 제안합니다.</div>
-                                </div>
-                                <div className="theme-toggle-switch">
-                                    <input 
-                                        type="checkbox" 
-                                        checked={isNotificationEnabled} 
-                                        disabled={!isNotificationEnabled}
-                                        onChange={() => {}} 
-                                    />
-                                    <span className="slider round" style={{ opacity: isNotificationEnabled ? 1 : 0.5 }}></span>
-                                </div>
-                            </label>
-                        </div>
-                        <div className="settings-section-header">알림 권한</div>
-                        <div className="settings-section-body">
-                            <button 
-                                className="settings-item action-item" 
-                                onClick={async () => {
-                                    const granted = await requestNotificationPermission();
-                                    if (granted) {
-                                        setNotificationPermission('granted');
-                                        setToastMessage('알림 권한이 허용되었습니다.');
-                                        await subscribeToPushNotifications();
-                                    } else {
-                                        setNotificationPermission('denied');
-                                        setToastMessage('알림 권한이 거부되었습니다.');
-                                    }
-                                }}
-                            >
-                                <span className="action-text">
-                                    {isNotificationEnabled ? '알림 권한 허용됨' : t('notification_permission_request')}
-                                </span>
-                                {isNotificationEnabled && <span style={{ color: 'var(--success-color)' }}>✓</span>}
-                            </button>
-                            <div style={{ fontSize: '12px', opacity: 0.7, padding: '12px', marginTop: '8px' }}>
-                                현재 권한: {notificationPermission === 'granted' ? '✓ 허용됨' : notificationPermission === 'denied' ? '✗ 거부됨' : '? 미정'}
-                            </div>
-                        </div>
-                    </>
-                );
             case 'general':
                 return (
                     <>
@@ -7062,15 +6922,6 @@ const SettingsModal: React.FC<{
                             <div className="settings-item nav-indicator" onClick={onOpenUsageGuide}>
                                 <span>{t('usage_guide_title')}</span>
                                 <div className="settings-item-value-with-icon">
-                                    {icons.forward}
-                                </div>
-                            </div>
-                            <div className="settings-item nav-indicator" onClick={() => {
-                                setAlertMessage(`이것은 매우 긴 알림 메시지입니다.\n\n이 메시지는 여러 줄에 걸쳐 작성되었으며, 알림 팝업이 내용에 맞게 세로로 확장되는지 테스트하기 위한 목적으로 만들어졌습니다.\n\n줄바꿈 문자도 포함되어 있고,\n여러 문단으로 구성되어 있습니다.\n\n이런 식으로 긴 에러 메시지나 안내 메시지가 표시될 때도 팝업이 적절하게 크기 조정이 되어야 합니다.\n\n스크롤이 필요할 정도로 매우 긴 내용일 때는 스크롤바가 나타나야 하고, 버튼 영역은 항상 하단에 고정되어 있어야 합니다.`);
-                            }}>
-                                <span>{t('test_long_alert')}</span>
-                                <div className="settings-item-value-with-icon">
-                                    <span>{t('test_long_alert_desc')}</span>
                                     {icons.forward}
                                 </div>
                             </div>
@@ -7288,12 +7139,12 @@ const VersionInfoModal: React.FC<{ onClose: () => void; t: (key: string) => any;
     const buildNumber = "2.0.0 (25.10.24)";
 
             const changelogItems = [
-        { icon: '🔔', title: '미리알림 관리', desc: 'Step-by-step 미리알림 추가. 제목, 기한(선택), 시간(선택), 반복 설정, 설명, 활성화 여부' },
+        { icon: '🔔', title: '할일 관리', desc: 'Step-by-step 할일 추가. 제목, 기한(선택), 시간(선택), 반복 설정, 설명, 활성화 여부' },
         { icon: '📅', title: '유연한 날짜/시간 설정', desc: '기한 없음, 시간 없음 옵션으로 필요한 정보만 선택적 입력 가능' },
         { icon: '🎯', title: 'WOOP 목표 설정', desc: '5단계 마법사 (Wish → Outcome → Obstacle → Plan → 기한/반복)로 구조화된 목표 계획' },
         { icon: '🤖', title: 'AI 코치 피드백', desc: 'Gemini API 기반 각 단계별 실시간 AI 피드백으로 목표 개선' },
         { icon: '🔐', title: 'Google 로그인', desc: 'Google OAuth 인증으로 보안 강화 및 계정 관리' },
-        { icon: '☁️', title: 'Firebase 클라우드 동기화', desc: '목표, 설정, 미리알림 등 모든 데이터 Firebase Firestore에 자동 저장' },
+        { icon: '☁️', title: 'Firebase 클라우드 동기화', desc: '목표, 설정, 할일 등 모든 데이터 Firebase Firestore에 자동 저장' },
         { icon: '🔄', title: '자동 동기화 제어', desc: '켜고 끄기 옵션으로 클라우드 자동 동기화 제어 가능' },
         { icon: '🌙', title: '다크 모드 & 테마', desc: '시스템/라이트/다크 모드 자동 감지 및 8가지 배경 테마 지원' },
         { icon: '📱', title: 'PWA & 오프라인', desc: '모바일 PWA 자동 설치 배너, 오프라인 모드, 푸시 알림 지원' },
