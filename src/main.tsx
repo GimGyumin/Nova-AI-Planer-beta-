@@ -5991,9 +5991,30 @@ const GoalAssistantModal: React.FC<{ onClose: () => void; onAddTodo?: (newTodoDa
             setStep(s => s - 1);
         }
     };
+    // 모드 변경 함수 - "새로운 할일" 모드로 전환 시 WOOP 변수들 초기화
+    const handleModeChange = (newMode: 'woop' | 'quick' | 'automation') => {
+        if (newMode === 'quick') {
+            // "새로운 할일" 모드로 전환 시 WOOP 변수들을 초기화
+            setWish('');
+            setOutcome('');
+            setObstacle('');
+            setPlan('');
+        }
+        setMode(newMode);
+    };
+
     const handleSubmit = async () => {
+        // "새로운 할일" 모드일 때는 빠른 할일 생성 함수를 사용
+        if (mode === 'quick') {
+            console.log('🚀 새로운 할일 모드에서 handleSubmit 호출 - handleQuickTaskSubmit으로 전환');
+            handleQuickTaskSubmit();
+            return;
+        }
+        
+        // WOOP 목표 모드일 때만 기존 로직 사용
         if (!validateStep(5)) return;
         const goalData = { wish, outcome, obstacle, plan, isRecurring, recurringDays, deadline: noDeadline ? '' : deadline, category };
+        console.log('🎯 WOOP 목표 생성:', goalData);
         try {
             if (existingTodo && onEditTodo) {
                 await onEditTodo({ ...existingTodo, ...goalData });
@@ -6008,7 +6029,7 @@ const GoalAssistantModal: React.FC<{ onClose: () => void; onAddTodo?: (newTodoDa
     const handleQuickTaskSubmit = () => {
         if (!quickTaskTitle.trim()) return;
         if (onAddTodo) {
-            onAddTodo({
+            const todoData = {
                 title: quickTaskTitle.trim(),
                 wish: '',
                 outcome: '',
@@ -6018,7 +6039,9 @@ const GoalAssistantModal: React.FC<{ onClose: () => void; onAddTodo?: (newTodoDa
                 recurringDays: [],
                 deadline: quickTaskDeadline,
                 category: quickTaskCategory
-            });
+            };
+            console.log('🆕 새로운 할일 생성:', todoData);
+            onAddTodo(todoData);
         }
         setQuickTaskTitle('');
         setQuickTaskDeadline('');
@@ -6040,9 +6063,9 @@ const GoalAssistantModal: React.FC<{ onClose: () => void; onAddTodo?: (newTodoDa
             {!existingTodo && (
                  <div className="modal-mode-switcher-container">
                     <div className="modal-mode-switcher">
-                        <button onClick={() => setMode('woop')} className={mode === 'woop' ? 'active' : ''}>{t('goal_assistant_mode_woop')}</button>
-                        <button onClick={() => setMode('quick')} className={mode === 'quick' ? 'active' : ''}>새로운 할일</button>
-                        <button onClick={() => setMode('automation')} className={mode === 'automation' ? 'active' : ''}>{t('goal_assistant_mode_automation')}</button>
+                        <button onClick={() => handleModeChange('woop')} className={mode === 'woop' ? 'active' : ''}>{t('goal_assistant_mode_woop')}</button>
+                        <button onClick={() => handleModeChange('quick')} className={mode === 'quick' ? 'active' : ''}>새로운 할일</button>
+                        <button onClick={() => handleModeChange('automation')} className={mode === 'automation' ? 'active' : ''}>{t('goal_assistant_mode_automation')}</button>
                     </div>
                 </div>
             )}
