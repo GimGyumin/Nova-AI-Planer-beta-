@@ -723,6 +723,13 @@ const translations = {
     add_button: '추가',
     save_button: '저장',
     goal_details_modal_title: '목표 정보',
+    todo_details_title: '할일 정보',
+    task_title_label: '할일',
+    due_date_label: '마감일',
+    time_label: '시간',
+    completion_status_label: '완료 상태',
+    completed: '완료됨',
+    pending: '진행 중',
     ai_coach_suggestion: '요약 보기',
     ai_analyzing: '분석 중',
     close_button: '닫기',
@@ -1031,6 +1038,13 @@ const translations = {
     add_button: 'Add',
     save_button: 'Save',
     goal_details_modal_title: 'Goal Details',
+    todo_details_title: 'Task Details',
+    task_title_label: 'Task',
+    due_date_label: 'Due Date',
+    time_label: 'Time',
+    completion_status_label: 'Status',
+    completed: 'Completed',
+    pending: 'In Progress',
     ai_coach_suggestion: 'View Summary',
     ai_analyzing: 'Analyzing...',
     close_button: 'Close',
@@ -6215,14 +6229,46 @@ const GoalInfoModal: React.FC<{
             setIsAiLoading(false);
         }
     };
+    const isWoop = isWoopGoal(todo);
+
     return (
         <Modal onClose={handleClose} isClosing={isClosing} className="info-modal">
             <div className="info-modal-content">
-                <h2>{t('goal_details_modal_title')}</h2>
-                <div className="info-section"><h4>{t('wish_label')}</h4><p>{todo.wish}</p></div>
-                <div className="info-section"><h4>{t('outcome_label')}</h4><p>{todo.outcome}</p></div>
-                <div className="info-section"><h4>{t('obstacle_label')}</h4><p>{todo.obstacle}</p></div>
-                <div className="info-section"><h4>{t('plan_label')}</h4><p>{todo.plan}</p></div>
+                <h2>{isWoop ? t('goal_details_modal_title') : t('todo_details_title')}</h2>
+                
+                {isWoop ? (
+                    // WOOP 목표인 경우
+                    <>
+                        <div className="info-section"><h4>{t('wish_label')}</h4><p>{todo.wish}</p></div>
+                        <div className="info-section"><h4>{t('outcome_label')}</h4><p>{todo.outcome}</p></div>
+                        <div className="info-section"><h4>{t('obstacle_label')}</h4><p>{todo.obstacle}</p></div>
+                        <div className="info-section"><h4>{t('plan_label')}</h4><p>{todo.plan}</p></div>
+                    </>
+                ) : (
+                    // 일반 할일인 경우
+                    <>
+                        <div className="info-section">
+                            <h4>{t('task_title_label')}</h4>
+                            <p>{todo.title}</p>
+                        </div>
+                        {todo.date && (
+                            <div className="info-section">
+                                <h4>{t('due_date_label')}</h4>
+                                <p>{new Date(todo.date).toLocaleDateString()}</p>
+                            </div>
+                        )}
+                        {todo.time && (
+                            <div className="info-section">
+                                <h4>{t('time_label')}</h4>
+                                <p>{todo.time}</p>
+                            </div>
+                        )}
+                        <div className="info-section">
+                            <h4>{t('completion_status_label')}</h4>
+                            <p>{todo.completed ? t('completed') : t('pending')}</p>
+                        </div>
+                    </>
+                )}
                 
                 {/* 카테고리 선택 섹션 */}
                 {userCategories && userCategories.length > 0 && onUpdateGoal && (
@@ -6259,10 +6305,13 @@ const GoalInfoModal: React.FC<{
                     </div>
                 )}
                 
-                <div className="ai-analysis-section">
-                    <h4>{t('ai_coach_suggestion')}</h4>
-                    {isAiLoading ? <p>{t('ai_analyzing')}</p> : aiFeedback ? <p>{aiFeedback}</p> : aiError ? <p className="ai-error">{t('ai_sort_error_message')}</p> : <button onClick={getAIFeedback} className="feedback-button">{t('ai_coach_suggestion')}</button>}
-                </div>
+                {/* AI 분석 섹션은 WOOP 목표에서만 표시 */}
+                {isWoop && (
+                    <div className="ai-analysis-section">
+                        <h4>{t('ai_coach_suggestion')}</h4>
+                        {isAiLoading ? <p>{t('ai_analyzing')}</p> : aiFeedback ? <p>{aiFeedback}</p> : aiError ? <p className="ai-error">{t('ai_sort_error_message')}</p> : <button onClick={getAIFeedback} className="feedback-button">{t('ai_coach_suggestion')}</button>}
+                    </div>
+                )}
             </div>
             <div className="modal-buttons">
                 {onDeleteGoal && (
