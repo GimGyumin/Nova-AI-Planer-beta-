@@ -1254,8 +1254,25 @@ li.selection-mode.selected .checkbox-container .checkmark:after {
 .info-section h4 { font-size: 0.8rem; font-weight: 600; color: var(--text-secondary-color); text-transform: uppercase; margin-bottom: 4px; }
 .info-section p { font-size: 1.05rem; }
 .ai-analysis-section p { font-style: italic; padding: 12px; background-color: var(--button-bg-color); border-radius: 12px; }
-.info-modal .modal-buttons { margin-top: 24px; }
-.info-modal .modal-buttons button { width: 100%; padding: 14px; background-color: var(--primary-color); color: white; font-size: 1rem; font-weight: 600; border-radius: 22px; }
+.info-modal .modal-buttons { 
+    margin-top: 24px; 
+    display: flex; 
+    gap: 16px; 
+    flex-direction: column;
+}
+.info-modal .modal-buttons button { 
+    width: 100%; 
+    padding: 14px; 
+    background-color: var(--primary-color); 
+    color: white; 
+    font-size: 1rem; 
+    font-weight: 600; 
+    border-radius: 22px; 
+}
+.info-modal .modal-buttons button.secondary.destructive {
+    background-color: var(--danger-color);
+    margin-bottom: 8px;
+}
 
 
 /* --- NEW SETTINGS MODAL --- */
