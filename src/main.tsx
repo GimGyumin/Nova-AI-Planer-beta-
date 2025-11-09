@@ -7408,12 +7408,13 @@ const TodoEditModal: React.FC<{
     const [deadline, setDeadline] = useState(todo.deadline || '');
     const [isRecurring, setIsRecurring] = useState(todo.isRecurring || false);
     const [recurringDays, setRecurringDays] = useState<number[]>(todo.recurringDays || []);
+    const [noDeadline, setNoDeadline] = useState(!todo.deadline);
 
     const handleSave = () => {
         const updatedTodo: Goal = {
             ...todo,
             title: title.trim(),
-            deadline: deadline || '',
+            deadline: noDeadline ? '' : deadline,
             isRecurring,
             recurringDays
         };
@@ -7430,64 +7431,135 @@ const TodoEditModal: React.FC<{
     };
 
     return (
-        <Modal onClose={handleClose} isClosing={isClosing} className="todo-edit-modal">
+        <Modal onClose={handleClose} isClosing={isClosing} className="goal-assistant-modal">
             <div className="modal-header">
                 <h2>{t('edit_todo_title')}</h2>
                 <button onClick={handleClose} className="close-button" aria-label={t('close_button')}>×</button>
             </div>
-            <div className="modal-body">
-                <div className="form-group">
-                    <label>{t('todo_title_label')}</label>
-                    <input 
-                        type="text" 
-                        value={title} 
-                        onChange={(e) => setTitle(e.target.value)}
-                        placeholder={t('todo_title_placeholder')}
-                        autoFocus
-                    />
+
+            <div className="goal-assistant-body">
+                <div style={{ padding: '24px 16px', flex: 1, overflowY: 'auto' }}>
+                    <div style={{ marginBottom: '20px' }}>
+                        <div className="step-guidance">
+                            <p className="tip">{t('todo_title_label')}</p>
+                        </div>
+                        <textarea 
+                            value={title} 
+                            onChange={(e) => setTitle(e.target.value)}
+                            placeholder={t('todo_title_placeholder')}
+                            rows={2}
+                            style={{ 
+                                width: '100%', 
+                                padding: '12px', 
+                                borderRadius: '8px', 
+                                border: '1px solid var(--border-color)', 
+                                backgroundColor: 'var(--input-bg-color)', 
+                                color: 'var(--text-color)', 
+                                fontSize: '14px', 
+                                fontFamily: 'inherit', 
+                                resize: 'none', 
+                                marginTop: '12px' 
+                            }}
+                            autoFocus
+                        />
+                    </div>
+
+                    <hr />
+
+                    <div style={{ marginBottom: '20px' }}>
+                        <div className="step-guidance" style={{ marginTop: '16px' }}>
+                            <p className="tip">{t('deadline_label')} (선택)</p>
+                        </div>
+                        <label className="settings-item standalone-toggle" style={{ marginTop: '12px' }}>
+                            <span style={{ fontWeight: '500' }}>마감일 설정</span>
+                            <label className="theme-toggle-switch">
+                                <input 
+                                    type="checkbox" 
+                                    checked={!noDeadline} 
+                                    onChange={(e) => {
+                                        setNoDeadline(!e.target.checked);
+                                        if (e.target.checked && !deadline) {
+                                            setDeadline(new Date().toISOString().split('T')[0]);
+                                        }
+                                    }} 
+                                />
+                                <span className="slider round"></span>
+                            </label>
+                        </label>
+                        {!noDeadline && (
+                            <div style={{ marginTop: '12px' }}>
+                                <input 
+                                    type="date" 
+                                    value={deadline} 
+                                    onChange={(e) => setDeadline(e.target.value)}
+                                    style={{ 
+                                        width: '100%', 
+                                        padding: '10px', 
+                                        borderRadius: '6px', 
+                                        border: '1px solid var(--border-color)', 
+                                        backgroundColor: 'var(--input-bg-color)', 
+                                        color: 'var(--text-color)', 
+                                        fontSize: '13px' 
+                                    }}
+                                />
+                            </div>
+                        )}
+                    </div>
+
+                    <hr />
+
+                    <div style={{ marginBottom: '20px' }}>
+                        <div className="step-guidance" style={{ marginTop: '16px' }}>
+                            <p className="tip">{t('recurring_label')}</p>
+                        </div>
+                        <label className="settings-item standalone-toggle" style={{ marginTop: '12px' }}>
+                            <span style={{ fontWeight: '500' }}>반복 설정</span>
+                            <label className="theme-toggle-switch">
+                                <input 
+                                    type="checkbox" 
+                                    checked={isRecurring} 
+                                    onChange={(e) => setIsRecurring(e.target.checked)}
+                                />
+                                <span className="slider round"></span>
+                            </label>
+                        </label>
+                        
+                        {isRecurring && (
+                            <div style={{ marginTop: '12px' }}>
+                                <label style={{ fontSize: '12px', opacity: 0.7, display: 'block', marginBottom: '8px' }}>
+                                    {t('recurring_days_label')}
+                                </label>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '8px' }}>
+                                    {['월', '화', '수', '목', '금', '토', '일'].map((day, index) => (
+                                        <button 
+                                            key={index}
+                                            type="button"
+                                            onClick={() => toggleRecurringDay(index)}
+                                            style={{
+                                                padding: '8px 4px',
+                                                borderRadius: '6px',
+                                                border: recurringDays.includes(index) ? '2px solid var(--primary-color)' : '2px solid var(--border-color)',
+                                                backgroundColor: recurringDays.includes(index) ? 'var(--primary-color)' : 'transparent',
+                                                color: recurringDays.includes(index) ? 'white' : 'var(--text-color)',
+                                                fontSize: '12px',
+                                                fontWeight: '500',
+                                                cursor: 'pointer',
+                                                transition: 'all 0.2s ease'
+                                            }}
+                                        >
+                                            {day}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
                 </div>
                 
-                <div className="form-group">
-                    <label>{t('deadline_label')}</label>
-                    <input 
-                        type="date" 
-                        value={deadline} 
-                        onChange={(e) => setDeadline(e.target.value)}
-                    />
+                <div className="goal-assistant-nav">
+                    <button onClick={handleClose} className="secondary">{t('cancel_button')}</button>
+                    <button onClick={handleSave} className="primary" disabled={!title.trim()}>{t('save_button')}</button>
                 </div>
-
-                <div className="form-group">
-                    <label>
-                        <input 
-                            type="checkbox" 
-                            checked={isRecurring} 
-                            onChange={(e) => setIsRecurring(e.target.checked)}
-                        />
-                        {t('recurring_label')}
-                    </label>
-                </div>
-
-                {isRecurring && (
-                    <div className="form-group">
-                        <label>{t('recurring_days_label')}</label>
-                        <div className="day-selector">
-                            {['월', '화', '수', '목', '금', '토', '일'].map((day, index) => (
-                                <button 
-                                    key={index}
-                                    type="button"
-                                    onClick={() => toggleRecurringDay(index)}
-                                    className={`day-button ${recurringDays.includes(index) ? 'selected' : ''}`}
-                                >
-                                    {day}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-                )}
-            </div>
-            <div className="modal-buttons">
-                <button onClick={handleClose} className="secondary">{t('cancel_button')}</button>
-                <button onClick={handleSave} className="primary">{t('save_button')}</button>
             </div>
         </Modal>
     );
