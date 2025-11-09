@@ -928,6 +928,11 @@ const translations = {
     deadline_option_no_deadline: '마감일 없음',
     day_names_short_picker: ["월", "화", "수", "목", "금", "토", "일"],
     settings_delete_account: '내 데이터 완전 삭제',
+    edit_todo_title: '할일 수정',
+    todo_title_label: '할일 제목',
+    todo_title_placeholder: '할일을 입력하세요',
+    recurring_label: '반복 설정',
+    recurring_days_label: '반복 요일',
     delete_account_header: '데이터 삭제',
     delete_account_header_desc: '이 작업은 되돌릴 수 없으며, 모든 목표와 데이터가 영구적으로 제거됩니다.',
     version_update_title: '새로운 기능',
@@ -1132,6 +1137,11 @@ const translations = {
     woop_not_set: 'Not Set',
     settings_logout: 'Sign Out',
     settings_delete_account: 'Delete My Data',
+    edit_todo_title: 'Edit Todo',
+    todo_title_label: 'Todo Title',
+    todo_title_placeholder: 'Enter your todo',
+    recurring_label: 'Recurring',
+    recurring_days_label: 'Recurring Days',
     delete_account_header: 'Delete Data',
     delete_account_header_desc: 'This action is irreversible and will permanently delete all your goals and data.',
     data_deleting: 'Deleting...',
@@ -1211,6 +1221,11 @@ const getStartOfWeek = (date: Date, startOfWeek = 1): Date => { // 0=Sun, 1=Mon
     d.setDate(d.getDate() - diff);
     d.setHours(0, 0, 0, 0);
     return d;
+};
+
+// WOOP 목표인지 확인하는 함수
+const isWoopGoal = (goal: Goal): boolean => {
+    return !!(goal.wish || goal.outcome || goal.obstacle || goal.plan);
 };
 
 // --- UTF-8 안전한 인코딩/디코딩 함수 ---
@@ -4566,18 +4581,16 @@ const App: React.FC = () => {
             </div>
 
             {isGoalAssistantOpen && <GoalAssistantModal onClose={() => setIsGoalAssistantOpen(false)} onAddTodo={handleAddTodo} onAddMultipleTodos={handleAddMultipleTodos} t={t} language={language} createAI={createAI} userCategories={userCategories} />}
-            {editingTodo && <GoalAssistantModal onClose={() => setEditingTodo(null)} onEditTodo={handleEditTodo} existingTodo={editingTodo} t={t} language={language} createAI={createAI} />}
+            {editingTodo && isWoopGoal(editingTodo) && <GoalAssistantModal onClose={() => setEditingTodo(null)} onEditTodo={handleEditTodo} existingTodo={editingTodo} t={t} language={language} createAI={createAI} />}
+            {editingTodo && !isWoopGoal(editingTodo) && <TodoEditModal todo={editingTodo} onClose={() => setEditingTodo(null)} onSave={handleEditTodo} t={t} />}
             {infoTodo && <GoalInfoModal 
                 todo={infoTodo} 
                 onClose={() => setInfoTodo(null)} 
                 t={t} 
                 createAI={createAI}
-                onOpenCollaboration={(goal) => {
-                    // 현재 목표가 속한 폴더를 찾아 협업 설정
-                    const targetFolder = folders.find(f => f.id === goal.folderId) || (goal.folderId === null || goal.folderId === undefined ? null : undefined);
-                    if (targetFolder !== undefined) {
-                        setCollaboratingFolder(targetFolder || null);
-                    }
+                onDeleteGoal={(goalId) => {
+                    setInfoTodo(null);
+                    handleDeleteTodo(goalId);
                 }}
                 userCategories={userCategories}
                 onUpdateGoal={handleEditTodo}
@@ -6171,10 +6184,10 @@ const GoalInfoModal: React.FC<{
     onClose: () => void; 
     t: (key: string) => any; 
     createAI: () => GoogleGenAI | null;
-    onOpenCollaboration?: (goal: Goal) => void;
+    onDeleteGoal?: (goalId: number) => void;
     userCategories?: string[];
     onUpdateGoal?: (goal: Goal) => void;
-}> = ({ todo, onClose, t, createAI, onOpenCollaboration, userCategories, onUpdateGoal }) => {
+}> = ({ todo, onClose, t, createAI, onDeleteGoal, userCategories, onUpdateGoal }) => {
     const [isClosing, handleClose] = useModalAnimation(onClose);
     const [aiFeedback, setAiFeedback] = useState('');
     const [isAiLoading, setIsAiLoading] = useState(false);
@@ -6252,8 +6265,8 @@ const GoalInfoModal: React.FC<{
                 </div>
             </div>
             <div className="modal-buttons">
-                {onOpenCollaboration && (
-                    <button onClick={() => { onOpenCollaboration(todo); handleClose(); }} className="secondary">🤝 협업</button>
+                {onDeleteGoal && (
+                    <button onClick={() => { onDeleteGoal(todo.id); }} className="secondary destructive">🗑️ {t('delete_button')}</button>
                 )}
                 <button onClick={handleClose} className="primary">{t('close_button')}</button>
             </div>
@@ -7381,6 +7394,102 @@ const CalendarView: React.FC<{ todos: Goal[]; t: (key: string) => any; onGoalCli
                 })}
             </div>
         </div>
+    );
+};
+
+const TodoEditModal: React.FC<{
+    todo: Goal;
+    onClose: () => void;
+    onSave: (updatedTodo: Goal) => void;
+    t: (key: string) => any;
+}> = ({ todo, onClose, onSave, t }) => {
+    const [isClosing, handleClose] = useModalAnimation(onClose);
+    const [title, setTitle] = useState(todo.title || '');
+    const [deadline, setDeadline] = useState(todo.deadline || '');
+    const [isRecurring, setIsRecurring] = useState(todo.isRecurring || false);
+    const [recurringDays, setRecurringDays] = useState<number[]>(todo.recurringDays || []);
+
+    const handleSave = () => {
+        const updatedTodo: Goal = {
+            ...todo,
+            title: title.trim(),
+            deadline: deadline || '',
+            isRecurring,
+            recurringDays
+        };
+        onSave(updatedTodo);
+        handleClose();
+    };
+
+    const toggleRecurringDay = (dayIndex: number) => {
+        setRecurringDays(prev => 
+            prev.includes(dayIndex) 
+                ? prev.filter(d => d !== dayIndex)
+                : [...prev, dayIndex].sort()
+        );
+    };
+
+    return (
+        <Modal onClose={handleClose} isClosing={isClosing} className="todo-edit-modal">
+            <div className="modal-header">
+                <h2>{t('edit_todo_title')}</h2>
+                <button onClick={handleClose} className="close-button" aria-label={t('close_button')}>×</button>
+            </div>
+            <div className="modal-body">
+                <div className="form-group">
+                    <label>{t('todo_title_label')}</label>
+                    <input 
+                        type="text" 
+                        value={title} 
+                        onChange={(e) => setTitle(e.target.value)}
+                        placeholder={t('todo_title_placeholder')}
+                        autoFocus
+                    />
+                </div>
+                
+                <div className="form-group">
+                    <label>{t('deadline_label')}</label>
+                    <input 
+                        type="date" 
+                        value={deadline} 
+                        onChange={(e) => setDeadline(e.target.value)}
+                    />
+                </div>
+
+                <div className="form-group">
+                    <label>
+                        <input 
+                            type="checkbox" 
+                            checked={isRecurring} 
+                            onChange={(e) => setIsRecurring(e.target.checked)}
+                        />
+                        {t('recurring_label')}
+                    </label>
+                </div>
+
+                {isRecurring && (
+                    <div className="form-group">
+                        <label>{t('recurring_days_label')}</label>
+                        <div className="day-selector">
+                            {['월', '화', '수', '목', '금', '토', '일'].map((day, index) => (
+                                <button 
+                                    key={index}
+                                    type="button"
+                                    onClick={() => toggleRecurringDay(index)}
+                                    className={`day-button ${recurringDays.includes(index) ? 'selected' : ''}`}
+                                >
+                                    {day}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                )}
+            </div>
+            <div className="modal-buttons">
+                <button onClick={handleClose} className="secondary">{t('cancel_button')}</button>
+                <button onClick={handleSave} className="primary">{t('save_button')}</button>
+            </div>
+        </Modal>
     );
 };
 
