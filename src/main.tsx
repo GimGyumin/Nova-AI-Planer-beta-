@@ -3006,7 +3006,11 @@ const App: React.FC = () => {
         } else if (sortType === 'newest') {
             sortedTodos.sort((a, b) => b.id - a.id);
         } else if (sortType === 'alphabetical') {
-            sortedTodos.sort((a, b) => a.wish.localeCompare(b.wish));
+            sortedTodos.sort((a, b) => {
+                const titleA = a.title || a.wish || '';
+                const titleB = b.title || b.wish || '';
+                return titleA.localeCompare(titleB);
+            });
         }
 
         // 상태 필터 (나의 목표, 진행중, 완료됨)
@@ -7371,7 +7375,7 @@ const CalendarView: React.FC<{ todos: Goal[]; t: (key: string) => any; onGoalCli
                     return (
                         <div key={day.toISOString()} className={`calendar-day ${!isCurrentMonth && viewMode === 'month' ? 'not-current-month' : ''} ${isToday ? 'is-today' : ''}`} data-day-name={t('day_names_long')[day.getDay()]}>
                             <div className="day-header"><span className="day-number">{day.getDate()}</span></div>
-                            <div className="calendar-goals">{goalsForDay.map(goal => <div key={goal.id} className={`calendar-goal-item ${goal.completed && (goal.lastCompletedDate && isSameDay(day, goal.lastCompletedDate)) ? 'completed' : ''}`} onClick={() => onGoalClick(goal)}>{goal.wish}</div>)}</div>
+                            <div className="calendar-goals">{goalsForDay.map(goal => <div key={goal.id} className={`calendar-goal-item ${goal.completed && (goal.lastCompletedDate && isSameDay(day, goal.lastCompletedDate)) ? 'completed' : ''}`} onClick={() => onGoalClick(goal)}>{goal.title || goal.wish}</div>)}</div>
                         </div>
                     );
                 })}
