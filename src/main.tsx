@@ -4490,12 +4490,14 @@ const App: React.FC = () => {
 
     return (
         <div className={`main-page-layout ${isViewModeCalendar ? 'calendar-view-active' : ''}`}>
-            {/* 클라우드 데이터 로딩 중 전체 화면 스피너 */}
-            {isLoadingData && (
+            {/* 클라우드 데이터 로딩/동기화 중 전체 화면 스피너 */}
+            {(isLoadingData || isSyncingData) && (
                 <div className="full-screen-loading-overlay">
                     <div className="loading-spinner-container">
                         <div className="loading-spinner"></div>
-                        <p className="loading-text">{t('settings_loading')}</p>
+                        <p className="loading-text">
+                            {isLoadingData ? t('settings_loading') : t('settings_syncing')}
+                        </p>
                     </div>
                 </div>
             )}
