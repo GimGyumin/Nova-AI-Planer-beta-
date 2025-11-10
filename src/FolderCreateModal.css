@@ -1,0 +1,118 @@
+.folder-modal {
+  width: min(420px, 92vw);
+}
+
+.folder-modal__body {
+  padding: 24px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.folder-modal__form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.folder-modal__label {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.folder-modal__input,
+.folder-modal__select {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1.5px solid var(--border-color);
+  background-color: var(--input-bg-color);
+  color: var(--text-color);
+  font-size: 0.95rem;
+  font-family: inherit;
+  transition: border 0.2s ease;
+}
+
+.folder-modal__input:focus,
+.folder-modal__select:focus {
+  border-color: var(--primary-color);
+  outline: none;
+}
+
+.folder-modal__error {
+  color: var(--danger-color);
+  font-size: 0.82rem;
+}
+
+.folder-modal__toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 500;
+}
+
+.folder-modal__collaborator-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.folder-modal__select {
+  max-width: 110px;
+}
+
+.folder-modal__add-button {
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-weight: 600;
+}
+
+.folder-modal__collaborator-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.folder-modal__collaborator-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--card-bg-color, rgba(255, 255, 255, 0.05));
+  border-radius: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-color);
+}
+
+.folder-modal__collaborator-email {
+  font-size: 0.9rem;
+}
+
+.folder-modal__collaborator-role {
+  font-size: 0.8rem;
+  color: var(--text-secondary-color);
+  margin-left: 6px;
+}
+
+.folder-modal__remove-button {
+  background: none;
+  border: none;
+  color: var(--danger-color);
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.folder-modal__footer {
+  padding: 0 16px 20px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.folder-modal__submit {
+  min-width: 100px;
+  font-weight: 600;
+}

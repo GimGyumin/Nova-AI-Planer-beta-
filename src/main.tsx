@@ -7,183 +7,17 @@ import { signInWithPopup, signOut, onAuthStateChanged, User } from 'firebase/aut
 import { collection, doc, updateDoc, setDoc, onSnapshot, getDoc, deleteDoc, query, where, getDocs, getFirestore } from 'firebase/firestore';
 import { httpsCallable, getFunctions } from 'firebase/functions';
 import './index.css';
+import { sanitizeFirestoreData } from './utils/firestore';
+import { isMobile, isStandalone } from './utils/pwa';
 
 // --- 타입 정의 ---
-
-// --- PWA 유틸리티 함수 ---
-const isMobile = () => {
-  // 더 정확한 모바일 감지
-  const mobileRegex = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile|Tablet/i;
-  const isUserAgentMobile = mobileRegex.test(navigator.userAgent);
-  const isTouchDevice = navigator.maxTouchPoints && navigator.maxTouchPoints > 2;
-  const isSmallScreen = window.innerWidth <= 768;
-  
-  console.log('Mobile detection:', { isUserAgentMobile, isTouchDevice, isSmallScreen, userAgent: navigator.userAgent });
-  
-  return isUserAgentMobile || (isTouchDevice && isSmallScreen);
-};
-
-const isStandalone = () => {
-  return window.matchMedia('(display-mode: standalone)').matches || 
-    (window.navigator as any).standalone === true;
-};
-
-// --- Firestore 데이터 정제 함수 ---
-const sanitizeFirestoreData = (obj: any): any => {
-  if (obj === undefined || obj === null) return undefined;  // null과 undefined 모두 차단
-  if (typeof obj !== 'object') return obj;
-  if (Array.isArray(obj)) {
-    const cleanedArray = obj
-      .filter(item => item !== undefined) // undefined 항목 먼저 제거
-      .map(item => sanitizeFirestoreData(item))
-      .filter(item => item !== undefined); // 정제 후 undefined가 된 항목도 제거
-    return cleanedArray.length > 0 ? cleanedArray : undefined;
-  }
-  
-  // 객체가 null인지 추가 확인
-  if (obj === null) return undefined;
-  
-  // Object.entries 호출 전에 객체 유효성 검사
-  let entries;
-  try {
-    entries = Object.entries(obj);
-  } catch (error) {
-    console.error('❌ Object.entries 실패:', error, obj);
-    return undefined;
-  }
-  
-  // 객체의 모든 필드를 정제
-  const cleaned: any = {};
-  for (const [key, value] of entries) {
-    // undefined와 빈 문자열만 제외 (null은 허용)
-    if (value === undefined || (typeof value === 'string' && value.trim() === '')) {
-      console.warn(`⚠️ 필드 제거됨: ${key} = ${value}`);
-      continue;
-    }
-    // 중첩 객체도 재귀적으로 정제
-    if (typeof value === 'object' && value !== null) {
-      const sanitized = sanitizeFirestoreData(value);
-      if (sanitized !== undefined) {
-        cleaned[key] = sanitized;
-      } else {
-        console.warn(`⚠️ 중첩 객체/배열 제거됨: ${key}`);
-      }
-    } else {
-      cleaned[key] = value;
-    }
-  }
-  return Object.keys(cleaned).length > 0 ? cleaned : undefined;
-};
 
 // --- 다크모드 감지 ---
 const getSystemTheme = () => {
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 };
 
-// --- 브라우저 감지 ---
-const isSafari = () => {
-  const userAgent = navigator.userAgent.toLowerCase();
-  return userAgent.includes('safari') && !userAgent.includes('chrome') && !userAgent.includes('firefox');
-};
-
-const isMobileSafari = () => {
-  const userAgent = navigator.userAgent.toLowerCase();
-  return /iphone|ipad|ipod/.test(userAgent) && /safari/.test(userAgent) && !/crios|fxios/.test(userAgent);
-};
-
 // --- 타입 정의 ---
-
-// --- 푸시 알림 구독 함수 ---
-const subscribeToPushNotifications = async () => {
-  try {
-    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-      console.log('Push notifications not supported');
-      return false;
-    }
-
-    const registration = await navigator.serviceWorker.ready;
-    const subscription = await registration.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(
-        'BOEd9nQKXBj8LJXNM6LJt6Nua5MJMhF8cCQvMNJ-2NWoWsM0cGgNqDG3kNm-QMYbdMDYAXaJ55MFP_fPHqH7SFA'
-      )
-    });
-
-    // 구독 정보를 서버로 전송
-    await sendSubscriptionToServer(subscription);
-    return true;
-  } catch (error) {
-    console.error('Failed to subscribe to push notifications:', error);
-    return false;
-  }
-};
-
-// --- Base64 문자열을 Uint8Array로 변환 ---
-const urlBase64ToUint8Array = (base64String: string) => {
-  const padding = '='.repeat((4 - base64String.length % 4) % 4);
-  const base64 = (base64String + padding)
-    .replace(/\-/g, '+')
-    .replace(/_/g, '/');
-
-  const rawData = window.atob(base64);
-  const outputArray = new Uint8Array(rawData.length);
-
-  for (let i = 0; i < rawData.length; ++i) {
-    outputArray[i] = rawData.charCodeAt(i);
-  }
-  return outputArray;
-};
-
-// --- 테스트 알림 전송 함수 (개발자 메뉴용) ---
-// --- 미리알림 시간 체크 함수 ---
-const isReminderTimeValid = (startTime: string, endTime: string): boolean => {
-  const now = new Date();
-  const hours = String(now.getHours()).padStart(2, '0');
-  const minutes = String(now.getMinutes()).padStart(2, '0');
-  const currentTime = `${hours}:${minutes}`;
-  
-  // startTime <= currentTime < endTime 범위 확인
-  return currentTime >= startTime && currentTime < endTime;
-};
-
-// --- 구독 정보를 서버로 전송 ---
-const sendSubscriptionToServer = async (subscription: PushSubscription) => {
-  try {
-    const response = await fetch('/api/subscribe', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        subscription: subscription.toJSON(),
-        endpoint: subscription.endpoint,
-      }),
-    });
-
-    if (!response.ok) {
-      console.error('Failed to send subscription to server');
-    }
-  } catch (error) {
-    console.error('Error sending subscription to server:', error);
-  }
-};
-
-// --- 로컬 알림 표시 함수 ---
-const showLocalNotification = (title: string, options?: NotificationOptions) => {
-  if ('Notification' in window && Notification.permission === 'granted') {
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.ready.then((registration) => {
-        registration.showNotification(title, {
-          icon: '/Nova-AI-Planer/nova-192.svg',
-          badge: '/Nova-AI-Planer/nova-192.svg',
-          ...options,
-        });
-      });
-    }
-  }
-};
-
-// --- 다크모드 감지 ---
 
 // --- PWA 설치 안내 컴포넌트 (모바일 fullscreen) ---
 const PWAInstallPrompt: React.FC<{ onClose: () => void }> = ({ onClose }) => {
@@ -568,6 +402,8 @@ interface Goal {
   lastCompletedDate: string | null;
   streak: number;
   title?: string; // 목표 제목
+  date?: string; // 마감일
+  time?: string; // 시간
   // 폴더 관련 필드
   folderId?: string;  // 폴더 ID (없으면 최상위)
   // 협업 관련 필드
@@ -4499,17 +4335,6 @@ const App: React.FC = () => {
 
     return (
         <div className={`main-page-layout ${isViewModeCalendar ? 'calendar-view-active' : ''}`}>
-            {/* 클라우드 데이터 로딩/동기화 중 전체 화면 스피너 */}
-            {(isLoadingData || isSyncingData) && (
-                <div className="full-screen-loading-overlay">
-                    <div className="loading-spinner-container">
-                        <div className="loading-spinner"></div>
-                        <p className="loading-text">
-                            {isLoadingData ? t('settings_loading') : t('settings_syncing')}
-                        </p>
-                    </div>
-                </div>
-            )}
             
             <div className={`page-content ${isAnyModalOpen ? 'modal-open' : ''}`}>
                 {/* Folder Navigator Component */}
@@ -4629,6 +4454,10 @@ const App: React.FC = () => {
                 }}
                 userCategories={userCategories}
                 onUpdateGoal={handleEditTodo}
+                onToggleComplete={(goalId) => {
+                    setInfoTodo(null);
+                    handleToggleComplete(goalId);
+                }}
             />}
             {collaboratingFolder !== undefined && <FolderCollaborationModal 
                 folder={collaboratingFolder}
@@ -6221,7 +6050,8 @@ const GoalInfoModal: React.FC<{
     onDeleteGoal?: (goalId: number) => void;
     userCategories?: string[];
     onUpdateGoal?: (goal: Goal) => void;
-}> = ({ todo, onClose, t, createAI, onDeleteGoal, userCategories, onUpdateGoal }) => {
+    onToggleComplete?: (goalId: number) => void;
+}> = ({ todo, onClose, t, createAI, onDeleteGoal, userCategories, onUpdateGoal, onToggleComplete }) => {
     const [isClosing, handleClose] = useModalAnimation(onClose);
     const [aiFeedback, setAiFeedback] = useState('');
     const [isAiLoading, setIsAiLoading] = useState(false);
@@ -6334,6 +6164,17 @@ const GoalInfoModal: React.FC<{
                 )}
             </div>
             <div className="modal-buttons">
+                {onToggleComplete && (
+                    <button 
+                        onClick={() => { 
+                            onToggleComplete(todo.id); 
+                            handleClose(); 
+                        }} 
+                        className={`secondary ${todo.completed ? 'destructive' : ''}`}
+                    >
+                        {todo.completed ? '↩️ 미완료로 표시' : '✅ 완료로 표시'}
+                    </button>
+                )}
                 {onDeleteGoal && (
                     <button onClick={() => { onDeleteGoal(todo.id); }} className="secondary destructive">🗑️ {t('delete_button')}</button>
                 )}
@@ -7131,24 +6972,8 @@ const SettingsModal: React.FC<{
                             <>
                                 <div className="settings-section-header">{t('settings_cloud_sync_header')}</div>
                                 <div className="settings-section-body">
-                                    <button className="settings-item action-item sync-button" onClick={onSyncDataToFirebase} disabled={isSyncingData}>
-                                        <div className="sync-button-container">
-                                            <div className={`circular-progress ${isSyncingData ? 'active' : ''}`}>
-                                                <svg className="progress-ring" width="24" height="24">
-                                                    <circle
-                                                        className="progress-ring-circle"
-                                                        stroke="currentColor"
-                                                        strokeWidth="2"
-                                                        fill="transparent"
-                                                        r="10"
-                                                        cx="12"
-                                                        cy="12"
-                                                    />
-                                                </svg>
-                                                <span className="sync-icon-center">{isSyncingData ? '' : '↗'}</span>
-                                            </div>
-                                            <span className="action-text">{isSyncingData ? t('settings_syncing') : t('settings_sync_data')}</span>
-                                        </div>
+                                    <button className="settings-item action-item" onClick={onSyncDataToFirebase} disabled={isSyncingData}>
+                                        <span className="action-text">{isSyncingData ? t('settings_syncing') : t('settings_sync_data')}</span>
                                     </button>
                                     <button className="settings-item action-item" onClick={onLoadDataFromFirebase} disabled={isLoadingData}>
                                         <span className="action-text">{isLoadingData ? t('settings_loading') : t('settings_load_from_cloud')}</span>
