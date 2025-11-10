@@ -1255,23 +1255,24 @@ li.selection-mode.selected .checkbox-container .checkmark:after {
 .info-section p { font-size: 1.05rem; }
 .ai-analysis-section p { font-style: italic; padding: 12px; background-color: var(--button-bg-color); border-radius: 12px; }
 .info-modal .modal-buttons { 
-    margin-top: 24px; 
-    display: flex; 
-    gap: 16px; 
-    flex-direction: column;
+    margin-top: 24px !important; 
+    display: flex !important; 
+    gap: 16px !important; 
+    flex-direction: column !important;
 }
 .info-modal .modal-buttons button { 
-    width: 100%; 
-    padding: 14px; 
-    background-color: var(--primary-color); 
-    color: white; 
-    font-size: 1rem; 
-    font-weight: 600; 
-    border-radius: 22px; 
+    width: 100% !important; 
+    padding: 14px !important; 
+    background-color: var(--primary-color) !important; 
+    color: white !important; 
+    font-size: 1rem !important; 
+    font-weight: 600 !important; 
+    border-radius: 22px !important; 
+    margin-bottom: 0 !important;
 }
 .info-modal .modal-buttons button.secondary.destructive {
-    background-color: var(--danger-color);
-    margin-bottom: 8px;
+    background-color: var(--danger-color) !important;
+    margin-bottom: 8px !important;
 }
 
 
@@ -3242,4 +3243,75 @@ input:checked + .slider:before { -webkit-transform: translateX(20px); -ms-transf
 .notification-warning-desc {
   opacity: 0.95;
   color: white;
+}
+
+/* 전체 화면 로딩 스피너 */
+.full-screen-loading-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100vh;
+  background-color: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 10000;
+  animation: fadeIn 0.2s ease-out;
+}
+
+/* 다크 모드에서 오버레이 색상 조정 */
+[data-theme="dark"] .full-screen-loading-overlay {
+  background-color: rgba(0, 0, 0, 0.8);
+}
+
+.loading-spinner-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  padding: 40px;
+  background-color: var(--main-bg-color);
+  border-radius: 16px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--border-color);
+}
+
+.loading-spinner {
+  width: 48px;
+  height: 48px;
+  border: 4px solid var(--border-color);
+  border-top: 4px solid var(--primary-color);
+  border-radius: 50%;
+  animation: loadingSpin 1s linear infinite;
+}
+
+.loading-text {
+  color: var(--text-color);
+  font-size: 16px;
+  font-weight: 500;
+  margin: 0;
+  opacity: 0.9;
+}
+
+@keyframes loadingSpin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }

@@ -4490,6 +4490,16 @@ const App: React.FC = () => {
 
     return (
         <div className={`main-page-layout ${isViewModeCalendar ? 'calendar-view-active' : ''}`}>
+            {/* 클라우드 데이터 로딩 중 전체 화면 스피너 */}
+            {isLoadingData && (
+                <div className="full-screen-loading-overlay">
+                    <div className="loading-spinner-container">
+                        <div className="loading-spinner"></div>
+                        <p className="loading-text">{t('settings_loading')}</p>
+                    </div>
+                </div>
+            )}
+            
             <div className={`page-content ${isAnyModalOpen ? 'modal-open' : ''}`}>
                 {/* Folder Navigator Component */}
                 <FolderNavigator 
