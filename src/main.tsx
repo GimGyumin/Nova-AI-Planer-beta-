@@ -1725,29 +1725,6 @@ const App: React.FC = () => {
         };
     }, []);
 
-    // Firebase 설정 진단 함수
-    const diagnoseFirebaseSetup = useCallback(() => {
-        console.log('🔍 Firebase 진단 시작...');
-        console.log('Firebase Auth:', auth);
-        console.log('Firebase DB:', db);
-        console.log('Google Provider:', googleProvider);
-        
-        // 환경 변수 확인 (값은 로그에 노출하지 않음)
-        console.log('환경 변수 확인:');
-        console.log('- VITE_FIREBASE_API_KEY:', import.meta.env.VITE_FIREBASE_API_KEY ? '✅ 설정됨' : '❌ 없음');
-        console.log('- VITE_FIREBASE_AUTH_DOMAIN:', import.meta.env.VITE_FIREBASE_AUTH_DOMAIN ? '✅ 설정됨' : '❌ 없음');
-        console.log('- VITE_FIREBASE_PROJECT_ID:', import.meta.env.VITE_FIREBASE_PROJECT_ID ? '✅ 설정됨' : '❌ 없음');
-        
-        // 브라우저 정보
-        console.log('브라우저 정보:');
-        console.log('- User Agent:', navigator.userAgent);
-        console.log('- 쿠키 활성화:', navigator.cookieEnabled);
-        console.log('- 로컬 스토리지 지원:', typeof(Storage) !== "undefined");
-        
-        // 네트워크 상태
-        console.log('네트워크 상태:', navigator.onLine ? '✅ 온라인' : '❌ 오프라인');
-    }, []);
-
     // Firebase Google 로그인 핸들러 (개선된 버전)
     const handleFirebaseGoogleLogin = useCallback(async () => {
         setIsGoogleLoggingIn(true);
@@ -4664,7 +4641,6 @@ const App: React.FC = () => {
                 isLoadingData={isLoadingData}
                 isAutoSyncEnabled={isAutoSyncEnabled}
                 setIsAutoSyncEnabled={setIsAutoSyncEnabled}
-                onDiagnoseFirebase={diagnoseFirebaseSetup}
                 notificationPermission={notificationPermission}
                 setNotificationPermission={setNotificationPermission}
             />}
@@ -6873,7 +6849,6 @@ const SettingsModal: React.FC<{
     isLoadingData?: boolean;
     isAutoSyncEnabled: boolean;
     setIsAutoSyncEnabled: (enabled: boolean) => void;
-    onDiagnoseFirebase: () => void;
     notificationPermission: NotificationPermission;
     setNotificationPermission: (permission: NotificationPermission) => void;
 }> = ({
@@ -6883,7 +6858,7 @@ const SettingsModal: React.FC<{
     apiKey, onSetApiKey, isOfflineMode, onToggleOfflineMode,
     googleUser, onGoogleLogin, onGoogleLogout, onSyncDataToFirebase, onLoadDataFromFirebase,
     isGoogleLoggingIn = false, isGoogleLoggingOut = false, isSyncingData = false, isLoadingData = false,
-    isAutoSyncEnabled, setIsAutoSyncEnabled, onDiagnoseFirebase,
+    isAutoSyncEnabled, setIsAutoSyncEnabled,
     notificationPermission, setNotificationPermission
 
 }) => {
@@ -7073,30 +7048,47 @@ const SettingsModal: React.FC<{
                             ) : (
                                 <div>
                                     <div style={{ display: 'flex', justifyContent: 'center', padding: '12px 0' }}>
-                                        <button onClick={onGoogleLogin} disabled={isGoogleLoggingIn} style={{ backgroundColor: isGoogleLoggingIn ? '#E0E0E0' : 'white', border: '1px solid #D3D3D3', borderRadius: '24px', padding: '8px 20px', fontSize: '14px', fontWeight: '500', cursor: isGoogleLoggingIn ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '8px', color: isGoogleLoggingIn ? '#999999' : '#1F2937', transition: 'all 0.2s', opacity: isGoogleLoggingIn ? 0.6 : 1 }}>
-                                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-                                                <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
-                                                <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-                                                <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
-                                                <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
-                                            </svg>
-                                            {isGoogleLoggingIn ? '로그인 중...' : 'Google로 로그인'}
-                                        </button>
-                                    </div>
-                                    <div style={{ display: 'flex', justifyContent: 'center', padding: '8px 0' }}>
                                         <button 
-                                            onClick={onDiagnoseFirebase} 
+                                            onClick={onGoogleLogin} 
+                                            disabled={isGoogleLoggingIn} 
                                             style={{ 
-                                                backgroundColor: 'transparent', 
-                                                border: '1px solid #D3D3D3', 
-                                                borderRadius: '16px', 
-                                                padding: '4px 12px', 
-                                                fontSize: '12px', 
-                                                color: '#666', 
-                                                cursor: 'pointer' 
+                                                backgroundColor: isGoogleLoggingIn 
+                                                    ? (isDarkMode ? '#2A2A2A' : '#E0E0E0')
+                                                    : (isDarkMode ? '#1F1F1F' : 'white'), 
+                                                border: `1px solid ${isDarkMode ? '#404040' : '#D3D3D3'}`, 
+                                                borderRadius: '24px', 
+                                                padding: '8px 20px', 
+                                                fontSize: '14px', 
+                                                fontWeight: '500', 
+                                                cursor: isGoogleLoggingIn ? 'not-allowed' : 'pointer', 
+                                                display: 'flex', 
+                                                alignItems: 'center', 
+                                                gap: '8px', 
+                                                color: isGoogleLoggingIn 
+                                                    ? (isDarkMode ? '#666' : '#999999')
+                                                    : (isDarkMode ? '#E0E0E0' : '#1F2937'), 
+                                                transition: 'all 0.2s', 
+                                                opacity: isGoogleLoggingIn ? 0.6 : 1 
                                             }}
                                         >
-                                            🔍 로그인 문제 진단
+                                            {isDarkMode ? (
+                                                // 다크 모드용 구글 아이콘 (어두운 배경용)
+                                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                                    <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                                                    <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                                                    <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+                                                    <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+                                                </svg>
+                                            ) : (
+                                                // 라이트 모드용 구글 아이콘 (밝은 배경용)
+                                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                                    <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                                                    <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                                                    <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+                                                    <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+                                                </svg>
+                                            )}
+                                            {isGoogleLoggingIn ? '로그인 중...' : 'Google로 로그인'}
                                         </button>
                                     </div>
                                 </div>
