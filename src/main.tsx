@@ -4388,11 +4388,30 @@ const App: React.FC = () => {
             setBackgroundTheme('default');
             setSortType('manual');
             setUserCategories(['school', 'work', 'personal', 'other']);
+            setApiKey('');
+            setIsOfflineMode(false);
+            setIsAutoSyncEnabled(true);
             
-            // 4. localStorage 완전 삭제
+            // 4. localStorage 완전 삭제 (더 강력한 클리어)
             console.log('💾 localStorage 초기화 시작...');
-            localStorage.clear();
-            console.log('✅ localStorage 완전 삭제 완료');
+            try {
+                // 모든 키를 개별적으로 삭제
+                const keys = Object.keys(localStorage);
+                console.log('🔍 삭제할 localStorage 키들:', keys);
+                keys.forEach(key => {
+                    localStorage.removeItem(key);
+                    console.log(`❌ 키 삭제: ${key}`);
+                });
+                
+                // 전체 클리어도 수행
+                localStorage.clear();
+                
+                // 세션 스토리지도 클리어
+                sessionStorage.clear();
+                console.log('✅ localStorage 및 sessionStorage 완전 삭제 완료');
+            } catch (storageError) {
+                console.error('❌ localStorage 삭제 중 오류:', storageError);
+            }
             
             // 5. Firebase 로그아웃 및 리스너 정리
             if (googleUser) {
@@ -4401,20 +4420,32 @@ const App: React.FC = () => {
                 // 실시간 리스너들 정리 (auth state listener가 자동으로 정리됨)
                 try {
                     await signOut(auth);
-                    console.log('✅ 로그아웃 완료');
+                    console.log('✅ Firebase 로그아웃 완료');
                 } catch (logoutError) {
                     console.warn('⚠️ 로그아웃 중 오류:', logoutError);
                 }
             }
             
-            console.log('✅ 모든 데이터 삭제 완료');
-            setToastMessage('✅ 모든 데이터가 완전히 삭제되었습니다. 로그아웃됩니다.');
+            // 6. Google 사용자 상태 명시적 클리어
+            console.log('👤 사용자 상태 클리어...');
+            setGoogleUser(null);
+            setIsGoogleLoggingIn(false);
+            setIsGoogleLoggingOut(false);
+            setIsSyncingData(false);
+            setIsLoadingData(false);
             
-            // 6. 완전한 초기화를 위해 페이지 새로고침
+            console.log('✅ 모든 데이터 삭제 완료');
+            setToastMessage('✅ 모든 데이터가 완전히 삭제되었습니다. 잠시 후 앱이 초기화됩니다.');
+            
+            // 설정 모달 닫기
+            setIsSettingsOpen(false);
+            
+            // 7. 완전한 초기화를 위해 페이지 새로고침
             setTimeout(() => {
                 console.log('🔄 페이지 새로고침으로 완전 초기화...');
+                // 상태는 새로고침되면서 자동으로 리셋되므로 setDataActionStatus('idle') 불필요
                 window.location.reload();
-            }, 1500);
+            }, 2500); // 시간을 조금 더 늘려서 사용자가 메시지를 충분히 볼 수 있도록
             
         } catch (error) {
             console.error('❌ 데이터 삭제 중 오류:', error);
@@ -4445,10 +4476,11 @@ const App: React.FC = () => {
                 confirmText: '확인',
                 onConfirm: () => setAlertConfig(null)
             });
-        } finally {
+            
+            // 에러 발생 시에만 상태 리셋
             setDataActionStatus('idle');
-            setIsSettingsOpen(false);
         }
+        // finally 블록 제거 - 성공 시에는 새로고침되어 자동으로 정리됨
     };
 
     const isAnyModalOpen = isGoalAssistantOpen || !!editingTodo || !!infoTodo || isSettingsOpen || !!alertConfig || isVersionInfoOpen || isUsageGuideOpen;
